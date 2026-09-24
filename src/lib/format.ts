@@ -57,3 +57,17 @@ export async function buscarCep(cep: string): Promise<{ endereco: string; munici
     return null
   }
 }
+
+/** Número da viabilidade: 3 letras + 10 números (ex.: SPN2633893093). */
+export const REGEX_VIABILIDADE = /^[A-Z]{3}\d{10}$/
+
+export function mascaraViabilidade(v: string) {
+  let letras = ''
+  let numeros = ''
+  for (const c of v.toUpperCase()) {
+    if (letras.length < 3) {
+      if (/[A-Z]/.test(c)) letras += c
+    } else if (/\d/.test(c) && numeros.length < 10) numeros += c
+  }
+  return letras + numeros
+}

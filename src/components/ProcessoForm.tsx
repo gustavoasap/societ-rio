@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Building2, ClipboardList, ListChecks, Plus, Save } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { buscarCep, mascaraCep, mascaraCnpj } from '../lib/format'
+import { REGEX_VIABILIDADE, buscarCep, mascaraCep, mascaraCnpj, mascaraViabilidade } from '../lib/format'
 import {
   ACOMPANHAMENTO,
   ENQUADRAMENTOS,
@@ -105,6 +105,7 @@ export function ProcessoForm({
 
   const set = <K extends keyof Rascunho>(k: K, v: Rascunho[K]) => setR((prev) => ({ ...prev, [k]: v }))
   const abertura = r.tipo === 'abertura'
+  const viabilidadeInvalida = Boolean(r.numero_viabilidade) && !REGEX_VIABILIDADE.test(r.numero_viabilidade ?? '')
 
   function setQuantidadeSocios(qtd: number) {
     setR((prev) => {
@@ -134,6 +135,10 @@ export function ProcessoForm({
     setErro(null)
     if (!r.razao_social?.trim()) {
       setErro('Informe a Razão Social.')
+      return
+    }
+    if (viabilidadeInvalida) {
+      setErro('Número da Viabilidade deve ter 13 caracteres: 3 letras + 10 números (ex.: SPN2633893093).')
       return
     }
     const payload: Record<string, unknown> = { ...r }
@@ -307,7 +312,16 @@ export function ProcessoForm({
       <Section icone={ListChecks} cor="emerald" title="Acompanhamento">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Número da Viabilidade">
-            <input className="input" value={r.numero_viabilidade ?? ''} onChange={(e) => set('numero_viabilidade', e.target.value)} />
+            <input
+              className={`input font-mono tracking-wider ${viabilidadeInvalida ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-100' : ''}`}
+              value={r.numero_viabilidade ?? ''}
+              onChange={(e) => set('numero_viabilidade', mascaraViabilidade(e.target.value))}
+              placeholder="SPN2633893093"
+              maxLength={13}
+            />
+            <span className={`mt-1 block text-[11px] ${viabilidadeInvalida ? 'text-rose-600' : 'text-slate-400'}`}>
+              {viabilidadeInvalida ? `Faltam ${13 - (r.numero_viabilidade ?? '').length} caractere(s): 3 letras + 10 números` : '3 letras + 10 números'}
+            </span>
           </Field>
           {ACOMPANHAMENTO.map((a) => (
             <Field key={a.campo} label={a.label}>
