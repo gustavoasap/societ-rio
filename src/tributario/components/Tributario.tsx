@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { Building2, FolderKanban, Layers, LogOut, Plus, Search, Trash2 } from 'lucide-react'
+import { Building2, House, Layers, LogOut, Plus, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { Link } from '../../lib/rotas'
 import { mascaraCnpj } from '../../lib/format'
 import { excluirEmpresa, listarEmpresas, type EmpresaComEstab } from '../dados'
 import { EmpresaForm } from './EmpresaForm'
@@ -69,12 +70,14 @@ export function Tributario({ session }: { session: Session }) {
       <div className="no-print relative overflow-hidden bg-gradient-to-br from-asap-950 via-asap-900 to-asap-700 pb-24 text-white">
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-500/25 blur-3xl" />
         <header className="relative mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6">
-          <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
+          <Link para="/" aria-label="Ir para a página inicial do portal">
+            <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
+          </Link>
+          <Link para="/" className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20">
+            <House className="h-4 w-4" />
+            <span className="hidden sm:inline">Página inicial</span>
+          </Link>
           <div className="ml-auto flex items-center gap-2">
-            <a href="#/" className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20">
-              <FolderKanban className="h-4 w-4" />
-              <span className="hidden sm:inline">Processos societários</span>
-            </a>
             <span className="hidden text-sm text-white/70 md:inline">{session.user.email}</span>
             <button className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => supabase.auth.signOut()} title="Sair">
               <LogOut className="h-4 w-4" />
@@ -83,7 +86,16 @@ export function Tributario({ session }: { session: Session }) {
         </header>
         <div className="relative mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-4 pt-6 sm:px-6">
           <div>
-            <p className="text-sm font-medium text-cyan-300">Planejamento tributário</p>
+            <p className="text-sm font-medium text-cyan-300">
+              <Link para="/" className="hover:underline">
+                Página inicial
+              </Link>{' '}
+              ›{' '}
+              <Link para="/d/fiscal" className="hover:underline">
+                Fiscal
+              </Link>{' '}
+              · Reforma Tributária (IBS/CBS)
+            </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Análise de regimes e Reforma Tributária</h1>
             <p className="mt-1 text-sm text-white/60">Simples Nacional, Lucro Presumido e Lucro Real — do regime atual até a transição completa para IBS/CBS em 2033.</p>
           </div>

@@ -18,9 +18,11 @@ create table if not exists public.trib_parceiros (
 
 alter table public.trib_parceiros enable row level security;
 
-drop policy if exists "equipe acessa parceiros tributarios" on public.trib_parceiros;
-create policy "equipe acessa parceiros tributarios" on public.trib_parceiros
-  for all to authenticated using (true) with check (true);
+drop policy if exists "fiscal acessa parceiros tributarios" on public.trib_parceiros;
+create policy "fiscal acessa parceiros tributarios" on public.trib_parceiros
+  for all to authenticated
+  using (public.portal_tem_acesso_slug('fiscal'))
+  with check (public.portal_tem_acesso_slug('fiscal'));
 
 -- Alíquota interna de ICMS específica do NCM (ex.: perfumaria 25% em SP) e MVA da substituição tributária
 alter table public.trib_ncms

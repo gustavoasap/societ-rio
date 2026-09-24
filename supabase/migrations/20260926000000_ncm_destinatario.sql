@@ -19,6 +19,8 @@ create table if not exists public.trib_ncms (
 
 alter table public.trib_ncms enable row level security;
 
-drop policy if exists "equipe acessa ncms" on public.trib_ncms;
-create policy "equipe acessa ncms" on public.trib_ncms
-  for all to authenticated using (true) with check (true);
+drop policy if exists "fiscal acessa ncms" on public.trib_ncms;
+create policy "fiscal acessa ncms" on public.trib_ncms
+  for all to authenticated
+  using (public.portal_tem_acesso_slug('fiscal'))
+  with check (public.portal_tem_acesso_slug('fiscal'));

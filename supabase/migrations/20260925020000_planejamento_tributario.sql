@@ -85,18 +85,26 @@ alter table public.trib_estabelecimentos enable row level security;
 alter table public.trib_importacoes enable row level security;
 alter table public.trib_movimentos enable row level security;
 
-drop policy if exists "equipe acessa empresas" on public.trib_empresas;
-create policy "equipe acessa empresas" on public.trib_empresas
-  for all to authenticated using (true) with check (true);
+drop policy if exists "fiscal acessa empresas" on public.trib_empresas;
+create policy "fiscal acessa empresas" on public.trib_empresas
+  for all to authenticated
+  using (public.portal_tem_acesso_slug('fiscal'))
+  with check (public.portal_tem_acesso_slug('fiscal'));
 
-drop policy if exists "equipe acessa estabelecimentos" on public.trib_estabelecimentos;
-create policy "equipe acessa estabelecimentos" on public.trib_estabelecimentos
-  for all to authenticated using (true) with check (true);
+drop policy if exists "fiscal acessa estabelecimentos" on public.trib_estabelecimentos;
+create policy "fiscal acessa estabelecimentos" on public.trib_estabelecimentos
+  for all to authenticated
+  using (public.portal_tem_acesso_slug('fiscal'))
+  with check (public.portal_tem_acesso_slug('fiscal'));
 
-drop policy if exists "equipe acessa importacoes" on public.trib_importacoes;
-create policy "equipe acessa importacoes" on public.trib_importacoes
-  for all to authenticated using (true) with check (true);
+drop policy if exists "fiscal acessa importacoes" on public.trib_importacoes;
+create policy "fiscal acessa importacoes" on public.trib_importacoes
+  for all to authenticated
+  using (public.portal_tem_acesso_slug('fiscal'))
+  with check (public.portal_tem_acesso_slug('fiscal'));
 
-drop policy if exists "equipe acessa movimentos" on public.trib_movimentos;
-create policy "equipe acessa movimentos" on public.trib_movimentos
-  for all to authenticated using (true) with check (true);
+drop policy if exists "fiscal acessa movimentos" on public.trib_movimentos;
+create policy "fiscal acessa movimentos" on public.trib_movimentos
+  for all to authenticated
+  using (public.portal_tem_acesso_slug('fiscal'))
+  with check (public.portal_tem_acesso_slug('fiscal'));
