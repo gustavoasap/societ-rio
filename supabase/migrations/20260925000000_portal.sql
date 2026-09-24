@@ -153,3 +153,12 @@ select d.id, 'Processos Societários', 'Acompanhe abertura, alteração e baixa 
 from public.portal_departamentos d
 where d.slug = 'societario'
   and not exists (select 1 from public.portal_modulos m where m.link = '/societario/processos');
+
+-- Funções do portal: ninguém sem login executa; a de cadastro de perfil só roda pelo gatilho
+revoke execute on function public.portal_is_admin() from public, anon;
+revoke execute on function public.portal_tem_acesso(uuid) from public, anon;
+revoke execute on function public.portal_tem_acesso_slug(text) from public, anon;
+revoke execute on function public.portal_novo_usuario() from public, anon, authenticated;
+grant execute on function public.portal_is_admin() to authenticated;
+grant execute on function public.portal_tem_acesso(uuid) to authenticated;
+grant execute on function public.portal_tem_acesso_slug(text) to authenticated;
