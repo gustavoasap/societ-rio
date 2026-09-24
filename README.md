@@ -8,7 +8,7 @@ Portal interno da **ASAP Assessoria Contábil**. Reúne as ferramentas do escrit
 
 Ferramentas já integradas:
 
-- **Processos Societários** (`/societario/processos`): acompanhamento de abertura, alteração e baixa de CNPJ (tabelas `soc_processos` e `soc_parceiros`).
+- **Processos Societários** (`/societario/processos`): acompanhamento de abertura, alteração e baixa de CNPJ (tabelas `soc_processos` e `soc_parceiros`). Só quem tem acesso ao departamento Societário (ou é administrador) vê esses dados.
 
 Tecnologia: React + Vite + Tailwind (deploy na Vercel) e Supabase (banco, login e regras de acesso).
 
