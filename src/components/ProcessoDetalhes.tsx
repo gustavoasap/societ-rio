@@ -1,6 +1,6 @@
 import { Building2, ClipboardList, ListChecks, Pencil, Printer, UserRound } from 'lucide-react'
 import { formatarData, formatarMoeda, formatarNumero } from '../lib/format'
-import { ACOMPANHAMENTO, STATUS_PROCESSO, TIPOS, labelDe, type Parceiro, type Processo } from '../types'
+import { ACOMPANHAMENTO_POR_TIPO, STATUS_PROCESSO, TIPOS, labelDe, type Parceiro, type Processo } from '../types'
 import { StatusBadge } from './StatusBadge'
 import { Badge, Info, Modal, Section } from './ui'
 
@@ -113,8 +113,8 @@ export function ProcessoDetalhes({
 
       <Section icone={ListChecks} cor="emerald" title="Acompanhamento">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Info label="Número da Viabilidade" value={p.numero_viabilidade} />
-          {ACOMPANHAMENTO.map((a) => (
+          {p.tipo === 'baixa' ? <Info label="Número DBE" value={p.numero_dbe} /> : <Info label="Número da Viabilidade" value={p.numero_viabilidade} />}
+          {ACOMPANHAMENTO_POR_TIPO[p.tipo].map((a) => (
             <Info key={a.campo} label={a.label} value={<StatusBadge etapa={a} valor={p[a.campo]} />} />
           ))}
           <Info label="Observações" value={p.observacoes && <span className="whitespace-pre-line">{p.observacoes}</span>} className="col-span-2 lg:col-span-4" />

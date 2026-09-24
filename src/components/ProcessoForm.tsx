@@ -3,7 +3,7 @@ import { Building2, ClipboardList, ListChecks, Plus, Save } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { REGEX_VIABILIDADE, buscarCep, mascaraCep, mascaraCnpj, mascaraViabilidade } from '../lib/format'
 import {
-  ACOMPANHAMENTO,
+  ACOMPANHAMENTO_POR_TIPO,
   ENQUADRAMENTOS,
   NATUREZAS_JURIDICAS,
   ORGAOS_REGISTRO,
@@ -55,6 +55,7 @@ function novoRascunho(tipo: TipoProcesso): Rascunho {
     capital_social: '',
     socios: [{ ...SOCIO_VAZIO }],
     numero_viabilidade: '',
+    numero_dbe: '',
     status_viabilidade: 'pendente',
     status_dbe: 'pendente',
     status_integrador: 'pendente',
@@ -62,6 +63,9 @@ function novoRascunho(tipo: TipoProcesso): Rascunho {
     status_contrato_social: 'pendente_envio',
     status_registro_digital: 'pendente_envio',
     status_contrato_servicos: 'pendente_envio',
+    status_documento_baixa: 'pendente',
+    status_distrato: 'pendente_envio',
+    status_declaracoes_baixa: 'pendente_envio',
     observacoes: '',
   }
 }
@@ -105,7 +109,20 @@ export function ProcessoForm({
 
   const set = <K extends keyof Rascunho>(k: K, v: Rascunho[K]) => setR((prev) => ({ ...prev, [k]: v }))
   const abertura = r.tipo === 'abertura'
-  const viabilidadeInvalida = Boolean(r.numero_viabilidade) && !REGEX_VIABILIDADE.test(r.numero_viabilidade ?? '')
+  const baixa = r.tipo === 'baixa'
+  const etapas = ACOMPANHAMENTO_POR_TIPO[r.tipo]
+  const viabilidadeInvalida = !baixa && Boolean(r.numero_viabilidade) && !REGEX_VIABILIDADE.test(r.numero_viabilidade ?? '')
+
+  function mudarTipo(tipo: TipoProcesso) {
+    setR((prev) => {
+      const novo = { ...prev, tipo }
+      // Valores que não existem nas etapas do novo tipo voltam para a primeira opção
+      for (const e of ACOMPANHAMENTO_POR_TIPO[tipo]) {
+        if (!e.opcoes.some((o) => o.value === novo[e.campo])) novo[e.campo] = e.opcoes[0].value
+      }
+      return novo
+    })
+  }
 
   function setQuantidadeSocios(qtd: number) {
     setR((prev) => {
@@ -181,7 +198,7 @@ export function ProcessoForm({
       <Section icone={ClipboardList} title="Processo">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Tipo de processo">
-            <Select value={r.tipo} onChange={(v) => set('tipo', v as TipoProcesso)} opcoes={TIPOS} />
+            <Select value={r.tipo} onChange={(v) => mudarTipo(v as TipoProcesso)} opcoes={TIPOS} />
           </Field>
           <Field label="Status do processo">
             <Select value={r.status} onChange={(v) => set('status', v as Rascunho['status'])} opcoes={STATUS_PROCESSO} />
@@ -311,19 +328,29 @@ export function ProcessoForm({
 
       <Section icone={ListChecks} cor="emerald" title="Acompanhamento">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Número da Viabilidade">
-            <input
-              className={`input font-mono tracking-wider ${viabilidadeInvalida ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-100' : ''}`}
-              value={r.numero_viabilidade ?? ''}
-              onChange={(e) => set('numero_viabilidade', mascaraViabilidade(e.target.value))}
-              placeholder="SPN2633893093"
-              maxLength={13}
-            />
-            <span className={`mt-1 block text-[11px] ${viabilidadeInvalida ? 'text-rose-600' : 'text-slate-400'}`}>
-              {viabilidadeInvalida ? `Faltam ${13 - (r.numero_viabilidade ?? '').length} caractere(s): 3 letras + 10 números` : '3 letras + 10 números'}
-            </span>
-          </Field>
-          {ACOMPANHAMENTO.map((a) => (
+          {baixa ? (
+            <Field label="Número DBE">
+              <input
+                className="input font-mono tracking-wider"
+                value={r.numero_dbe ?? ''}
+                onChange={(e) => set('numero_dbe', e.target.value.toUpperCase())}
+              />
+            </Field>
+          ) : (
+            <Field label="Número da Viabilidade">
+              <input
+                className={`input font-mono tracking-wider ${viabilidadeInvalida ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-100' : ''}`}
+                value={r.numero_viabilidade ?? ''}
+                onChange={(e) => set('numero_viabilidade', mascaraViabilidade(e.target.value))}
+                placeholder="SPN2633893093"
+                maxLength={13}
+              />
+              <span className={`mt-1 block text-[11px] ${viabilidadeInvalida ? 'text-rose-600' : 'text-slate-400'}`}>
+                {viabilidadeInvalida ? `Faltam ${13 - (r.numero_viabilidade ?? '').length} caractere(s): 3 letras + 10 números` : '3 letras + 10 números'}
+              </span>
+            </Field>
+          )}
+          {etapas.map((a) => (
             <Field key={a.campo} label={a.label}>
               <Select value={r[a.campo]} onChange={(v) => set(a.campo, v)} opcoes={a.opcoes} />
             </Field>

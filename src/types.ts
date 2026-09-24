@@ -61,6 +61,7 @@ export interface Processo {
   capital_social: number | null
   socios: Socio[]
   numero_viabilidade: string | null
+  numero_dbe: string | null
   status_viabilidade: string
   status_dbe: string
   status_integrador: string
@@ -68,6 +69,9 @@ export interface Processo {
   status_contrato_social: string
   status_registro_digital: string
   status_contrato_servicos: string
+  status_documento_baixa: string
+  status_distrato: string
+  status_declaracoes_baixa: string
   observacoes: string | null
   created_at?: string
   updated_at?: string
@@ -93,6 +97,18 @@ const PENDENTE_ANALISE_OK: Opcao[] = [
   { value: 'ok', label: 'OK' },
 ]
 
+const CONTRATO_SOCIAL: Opcao[] = [
+  { value: 'pendente_envio', label: 'Pendente de envio' },
+  { value: 'falta_assinatura', label: 'Falta assinatura' },
+  { value: 'ok', label: 'OK' },
+]
+
+const REGISTRO_DIGITAL_SIMPLES: Opcao[] = [
+  { value: 'pendente_envio', label: 'Pendente de envio' },
+  { value: 'em_analise', label: 'Em análise' },
+  { value: 'concluido', label: 'Concluído' },
+]
+
 export type CampoAcompanhamento =
   | 'status_viabilidade'
   | 'status_dbe'
@@ -101,43 +117,96 @@ export type CampoAcompanhamento =
   | 'status_contrato_social'
   | 'status_registro_digital'
   | 'status_contrato_servicos'
+  | 'status_documento_baixa'
+  | 'status_distrato'
+  | 'status_declaracoes_baixa'
 
-export const ACOMPANHAMENTO: { campo: CampoAcompanhamento; label: string; opcoes: Opcao[]; concluido: string }[] = [
-  { campo: 'status_viabilidade', label: 'Status Viabilidade', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' },
-  { campo: 'status_dbe', label: 'Status DBE', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' },
-  { campo: 'status_integrador', label: 'Integrador', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' },
-  { campo: 'status_taxa', label: 'Pagamento da Taxa', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' },
-  {
-    campo: 'status_contrato_social',
-    label: 'Contrato Social',
-    opcoes: [
-      { value: 'pendente_envio', label: 'Pendente de envio' },
-      { value: 'falta_assinatura', label: 'Falta assinatura' },
-      { value: 'ok', label: 'OK' },
-    ],
-    concluido: 'ok',
-  },
-  {
-    campo: 'status_registro_digital',
-    label: 'Registro Digital',
-    opcoes: [
-      { value: 'pendente_envio', label: 'Pendente de Envio' },
-      { value: 'em_analise', label: 'Em análise' },
-      { value: 'pendente_mat', label: 'Pendente MAT' },
-      { value: 'cnpj_liberado', label: 'CNPJ Liberado' },
-    ],
-    concluido: 'cnpj_liberado',
-  },
-  {
-    campo: 'status_contrato_servicos',
-    label: 'Contrato Prestação de Serviços',
-    opcoes: [
-      { value: 'pendente_envio', label: 'Pendente de envio' },
-      { value: 'enviado', label: 'Contrato Enviado' },
-    ],
-    concluido: 'enviado',
-  },
-]
+export type Etapa = { campo: CampoAcompanhamento; label: string; opcoes: Opcao[]; concluido: string }
+
+const VIABILIDADE: Etapa = { campo: 'status_viabilidade', label: 'Status Viabilidade', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' }
+const DBE: Etapa = { campo: 'status_dbe', label: 'Status DBE', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' }
+const INTEGRADOR: Etapa = { campo: 'status_integrador', label: 'Integrador', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' }
+const TAXA: Etapa = { campo: 'status_taxa', label: 'Pagamento da Taxa', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' }
+const REGISTRO_SIMPLES: Etapa = { campo: 'status_registro_digital', label: 'Registro Digital', opcoes: REGISTRO_DIGITAL_SIMPLES, concluido: 'concluido' }
+
+/** Etapas de acompanhamento de cada tipo de processo. */
+export const ACOMPANHAMENTO_POR_TIPO: Record<TipoProcesso, Etapa[]> = {
+  abertura: [
+    VIABILIDADE,
+    DBE,
+    INTEGRADOR,
+    TAXA,
+    { campo: 'status_contrato_social', label: 'Contrato Social', opcoes: CONTRATO_SOCIAL, concluido: 'ok' },
+    {
+      campo: 'status_registro_digital',
+      label: 'Registro Digital',
+      opcoes: [
+        { value: 'pendente_envio', label: 'Pendente de Envio' },
+        { value: 'em_analise', label: 'Em análise' },
+        { value: 'pendente_mat', label: 'Pendente MAT' },
+        { value: 'cnpj_liberado', label: 'CNPJ Liberado' },
+      ],
+      concluido: 'cnpj_liberado',
+    },
+    {
+      campo: 'status_contrato_servicos',
+      label: 'Contrato Prestação de Serviços',
+      opcoes: [
+        { value: 'pendente_envio', label: 'Pendente de envio' },
+        { value: 'enviado', label: 'Contrato Enviado' },
+      ],
+      concluido: 'enviado',
+    },
+  ],
+  alteracao: [
+    VIABILIDADE,
+    DBE,
+    INTEGRADOR,
+    TAXA,
+    { campo: 'status_contrato_social', label: 'Alteração de Contrato Social', opcoes: CONTRATO_SOCIAL, concluido: 'ok' },
+    REGISTRO_SIMPLES,
+  ],
+  baixa: [
+    DBE,
+    INTEGRADOR,
+    {
+      campo: 'status_documento_baixa',
+      label: 'Documento de Baixa',
+      opcoes: [
+        { value: 'pendente', label: 'Pendente' },
+        { value: 'enviado_assinatura', label: 'Enviado para Assinatura' },
+        { value: 'assinado', label: 'Assinado' },
+      ],
+      concluido: 'assinado',
+    },
+    REGISTRO_SIMPLES,
+    {
+      campo: 'status_distrato',
+      label: 'Distrato de Assessoria Contábil',
+      opcoes: [
+        { value: 'pendente_envio', label: 'Pendente de Envio' },
+        { value: 'enviado_assinatura', label: 'Enviado para Assinatura' },
+        { value: 'assinado', label: 'Assinado' },
+      ],
+      concluido: 'assinado',
+    },
+    {
+      campo: 'status_declaracoes_baixa',
+      label: 'Declarações Acessórias de Baixa',
+      opcoes: [
+        { value: 'pendente_envio', label: 'Pendente de Envio' },
+        { value: 'em_andamento', label: 'Em andamento' },
+        { value: 'enviadas', label: 'Enviadas' },
+      ],
+      concluido: 'enviadas',
+    },
+  ],
+}
+
+/** Número de referência exibido na lista: viabilidade (abertura/alteração) ou DBE (baixa). */
+export function numeroReferencia(p: Pick<Processo, 'tipo' | 'numero_viabilidade' | 'numero_dbe'>) {
+  return p.tipo === 'baixa' ? p.numero_dbe : p.numero_viabilidade
+}
 
 export const QUALIFICACOES = ['Sócio', 'Sócio-Administrador', 'Administrador']
 export const SEXOS = ['Masculino', 'Feminino']

@@ -1,7 +1,5 @@
-import { ACOMPANHAMENTO, labelDe } from '../types'
+import { labelDe, type Etapa } from '../types'
 import { Badge } from './ui'
-
-type Etapa = (typeof ACOMPANHAMENTO)[number]
 
 export function corEtapa(etapa: Etapa, valor: string) {
   if (valor === etapa.concluido) return 'ok'

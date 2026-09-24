@@ -3,10 +3,11 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { formatarData } from '../lib/format'
 import {
-  ACOMPANHAMENTO,
+  ACOMPANHAMENTO_POR_TIPO,
   STATUS_PROCESSO,
   TIPOS,
   labelDe,
+  numeroReferencia,
   type CampoAcompanhamento,
   type Parceiro,
   type Processo,
@@ -60,7 +61,7 @@ function saudacao() {
 }
 
 function progresso(p: Processo) {
-  return ACOMPANHAMENTO.filter((a) => p[a.campo] === a.concluido).length
+  return ACOMPANHAMENTO_POR_TIPO[p.tipo].filter((a) => p[a.campo] === a.concluido).length
 }
 
 export function Dashboard({ session }: { session: Session }) {
@@ -123,7 +124,7 @@ export function Dashboard({ session }: { session: Session }) {
       if (filtroTipo && p.tipo !== filtroTipo) return false
       if (filtroParceiro && p.parceiro_id !== filtroParceiro) return false
       if (!termo) return true
-      const texto = [p.razao_social, p.nome_fantasia, p.responsavel, p.numero_viabilidade, p.cnpj, ...(p.socios ?? []).map((s) => s.nome)]
+      const texto = [p.razao_social, p.nome_fantasia, p.responsavel, p.numero_viabilidade, p.numero_dbe, p.cnpj, ...(p.socios ?? []).map((s) => s.nome)]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -299,7 +300,7 @@ export function Dashboard({ session }: { session: Session }) {
                 <tr className="border-b border-slate-100 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
                   <th className="py-3.5 pr-4 pl-5">Empresa</th>
                   <th className="px-4 py-3.5">CNPJ</th>
-                  <th className="px-4 py-3.5">Nº Viabilidade</th>
+                  <th className="px-4 py-3.5">Nº Viabilidade / DBE</th>
                   <th className="px-4 py-3.5">Status</th>
                   <th className="px-4 py-3.5">Início</th>
                   <th className="py-3.5 pr-5 pl-4 text-right">Ações</th>
@@ -337,7 +338,8 @@ export function Dashboard({ session }: { session: Session }) {
                 {filtrados.map((p) => {
                   const aberto = expandidos.has(p.id)
                   const feitos = progresso(p)
-                  const pct = (feitos / ACOMPANHAMENTO.length) * 100
+                  const etapas = ACOMPANHAMENTO_POR_TIPO[p.tipo]
+                  const pct = (feitos / etapas.length) * 100
                   const T = ICONES_TIPO[p.tipo]
                   return (
                     <Fragment key={p.id}>
@@ -353,14 +355,14 @@ export function Dashboard({ session }: { session: Session }) {
                                 <Badge cor={p.tipo}>{labelDe(TIPOS, p.tipo)}</Badge>
                               </div>
                               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs whitespace-nowrap text-slate-400">
-                                <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100" title={`${feitos} de ${ACOMPANHAMENTO.length} etapas concluídas`}>
+                                <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100" title={`${feitos} de ${etapas.length} etapas concluídas`}>
                                   <div
                                     className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-brand-500 to-cyan-400'}`}
                                     style={{ width: `${pct}%` }}
                                   />
                                 </div>
                                 <span className="font-medium text-slate-500">
-                                  {feitos}/{ACOMPANHAMENTO.length} etapas
+                                  {feitos}/{etapas.length} etapas
                                 </span>
                                 {nomeParceiro(p.parceiro_id) && (
                                   <span className="inline-flex items-center gap-1">
@@ -373,7 +375,14 @@ export function Dashboard({ session }: { session: Session }) {
                           </div>
                         </td>
                         <td className="px-4 py-3.5 font-mono text-xs whitespace-nowrap text-slate-600">{p.cnpj || <span className="text-slate-300">—</span>}</td>
-                        <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">{p.numero_viabilidade || <span className="text-slate-300">—</span>}</td>
+                        <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">{numeroReferencia(p) ? (
+                            <span className="font-mono text-xs">
+                              {p.tipo === 'baixa' && <span className="mr-1 font-sans text-[10px] font-bold text-rose-500">DBE</span>}
+                              {numeroReferencia(p)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}</td>
                         <td className="px-4 py-3.5">
                           <Select
                             value={p.status}
@@ -403,7 +412,7 @@ export function Dashboard({ session }: { session: Session }) {
                           <td colSpan={6} className="px-5 pt-1 pb-5">
                             <div className="animar-modal rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
                               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                                {ACOMPANHAMENTO.map((a, i) => {
+                                {etapas.map((a, i) => {
                                   const cor = corEtapa(a, p[a.campo])
                                   return (
                                     <div key={a.campo} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
