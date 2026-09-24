@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Building2, ClipboardList, ListChecks, Plus, Save } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { buscarCep, mascaraCep, mascaraCnpj } from '../lib/format'
 import {
@@ -157,6 +158,7 @@ export function ProcessoForm({
   return (
     <Modal
       title={processo ? 'Editar processo' : 'Novo processo'}
+      subtitulo={processo ? processo.razao_social : 'Preencha os dados do processo societário'}
       onClose={onClose}
       footer={
         <>
@@ -165,12 +167,13 @@ export function ProcessoForm({
             Cancelar
           </button>
           <button className="btn-primary" onClick={salvar} disabled={salvando}>
+            <Save className="h-4 w-4" />
             {salvando ? 'Salvando...' : 'Salvar processo'}
           </button>
         </>
       }
     >
-      <Section title="Processo">
+      <Section icone={ClipboardList} title="Processo">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Tipo de processo">
             <Select value={r.tipo} onChange={(v) => set('tipo', v as TipoProcesso)} opcoes={TIPOS} />
@@ -182,22 +185,22 @@ export function ProcessoForm({
             <input type="date" className="input" value={r.data_inicio} onChange={(e) => set('data_inicio', e.target.value)} />
           </Field>
           <Field label="Parceiro (indicação)">
-            <div className="flex gap-1">
+            <div className="flex gap-1.5">
               <Select
                 value={r.parceiro_id ?? ''}
                 onChange={(v) => set('parceiro_id', v || null)}
                 opcoes={parceiros.map((p) => ({ value: p.id, label: p.nome }))}
                 vazio="Sem parceiro"
               />
-              <button type="button" className="btn-secondary px-2" title="Cadastrar parceiros" onClick={onGerenciarParceiros}>
-                +
+              <button type="button" className="btn-secondary shrink-0 px-3" title="Cadastrar parceiros" onClick={onGerenciarParceiros}>
+                <Plus className="h-4 w-4" />
               </button>
             </div>
           </Field>
         </div>
       </Section>
 
-      <Section title={abertura ? 'Dados da empresa' : 'Identificação da empresa'}>
+      <Section icone={Building2} cor="sky" title={abertura ? 'Dados da empresa' : 'Identificação da empresa'}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label={abertura ? 'CNPJ (quando liberado)' : 'Número do CNPJ'}>
             <input className="input" value={r.cnpj ?? ''} onChange={(e) => set('cnpj', mascaraCnpj(e.target.value))} placeholder="00.000.000/0000-00" />
@@ -301,7 +304,7 @@ export function ProcessoForm({
 
       {abertura && r.socios.map((s, i) => <SocioForm key={i} indice={i} socio={s} onChange={(novo) => setSocio(i, novo)} />)}
 
-      <Section title="Acompanhamento">
+      <Section icone={ListChecks} cor="emerald" title="Acompanhamento">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Número da Viabilidade">
             <input className="input" value={r.numero_viabilidade ?? ''} onChange={(e) => set('numero_viabilidade', e.target.value)} />

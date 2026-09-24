@@ -1,3 +1,4 @@
+import { Building2, ClipboardList, ListChecks, Pencil, Printer, UserRound } from 'lucide-react'
 import { formatarData, formatarMoeda, formatarNumero } from '../lib/format'
 import { ACOMPANHAMENTO, STATUS_PROCESSO, TIPOS, labelDe, type Parceiro, type Processo } from '../types'
 import { StatusBadge } from './StatusBadge'
@@ -30,18 +31,20 @@ export function ProcessoDetalhes({
       footer={
         <>
           <button className="btn-secondary" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />
             Imprimir
           </button>
           <button className="btn-secondary" onClick={onClose}>
             Fechar
           </button>
           <button className="btn-primary" onClick={onEditar}>
+            <Pencil className="h-4 w-4" />
             Editar processo
           </button>
         </>
       }
     >
-      <Section title="Processo">
+      <Section icone={ClipboardList} title="Processo">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Info label="Tipo" value={labelDe(TIPOS, p.tipo)} />
           <Info label="Status" value={labelDe(STATUS_PROCESSO, p.status)} />
@@ -50,13 +53,13 @@ export function ProcessoDetalhes({
         </div>
       </Section>
 
-      <Section title="Empresa">
+      <Section icone={Building2} cor="sky" title="Empresa">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Info label="CNPJ" value={p.cnpj} />
           <Info label="Razão Social" value={p.razao_social} className="col-span-2" />
           {abertura ? <Info label="Nome Fantasia" value={p.nome_fantasia} /> : <Info label="Sócio / Responsável" value={p.responsavel} />}
           {p.tipo === 'alteracao' && (
-            <Info label="Alteração a ser realizada" value={<span className="whitespace-pre-line">{p.alteracao_descricao}</span>} className="col-span-2 lg:col-span-4" />
+            <Info label="Alteração a ser realizada" value={p.alteracao_descricao && <span className="whitespace-pre-line">{p.alteracao_descricao}</span>} className="col-span-2 lg:col-span-4" />
           )}
           {abertura && (
             <>
@@ -67,7 +70,7 @@ export function ProcessoDetalhes({
               <Info label="CNAE Principal" value={p.cnae_principal} className="col-span-2" />
               <Info label="Tipo de Unidade" value={p.tipo_unidade === 'auxiliar' ? 'Auxiliar' : p.tipo_unidade === 'produtiva' ? 'Produtiva' : null} />
               <Info label="Capital Social" value={formatarMoeda(p.capital_social)} />
-              <Info label="CNAEs Secundários" value={<span className="whitespace-pre-line">{p.cnaes_secundarios}</span>} className="col-span-2 lg:col-span-4" />
+              <Info label="CNAEs Secundários" value={p.cnaes_secundarios && <span className="whitespace-pre-line">{p.cnaes_secundarios}</span>} className="col-span-2 lg:col-span-4" />
               <Info label="CEP" value={p.cep} />
               <Info label="Endereço" value={p.endereco} className="col-span-2" />
               <Info label="Complemento" value={p.complemento} />
@@ -82,7 +85,7 @@ export function ProcessoDetalhes({
 
       {abertura &&
         (p.socios ?? []).map((s, i) => (
-          <Section key={i} title={`Sócio ${i + 1}${s.nome ? ` — ${s.nome}` : ''}`}>
+          <Section key={i} icone={UserRound} cor="violet" title={`Sócio ${i + 1}${s.nome ? ` — ${s.nome}` : ''}`}>
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Info label="CPF" value={s.cpf} />
               <Info label="Qualificação" value={s.qualificacao} />
@@ -108,13 +111,13 @@ export function ProcessoDetalhes({
           </Section>
         ))}
 
-      <Section title="Acompanhamento">
+      <Section icone={ListChecks} cor="emerald" title="Acompanhamento">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Info label="Número da Viabilidade" value={p.numero_viabilidade} />
           {ACOMPANHAMENTO.map((a) => (
             <Info key={a.campo} label={a.label} value={<StatusBadge etapa={a} valor={p[a.campo]} />} />
           ))}
-          <Info label="Observações" value={<span className="whitespace-pre-line">{p.observacoes}</span>} className="col-span-2 lg:col-span-4" />
+          <Info label="Observações" value={p.observacoes && <span className="whitespace-pre-line">{p.observacoes}</span>} className="col-span-2 lg:col-span-4" />
         </div>
       </Section>
     </Modal>

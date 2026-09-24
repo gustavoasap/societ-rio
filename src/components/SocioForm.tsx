@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { UserRound } from 'lucide-react'
 import { buscarCep, mascaraCep, mascaraCpf, mascaraTelefone } from '../lib/format'
 import { CORES_RACA, ESTADOS_CIVIS, QUALIFICACOES, REGIMES_BENS, SEXOS, type Socio } from '../types'
 import { Field, Section, Select } from './ui'
@@ -16,7 +17,7 @@ export function SocioForm({ indice, socio, onChange }: { indice: number; socio: 
   }
 
   return (
-    <Section title={`Sócio ${indice + 1}${socio.nome ? ` — ${socio.nome}` : ''}`}>
+    <Section icone={UserRound} cor="violet" title={`Sócio ${indice + 1}${socio.nome ? ` — ${socio.nome}` : ''}`}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Nome completo" className="sm:col-span-2">
           <input className="input" value={socio.nome} onChange={(e) => set('nome', e.target.value)} />

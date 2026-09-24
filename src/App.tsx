@@ -16,9 +16,9 @@ function NovaSenha({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <form onSubmit={salvar} className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-lg">
-        <h1 className="text-lg font-semibold">Definir nova senha</h1>
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-asap-950 via-asap-900 to-asap-700 p-4">
+      <form onSubmit={salvar} className="w-full max-w-sm space-y-4 rounded-3xl bg-white p-7 shadow-2xl">
+        <h1 className="text-xl font-extrabold text-slate-900">Definir nova senha</h1>
         <input className="input" type="password" minLength={6} value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Nova senha" required />
         {erro && <p className="text-sm text-red-600">{erro}</p>}
         <button className="btn-primary w-full">Salvar senha</button>

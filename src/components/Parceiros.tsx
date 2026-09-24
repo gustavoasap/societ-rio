@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Handshake, Pencil, UserPlus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { mascaraTelefone } from '../lib/format'
 import type { Parceiro, Processo } from '../types'
@@ -55,8 +56,8 @@ export function Parceiros({
   }
 
   return (
-    <Modal title="Parceiros" onClose={onClose} largura="max-w-3xl">
-      <Section title={editando ? 'Editar parceiro' : 'Novo parceiro'}>
+    <Modal title="Parceiros" subtitulo="Quem indica clientes para o escritório" onClose={onClose} largura="max-w-3xl">
+      <Section icone={editando ? Pencil : UserPlus} title={editando ? 'Editar parceiro' : 'Novo parceiro'}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Nome">
             <input className="input" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
@@ -90,7 +91,7 @@ export function Parceiros({
         </div>
       </Section>
 
-      <Section title={`Cadastrados (${parceiros.length})`}>
+      <Section icone={Handshake} cor="violet" title={`Cadastrados (${parceiros.length})`}>
         {parceiros.length === 0 ? (
           <p className="text-sm text-slate-500">Nenhum parceiro cadastrado ainda.</p>
         ) : (
@@ -98,9 +99,12 @@ export function Parceiros({
             {parceiros.map((p) => {
               const qtd = processos.filter((x) => x.parceiro_id === p.id).length
               return (
-                <li key={p.id} className="flex flex-wrap items-center gap-3 py-2">
+                <li key={p.id} className="flex flex-wrap items-center gap-3 py-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-brand-500 text-sm font-bold text-white">
+                    {p.nome.trim().charAt(0).toUpperCase()}
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium text-slate-800">{p.nome}</div>
+                    <div className="font-semibold text-slate-800">{p.nome}</div>
                     <div className="text-xs text-slate-500">
                       {[p.telefone, p.email, `${qtd} processo(s) indicado(s)`].filter(Boolean).join(' · ')}
                     </div>
