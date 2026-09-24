@@ -133,9 +133,9 @@ export function Icms({ d }: { d: DadosAnalise }) {
         }
       >
         <div className="max-h-96 overflow-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[40rem] text-sm">
             <thead className="sticky top-0 bg-white">
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2 pr-3 text-left">Destino</th>
                 <th className="px-3 py-2">Interna do destino</th>
                 <th className="px-3 py-2">Interestadual (nacional)</th>
@@ -153,7 +153,7 @@ export function Icms({ d }: { d: DadosAnalise }) {
                   <tr key={uf} className={`border-b border-slate-100 text-right ${uf === origemTab ? 'bg-brand-50/60 font-semibold' : ''} ${ufsVendidas.has(uf) ? '' : 'text-slate-500'}`}>
                     <td className="py-1.5 pr-3 text-left">
                       {uf} {uf === origemTab && <span className="text-xs text-brand-600">(interna)</span>}
-                      {ufsVendidas.has(uf) && uf !== origemTab && <span className="ml-1 text-[10px] font-bold text-emerald-600">vende</span>}
+                      {ufsVendidas.has(uf) && uf !== origemTab && <span className="ml-1 text-[0.625rem] font-bold text-emerald-600">vende</span>}
                     </td>
                     <td className="px-3 py-1.5">{p2(interna)}</td>
                     <td className="px-3 py-1.5">{p2(nac)}</td>
@@ -176,9 +176,9 @@ export function Icms({ d }: { d: DadosAnalise }) {
           alíquota por NCM na aba Produtos.
         </p>
         <div className="max-h-96 overflow-auto">
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[51.25rem] text-sm">
             <thead className="sticky top-0 bg-white">
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2 pr-3 text-left">NCM</th>
                 <th className="px-3 py-2 text-left">UF fornecedor</th>
                 <th className="px-3 py-2">Valor</th>
@@ -194,7 +194,7 @@ export function Icms({ d }: { d: DadosAnalise }) {
                 <tr key={x.chave} className="border-b border-slate-100 text-right">
                   <td className="py-1.5 pr-3 text-left font-semibold">
                     {x.chave}
-                    {x.semMva && <span className="ml-1 text-[10px] font-bold text-rose-600">sem MVA</span>}
+                    {x.semMva && <span className="ml-1 text-[0.625rem] font-bold text-rose-600">sem MVA</span>}
                   </td>
                   <td className="px-3 py-1.5 text-left text-slate-500">{x.ufs}</td>
                   <td className="px-3 py-1.5">{moeda(x.valor)}</td>
@@ -270,9 +270,9 @@ export function Icms({ d }: { d: DadosAnalise }) {
         </div>
 
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[45rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2 pr-3 text-left">No período importado</th>
                 {regimes.map((r) => (
                   <th key={r} colSpan={3} className="px-3 py-2 text-center">
@@ -280,7 +280,7 @@ export function Icms({ d }: { d: DadosAnalise }) {
                   </th>
                 ))}
               </tr>
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th />
                 {regimes.map((r) => (
                   <FragmentoCab key={r} />
@@ -352,9 +352,9 @@ function TabelaUf({ linhas, total, destaque }: { linhas: ReturnType<typeof icmsV
   const tot = linhas.reduce((s, x) => ({ proprio: s.proprio + x.proprio, difal: s.difal + x.difal, nc: s.nc + x.naoContribuinte }), { proprio: 0, difal: 0, nc: 0 })
   return (
     <div className="max-h-96 overflow-auto">
-      <table className="w-full min-w-[760px] text-sm">
+      <table className="w-full min-w-[47.5rem] text-sm">
         <thead className="sticky top-0 bg-white">
-          <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+          <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
             <th className="py-2 pr-3 text-left">UF</th>
             <th className="px-3 py-2">Vendas</th>
             <th className="px-3 py-2">%</th>

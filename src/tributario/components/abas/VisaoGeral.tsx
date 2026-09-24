@@ -242,9 +242,9 @@ function Estabelecimentos({ d }: { d: DadosAnalise }) {
   return (
     <Section title="Estabelecimentos (consolidados na apuração)" icone={Building2} cor="sky">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
+        <table className="w-full min-w-[35rem] text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+            <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
               <th className="py-2.5 pr-3">Estabelecimento</th>
               <th className="px-3 py-2.5">CNPJ</th>
               <th className="px-3 py-2.5">UF</th>
@@ -257,7 +257,7 @@ function Estabelecimentos({ d }: { d: DadosAnalise }) {
             {porEstab.map(({ e, receita, compras }) => (
               <tr key={e.id} className="border-b border-slate-100">
                 <td className="py-2 pr-3 font-medium text-slate-700">
-                  {e.nome} {e.matriz && <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">MATRIZ</span>}
+                  {e.nome} {e.matriz && <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[0.625rem] font-bold text-amber-700">MATRIZ</span>}
                 </td>
                 <td className="px-3 py-2 text-slate-500">{mascaraCnpj(e.cnpj)}</td>
                 <td className="px-3 py-2 text-slate-500">{e.uf}</td>

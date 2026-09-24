@@ -236,7 +236,7 @@ export function Dashboard({ session }: { session: Session }) {
                   <span className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${gradiente} text-white shadow-lg ${sombra}`}>
                     <I className="h-5 w-5" />
                   </span>
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ativo ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${ativo ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}>
                     {ativo ? 'filtrando' : 'filtrar'}
                   </span>
                 </div>
@@ -283,7 +283,7 @@ export function Dashboard({ session }: { session: Session }) {
                     className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${ativo ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                   >
                     {t.label}
-                    <span className={`rounded-md px-1.5 text-[11px] ${ativo ? 'bg-brand-100 text-brand-700' : 'bg-slate-200 text-slate-500'}`}>{qtd}</span>
+                    <span className={`rounded-md px-1.5 text-[0.6875rem] ${ativo ? 'bg-brand-100 text-brand-700' : 'bg-slate-200 text-slate-500'}`}>{qtd}</span>
                   </button>
                 )
               })}
@@ -306,9 +306,9 @@ export function Dashboard({ session }: { session: Session }) {
 
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-sm">
+            <table className="w-full min-w-[57.5rem] text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                <tr className="border-b border-slate-100 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                   <th className="py-3.5 pr-4 pl-5">Empresa</th>
                   <th className="px-4 py-3.5">CNPJ</th>
                   <th className="px-4 py-3.5">Nº Viabilidade / DBE</th>
@@ -388,7 +388,7 @@ export function Dashboard({ session }: { session: Session }) {
                         <td className="px-4 py-3.5 font-mono text-xs whitespace-nowrap text-slate-600">{p.cnpj || <span className="text-slate-300">—</span>}</td>
                         <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">{numeroReferencia(p) ? (
                             <span className="font-mono text-xs">
-                              {p.tipo === 'baixa' && <span className="mr-1 font-sans text-[10px] font-bold text-rose-500">DBE</span>}
+                              {p.tipo === 'baixa' && <span className="mr-1 font-sans text-[0.625rem] font-bold text-rose-500">DBE</span>}
                               {numeroReferencia(p)}
                             </span>
                           ) : (
@@ -430,7 +430,7 @@ export function Dashboard({ session }: { session: Session }) {
                                     <div key={a.campo} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
                                       <div className="mb-2 flex items-center gap-2">
                                         <span
-                                          className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ${cor === 'ok' ? 'bg-emerald-500' : cor === 'pendente' ? 'bg-amber-400' : 'bg-sky-500'}`}
+                                          className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.625rem] font-bold text-white ${cor === 'ok' ? 'bg-emerald-500' : cor === 'pendente' ? 'bg-amber-400' : 'bg-sky-500'}`}
                                         >
                                           {cor === 'ok' ? '✓' : i + 1}
                                         </span>
@@ -548,7 +548,7 @@ function NumeroReferencia({
   return (
     <div className={`rounded-xl border p-3 ${baixa ? 'border-rose-100 bg-rose-50/50' : 'border-brand-100 bg-brand-50/50'}`}>
       <div className="mb-2 flex items-center gap-2">
-        <span className={`flex h-5 items-center rounded-full px-1.5 text-[10px] font-bold text-white ${baixa ? 'bg-rose-500' : 'bg-brand-500'}`}>Nº</span>
+        <span className={`flex h-5 items-center rounded-full px-1.5 text-[0.625rem] font-bold text-white ${baixa ? 'bg-rose-500' : 'bg-brand-500'}`}>Nº</span>
         <span className="text-xs font-semibold text-slate-600">{baixa ? 'Número DBE' : 'Número da Viabilidade'}</span>
       </div>
       <input
@@ -560,7 +560,7 @@ function NumeroReferencia({
         onBlur={salvar}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
       />
-      {invalido && <span className="mt-1 block text-[11px] text-rose-600">3 letras + 10 números</span>}
+      {invalido && <span className="mt-1 block text-[0.6875rem] text-rose-600">3 letras + 10 números</span>}
     </div>
   )
 }

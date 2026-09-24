@@ -127,10 +127,10 @@ export function Parceiros({ d, onRegime }: { d: DadosAnalise; onRegime: (documen
           <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input className="input pl-10" placeholder="Buscar por nome ou CNPJ..." value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
-        <div className="max-h-[600px] overflow-auto">
-          <table className="w-full min-w-[1140px] text-sm">
+        <div className="max-h-[37.5rem] overflow-auto">
+          <table className="w-full min-w-[71.25rem] text-sm">
             <thead className="sticky top-0 z-10 bg-white">
-              <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="w-10 py-2.5 pr-2">Usar</th>
                 <th className="px-2 py-2.5">Nome</th>
                 <th className="px-2 py-2.5">CNPJ</th>
@@ -153,7 +153,7 @@ export function Parceiros({ d, onRegime }: { d: DadosAnalise; onRegime: (documen
                     </td>
                     <td className="max-w-72 truncate px-2 py-2 font-medium text-slate-700" title={x.nome}>
                       {x.nome}
-                      {x.simples && <span className="ml-2 rounded bg-amber-50 px-1.5 text-[10px] font-bold text-amber-700 no-underline">SIMPLES</span>}
+                      {x.simples && <span className="ml-2 rounded bg-amber-50 px-1.5 text-[0.625rem] font-bold text-amber-700 no-underline">SIMPLES</span>}
                     </td>
                     <td className="px-2 py-2 text-slate-500">{x.chave === 'PF' ? '—' : mascaraCnpj(x.chave)}</td>
                     <td className="px-2 py-2 text-slate-500">{TIPO[x.tipo] ?? x.tipo}</td>

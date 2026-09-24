@@ -71,7 +71,7 @@ export function DepartamentoForm({ inicial, onClose, onSalvo }: { inicial: Depar
   return (
     <Modal title={inicial ? 'Editar departamento' : 'Novo departamento'} onClose={onClose} largura="max-w-2xl" footer={<Rodape salvando={salvando} onClose={onClose} form="form-dep" />}>
       <form id="form-dep" onSubmit={salvar} className="space-y-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
-        <div className="grid gap-4 sm:grid-cols-[1fr_110px]">
+        <div className="grid gap-4 sm:grid-cols-[1fr_6.875rem]">
           <Field label="Nome">
             <input className="input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Fiscal" required />
           </Field>
@@ -160,7 +160,7 @@ export function ModuloForm({
             <Select value={status} onChange={(v) => setStatus(v as StatusModulo)} opcoes={STATUS_MODULO} />
           </Field>
         </div>
-        <div className="grid gap-4 sm:grid-cols-[1fr_110px]">
+        <div className="grid gap-4 sm:grid-cols-[1fr_6.875rem]">
           <Field label="Nome">
             <input className="input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Conciliação bancária" required />
           </Field>

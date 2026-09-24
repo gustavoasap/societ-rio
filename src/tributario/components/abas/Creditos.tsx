@@ -115,9 +115,9 @@ export function Creditos({ d }: { d: DadosAnalise }) {
 
       <Section title="Créditos por origem e regime" icone={HandCoins}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[45rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2.5 pr-3 text-left">Crédito</th>
                 <th className="px-3 py-2.5 text-left">Fundamento</th>
                 {regimes.map((r) => (
@@ -174,10 +174,10 @@ export function Creditos({ d }: { d: DadosAnalise }) {
           <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input className="input pl-10" placeholder="Buscar fornecedor..." value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
-        <div className="max-h-[520px] overflow-auto">
-          <table className="w-full min-w-[980px] text-sm">
+        <div className="max-h-[32.5rem] overflow-auto">
+          <table className="w-full min-w-[61.25rem] text-sm">
             <thead className="sticky top-0 bg-white">
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2 pr-3 text-left">Fornecedor</th>
                 <th className="px-3 py-2 text-left">Tipo</th>
                 <th className="px-3 py-2">Compras</th>
@@ -192,11 +192,11 @@ export function Creditos({ d }: { d: DadosAnalise }) {
                 <tr key={f.chave} className="border-b border-slate-100 text-right">
                   <td className="max-w-72 truncate py-1.5 pr-3 text-left font-medium text-slate-700" title={f.nome}>
                     {f.nome}
-                    <div className="text-[11px] font-normal text-slate-400">{/^\d{14}$/.test(f.chave) ? mascaraCnpj(f.chave) : ''}</div>
+                    <div className="text-[0.6875rem] font-normal text-slate-400">{/^\d{14}$/.test(f.chave) ? mascaraCnpj(f.chave) : ''}</div>
                   </td>
                   <td className="px-3 py-1.5 text-left">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${['normal', 'real', 'presumido'].includes(f.tipo) ? 'bg-emerald-50 text-emerald-700' : f.tipo === 'simples' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}
+                      className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${['normal', 'real', 'presumido'].includes(f.tipo) ? 'bg-emerald-50 text-emerald-700' : f.tipo === 'simples' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}
                     >
                       {NOME_TIPO[f.tipo]}
                     </span>

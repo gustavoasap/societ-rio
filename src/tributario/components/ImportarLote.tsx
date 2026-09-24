@@ -228,9 +228,9 @@ export function ImportarLote({ empresas, onClose, onConcluido }: { empresas: Emp
           </div>
 
           <div className="overflow-x-auto rounded-2xl bg-white ring-1 ring-slate-200/70">
-            <table className="w-full min-w-[1100px] text-sm">
+            <table className="w-full min-w-[68.75rem] text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                   <th className="px-4 py-2.5">Arquivo</th>
                   <th className="px-3 py-2.5">Empresa / CNPJ</th>
                   <th className="px-3 py-2.5">Destino</th>

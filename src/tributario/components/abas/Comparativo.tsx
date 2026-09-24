@@ -40,14 +40,14 @@ export function Comparativo({ bases, ctx, regimeAtual }: { bases: BaseMensal[]; 
                 className={`relative cursor-pointer rounded-2xl p-5 text-left ring-1 transition hover:-translate-y-0.5 hover:shadow-lg ${melhor ? 'bg-emerald-50/60 ring-2 ring-emerald-400' : 'bg-white ring-slate-200'} ${detalhe === r.regime ? 'shadow-lg' : ''}`}
               >
                 {melhor && (
-                  <span className="absolute -top-3 left-5 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white shadow">
+                  <span className="absolute -top-3 left-5 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-0.5 text-[0.6875rem] font-bold text-white shadow">
                     <Award className="h-3.5 w-3.5" /> Recomendado
                   </span>
                 )}
                 <div className="flex items-center gap-2 font-bold text-slate-800">
                   <PontoRegime regime={r.regime} />
                   {nomeRegime(r.regime)}
-                  {r.regime === regimeAtual && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">atual</span>}
+                  {r.regime === regimeAtual && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[0.625rem] font-semibold text-slate-500">atual</span>}
                 </div>
                 <div className="mt-3 text-2xl font-extrabold text-slate-900 tabular-nums">{moeda(r.total)}</div>
                 <div className="text-sm text-slate-500">
@@ -134,9 +134,9 @@ function PisCofinsSistemas({ meses, ctx, presumido }: { meses: BaseMensal[]; ctx
         para as receitas do art. 10 da Lei 10.833/2003. Não cumulativo: 1,65% + 7,6% com créditos (Leis 10.637/2002 e 10.833/2003).
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[45rem] text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+            <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
               <th className="py-2 pr-3 text-left" />
               {colunas.map((c) => (
                 <th key={c.id} className="px-3 py-2">
@@ -152,7 +152,7 @@ function PisCofinsSistemas({ meses, ctx, presumido }: { meses: BaseMensal[]; ctx
                 {colunas.map((c) => (
                   <td key={c.id} className="px-3 py-2">
                     {moeda(f(c.r))}
-                    {forte && c.r.receita > 0 && rot !== 'Lucro líquido (DRE)' && <div className="text-[11px] font-medium text-slate-500">{pct(f(c.r) / c.r.receita)}</div>}
+                    {forte && c.r.receita > 0 && rot !== 'Lucro líquido (DRE)' && <div className="text-[0.6875rem] font-medium text-slate-500">{pct(f(c.r) / c.r.receita)}</div>}
                   </td>
                 ))}
               </tr>

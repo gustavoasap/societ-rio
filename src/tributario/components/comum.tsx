@@ -56,9 +56,9 @@ export function TabelaTributos({
   const usados = TRIBUTOS.filter((t) => colunas.some((c) => Math.abs(c.tributos[t]) > 0.005))
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-sm">
+      <table className="w-full min-w-[35rem] text-sm">
         <thead>
-          <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+          <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
             <th className="py-2.5 pr-4 text-left">Tributo</th>
             {colunas.map((c) => (
               <th key={c.id} className={`px-3 py-2.5 ${destaque === c.id ? 'text-brand-700' : ''}`}>
@@ -120,7 +120,7 @@ export function Memoria({ linhas, titulo = 'Memória de cálculo' }: { linhas: L
             {[...grupos.entries()].map(([g, ls]) => (
               <Fragment key={g}>
                 <tr className="bg-slate-50">
-                  <td colSpan={3} className="px-4 py-1.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                  <td colSpan={3} className="px-4 py-1.5 text-[0.6875rem] font-bold tracking-wider text-slate-500 uppercase">
                     {g}
                   </td>
                 </tr>
@@ -156,7 +156,7 @@ export function Abas<T extends string>({
     <div className="no-print space-y-1 rounded-2xl bg-white p-1.5 shadow-sm ring-1 ring-slate-200/70">
       {grupos.map((g) => (
         <div key={g} className="flex flex-wrap items-center gap-1">
-          {g && <span className="w-20 shrink-0 px-2 text-[10px] font-bold tracking-wider text-slate-400 uppercase">{g}</span>}
+          {g && <span className="w-20 shrink-0 px-2 text-[0.625rem] font-bold tracking-wider text-slate-400 uppercase">{g}</span>}
           {abas
             .filter((a) => (a.grupo ?? '') === g)
             .map((a) => (

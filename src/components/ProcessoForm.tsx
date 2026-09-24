@@ -345,7 +345,7 @@ export function ProcessoForm({
                 placeholder="SPN2633893093"
                 maxLength={13}
               />
-              <span className={`mt-1 block text-[11px] ${viabilidadeInvalida ? 'text-rose-600' : 'text-slate-400'}`}>
+              <span className={`mt-1 block text-[0.6875rem] ${viabilidadeInvalida ? 'text-rose-600' : 'text-slate-400'}`}>
                 {viabilidadeInvalida ? `Faltam ${13 - (r.numero_viabilidade ?? '').length} caractere(s): 3 letras + 10 números` : '3 letras + 10 números'}
               </span>
             </Field>

@@ -129,9 +129,9 @@ export function Produtos({
           <input className="input pl-10" placeholder="Buscar NCM ou produto..." value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] text-sm">
+          <table className="w-full min-w-[73.75rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2.5 pr-3">NCM</th>
                 <th className="px-3 py-2.5">Produto (exemplo)</th>
                 <th className="px-3 py-2.5 text-right">Vendas</th>

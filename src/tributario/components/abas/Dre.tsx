@@ -108,9 +108,9 @@ export function Dre({ d }: { d: DadosAnalise }) {
         }
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[47.5rem] text-sm">
             <thead>
-              <tr className="border-b-2 border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+              <tr className="border-b-2 border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-500 uppercase">
                 <th className="sticky left-0 bg-white py-2.5 pr-4 text-left">Demonstração do resultado</th>
                 {tabelas.map((t) => (
                   <th key={t.id} className={`px-3 py-2.5 whitespace-nowrap ${melhor?.t.id === t.id && tabelas.length > 1 && visao === 'regimes' ? 'text-emerald-700' : ''}`}>
@@ -139,7 +139,7 @@ export function Dre({ d }: { d: DadosAnalise }) {
                       return (
                         <td key={t.id} className={`px-3 py-2 text-right whitespace-nowrap ${forte ? 'font-bold text-slate-900' : v < 0 ? 'text-slate-600' : 'text-slate-700'}`}>
                           {Math.abs(v) < 0.005 ? <span className="text-slate-300">—</span> : moeda(v)}
-                          {mostrarPct && Math.abs(v) >= 0.005 && rb > 0 && <div className="text-[10px] font-medium text-slate-400">{pct(v / rb, 1)}</div>}
+                          {mostrarPct && Math.abs(v) >= 0.005 && rb > 0 && <div className="text-[0.625rem] font-medium text-slate-400">{pct(v / rb, 1)}</div>}
                         </td>
                       )
                     })}

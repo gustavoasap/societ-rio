@@ -76,9 +76,9 @@ export function Aliquotas({ d }: { d: DadosAnalise }) {
 
       <Section title={`Alíquotas por tributo e regime — ${ano}`} icone={Percent}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[61.25rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2.5 pr-3">Tributo</th>
                 {colunas.map((r) => (
                   <th key={r.value} className="px-3 py-2.5">
@@ -148,9 +148,9 @@ export function Aliquotas({ d }: { d: DadosAnalise }) {
           RBT12 projetado de {moeda(rbt12)} → faixa {fx.faixa}, alíquota efetiva {pct(fx.efetiva, 4)} = (RBT12 × nominal − parcela a deduzir) ÷ RBT12.
         </p>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[56.25rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2 pr-3 text-left">Faixa</th>
                 <th className="px-2 py-2">RBT12 até</th>
                 <th className="px-2 py-2">Nominal</th>
@@ -230,9 +230,9 @@ function PorDentroPorFora({ d, ano }: { d: DadosAnalise; ano: number }) {
         {d.regimeAtual === 'simples' ? 'parcela do DAS' : 'débito do regime'}): <strong>{pct(pc)}</strong> da receita.
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[45rem] text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+            <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
               <th className="py-2 pr-3 text-left">Composição</th>
               <th className="px-3 py-2">Hoje (2026)</th>
               <th className={`px-3 py-2 ${params.premissaPreco === 'repasse' ? 'text-brand-700' : ''}`}>{anoRef} — repasse por fora</th>

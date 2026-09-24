@@ -167,7 +167,7 @@ export function Badge({ cor, children }: { cor: string; children: ReactNode }) {
 export function Info({ label, value, className = '' }: { label: string; value: ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <div className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">{label}</div>
+      <div className="text-[0.6875rem] font-semibold tracking-wide text-slate-400 uppercase">{label}</div>
       <div className="mt-0.5 text-sm font-medium break-words text-slate-800">
         {value === null || value === undefined || value === '' ? <span className="text-slate-300">—</span> : value}
       </div>
