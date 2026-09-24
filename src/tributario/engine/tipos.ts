@@ -90,6 +90,7 @@ export interface Parametros {
   receitasFinanceirasMensais: number
   servicosCreditaveisPisCofins: string // itens da LC 116 que geram crédito de PIS/COFINS no Real (armazenagem, frete)
   aliquotaFornecedoresSimples: number // alíquota efetiva média do DAS dos fornecedores do Simples (crédito de IBS/CBS)
+  pisCofinsFornecedores: number // PIS/COFINS embutidos no preço dos fornecedores do regime regular (%) — saem do preço em 2027 (repasse)
   cenarioAliquotas: string
   cbsReferencia: number
   ibsReferencia: number
@@ -150,6 +151,7 @@ export const PARAMETROS_PADRAO: Parametros = {
   receitasFinanceirasMensais: 0,
   servicosCreditaveisPisCofins: '11.04, 16.01, 16.02, 26.01',
   aliquotaFornecedoresSimples: 8,
+  pisCofinsFornecedores: 9.25,
   cenarioAliquotas: CENARIOS_ALIQUOTA[0].id,
   cbsReferencia: CENARIOS_ALIQUOTA[0].cbs,
   ibsReferencia: CENARIOS_ALIQUOTA[0].ibs,

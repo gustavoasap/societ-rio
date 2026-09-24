@@ -20,7 +20,7 @@ import {
   Users,
 } from 'lucide-react'
 import { mascaraCnpj } from '../../lib/format'
-import type { Contexto } from '../engine/apuracao'
+import { apurar, type Contexto } from '../engine/apuracao'
 import { estimarMix, linhaConsiderada, montarBases, naturezaDe, receitaDaBase, type DadosEstab } from '../engine/base'
 import { projetar } from '../engine/projecao'
 import { ICMS_INTERNO_UF } from '../engine/tabelas'
@@ -151,12 +151,17 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     [estabFiltro, linhas, params, dadosEstab, bases],
   )
   const mix = useMemo(() => estimarMix(linhas, params), [linhas, params])
+  const regimeAtual: RegimeId = empresa.regime_atual
   const ctx: Contexto = useMemo(() => {
     const receitas = new Map(bases.map((b) => [b.competencia, receitaDaBase(b)]))
-    return { params, mix, receitaHistorica: (c: string) => receitas.get(c) ?? params.receitasAnteriores[c] }
-  }, [params, mix, bases])
+    const c: Contexto = { params, mix, receitaHistorica: (x: string) => receitas.get(x) ?? params.receitasAnteriores[x] }
+    // PIS/COFINS "por dentro" do preço atual, no regime em que a empresa está (débito, não o líquido de créditos)
+    const hoje = bases.filter((b) => Number(b.competencia.slice(0, 4)) <= 2026)
+    const r = apurar(regimeAtual, hoje.length ? hoje : bases, { ...c, anoRegras: 2026 })
+    const pc = regimeAtual === 'simples' ? r.tributos.PIS + r.tributos.COFINS : (r.dre.deducoes['PIS'] ?? 0) + (r.dre.deducoes['COFINS'] ?? 0)
+    return { ...c, pisCofinsEmbutido: r.receita ? pc / r.receita : 0 }
+  }, [params, mix, bases, regimeAtual])
   const anos = useMemo(() => projetar(bases, ctx), [bases, ctx])
-  const regimeAtual: RegimeId = empresa.regime_atual
 
   const dados: DadosAnalise = useMemo(() => {
     const nomes = new Map(parceiros.map((p) => [p.documento, p]))

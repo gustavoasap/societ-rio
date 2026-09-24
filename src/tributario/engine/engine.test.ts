@@ -154,7 +154,8 @@ describe('Simples Nacional', () => {
     const hib = apurar('simples_hibrido', [b], ctx({ premissaPreco: 'repasse' }, { rbt12Fixo: 1_200_000 }))
     expect(hib.das).toBeCloseTo(trad.das - trad.tributos.CBS, 6)
     const aliq = regrasDoAno(2027, PARAMETROS_PADRAO.cbsReferencia, PARAMETROS_PADRAO.ibsReferencia)
-    const esperado = (100_000 - trad.tributos.ICMS) * (aliq.cbs + aliq.ibs) - (60_000 - 7_200) * (aliq.cbs + aliq.ibs)
+    // repasse: o preço do fornecedor perde o PIS/COFINS embutido (9,25% no regime regular)
+    const esperado = (100_000 - trad.tributos.ICMS) * (aliq.cbs + aliq.ibs) - (60_000 - 7_200) * (1 - 0.0925) * (aliq.cbs + aliq.ibs)
     expect(hib.tributos.CBS + hib.tributos.IBS).toBeCloseTo(esperado, 4)
   })
 
@@ -394,5 +395,26 @@ describe('ICMS nas entradas, cenário de ICMS, premissa de preço, filtros e DRE
     // deduções − créditos de compras = ICMS + PIS + COFINS devidos
     expect(ded - r.dre.creditosCompras).toBeCloseTo(r.tributos.ICMS + r.tributos.PIS + r.tributos.COFINS, 4)
     expect(r.dre.irpj).toBeCloseTo(r.tributos.IRPJ, 6)
+  })
+})
+
+describe('por dentro × por fora na transição (PIS/COFINS → CBS)', () => {
+  const b = mes('2027-06', { vendas: 100_000, vendasInternas: 100_000, icmsVendasInternas: 18_000, compras: 50_000, icmsCompras: 6_000 })
+  const a = (PARAMETROS_PADRAO.cbsReferencia - 0.1 + 0.1) / 100 // 2027: CBS ref − 0,1 p.p. + IBS 0,1%
+
+  it('repasse: a base da CBS/IBS exclui ICMS e o PIS/COFINS extinto que estava embutido no preço', () => {
+    const r = apurar('presumido', [b], ctx({ premissaPreco: 'repasse' }, { pisCofinsEmbutido: 0.0365 }))
+    const baseVenda = 100_000 - 18_000 - 3_650
+    const baseCompra = (50_000 - 6_000) * (1 - 0.0925)
+    expect(r.tributos.CBS + r.tributos.IBS).toBeCloseTo((baseVenda - baseCompra) * a, 2)
+    // preço de venda novo = valor atual − PIS/COFINS extintos + IBS/CBS por fora
+    expect(r.dre.receitaBruta).toBeCloseTo(100_000 - 3_650 + baseVenda * a, 2)
+  })
+
+  it('preço mantido: o PIS/COFINS extinto vira espaço para a CBS/IBS extraída do preço total', () => {
+    const sem = apurar('presumido', [b], ctx({ premissaPreco: 'preco_mantido' }))
+    const com = apurar('presumido', [b], ctx({ premissaPreco: 'preco_mantido' }, { pisCofinsEmbutido: 0.0365 }))
+    expect(com.tributos.CBS).toBeCloseTo(sem.tributos.CBS, 6)
+    expect(com.tributos.CBS + com.tributos.IBS).toBeCloseTo(((100_000 - 18_000) / (1 + a) - (50_000 - 6_000) / (1 + a)) * a, 2)
   })
 })

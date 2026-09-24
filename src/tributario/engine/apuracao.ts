@@ -36,6 +36,11 @@ export interface Contexto {
   rbt12Fixo?: number
   /** Ano cujas regras serão aplicadas (padrão: ano de cada competência). */
   anoRegras?: number
+  /**
+   * PIS/COFINS embutidos "por dentro" no preço de venda atual (fração da receita bruta), apurados no regime em que a empresa está hoje.
+   * Com a extinção em 2027, essa parcela sai do preço e não compõe a base da CBS/IBS, que é "por fora".
+   */
+  pisCofinsEmbutido?: number
 }
 
 const ano = (comp: string) => Number(comp.slice(0, 4))
@@ -241,7 +246,22 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
   const { params: p, mix } = ctx
   const fr = fracoesDoMes(b, p, mix)
   const memoria: LinhaMemoria[] = []
-  const vazio = { b2b: fr.b2b, cbs: 0, ibs: 0, debito: 0, creditos: 0, credCompras: 0, credSimples: 0, credOutras: 0, perdidoSimples: 0, saldoCredor: 0, memoria }
+  const vazio = {
+    b2b: fr.b2b,
+    cbs: 0,
+    ibs: 0,
+    debito: 0,
+    creditos: 0,
+    credCompras: 0,
+    credSimples: 0,
+    credOutras: 0,
+    perdidoSimples: 0,
+    saldoCredor: 0,
+    reducaoPrecoVenda: 0,
+    reducaoPrecoCompras: 0,
+    reducaoPrecoOutras: 0,
+    memoria,
+  }
   if (regras.pisCofins) {
     if (regras.teste)
       memoria.push({ grupo: 'IBS/CBS', descricao: 'Ano-teste 2026: CBS 0,9% e IBS 0,1% destacados, compensáveis/dispensados', valor: 0, formula: 'LC 214, arts. 343, 346 e 348' })
@@ -251,32 +271,55 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
   const aliqVenda = aliq * (1 - fr.reducao)
   const dentro = p.premissaPreco === 'preco_mantido'
   const div = (a: number) => (dentro ? 1 + a : 1)
-  // Base: valor da operação sem ICMS/ISS/IPI/PIS/COFINS (LC 214, art. 12, §2º); exportação imune (art. 79)
-  const valor = Math.max(0, b.vendas - b.devolucoesVenda + b.servicos - icmsOperacao - issOperacao)
+  // Tributos "por dentro" (ICMS, ISS, PIS, COFINS) estão no valor da nota; a CBS/IBS é "por fora" e sua base exclui
+  // ICMS, ISS, IPI, PIS e COFINS (LC 214, art. 12, §2º). Exportação é imune (art. 79).
+  const vendasBrutas = Math.max(0, b.vendas - b.devolucoesVenda + b.servicos)
+  // Repasse: o preço líquido perde o PIS/COFINS extinto e a CBS/IBS é somada por fora sobre esse valor menor.
+  // Preço mantido: o preço total não muda — o espaço do PIS/COFINS extinto é ocupado pela CBS/IBS calculada "de dentro para fora".
+  const pisCofinsVenda = dentro ? 0 : vendasBrutas * (ctx.pisCofinsEmbutido ?? 0)
+  const valor = Math.max(0, vendasBrutas - icmsOperacao - issOperacao - pisCofinsVenda)
   const base = valor / div(aliqVenda)
   const debito = base * aliqVenda
 
   const comprasLiquidas = Math.max(0, b.compras - b.devolucoesCompra)
   const fatorSimples = b.compras ? b.comprasFornecedorSimples / b.compras : 0
   const tributosCompra = (b.icmsCompras + b.ipiCompras + b.stCompras) * (1 - fatorSimples)
-  const comprasRegular = Math.max(0, comprasLiquidas * (1 - fatorSimples) - tributosCompra)
+  const comprasRegularBruto = Math.max(0, comprasLiquidas * (1 - fatorSimples) - tributosCompra)
+  // o fornecedor do regime regular também deixa de embutir PIS/COFINS no preço (só na premissa de repasse)
+  const pcForn = dentro ? 0 : p.pisCofinsFornecedores / 100
+  const pisCofinsCompra = comprasRegularBruto * pcForn
+  const comprasRegular = comprasRegularBruto - pisCofinsCompra
   const aliqCompra = aliq * (1 - mix.reducaoIbsCbs)
   const credCompras = (comprasRegular / div(aliqCompra)) * aliqCompra
   const comprasSimples = comprasLiquidas * fatorSimples
   const credSimples = comprasSimples * aliquotaCreditoFornecedorSimples(p, regras)
   const perdidoSimples = Math.max(0, (comprasSimples / div(aliqCompra)) * aliqCompra - credSimples)
-  const outras = b.servicosTomados + b.energia + b.fretes + b.comunicacao + b.usoConsumo + b.ativo + p.despesasCreditaveisMensais
+  const outrasBruto = b.servicosTomados + b.energia + b.fretes + b.comunicacao + b.usoConsumo + b.ativo + p.despesasCreditaveisMensais
+  const pisCofinsOutras = outrasBruto * pcForn
+  const outras = outrasBruto - pisCofinsOutras
   const credOutras = (outras / div(aliq)) * aliq
   const creditos = credCompras + credSimples + credOutras
   const liquido = debito - creditos
   const cbsShare = aliq ? regras.cbs / aliq : 0
 
   memoria.push(
+    { grupo: 'IBS/CBS', descricao: 'Vendas e serviços (valor das notas, com tributos "por dentro")', valor: vendasBrutas },
+    { grupo: 'IBS/CBS', descricao: '(−) ICMS/ISS "por dentro" (não integram a base)', valor: -(icmsOperacao + issOperacao), formula: 'LC 214, art. 12, §2º' },
+    ...(dentro
+      ? []
+      : [
+          {
+            grupo: 'IBS/CBS',
+            descricao: `(−) PIS/COFINS embutidos no preço atual, extintos em 2027 (${pct(ctx.pisCofinsEmbutido ?? 0)} da receita)`,
+            valor: -pisCofinsVenda,
+            formula: 'EC 132, ADCT art. 126, II',
+          },
+        ]),
     {
       grupo: 'IBS/CBS',
-      descricao: dentro ? 'Base de cálculo (valor sem ICMS/ISS, IBS/CBS "por dentro" do preço mantido)' : 'Base de cálculo (valor sem ICMS/ISS; IBS/CBS somado ao preço)',
+      descricao: dentro ? `Base de cálculo (preço mantido: valor ÷ (1 + ${pct(aliqVenda)}))` : 'Base de cálculo (IBS/CBS somados por fora)',
       valor: base,
-      formula: 'LC 214, art. 12, §2º',
+      formula: dentro ? 'CBS/IBS calculados "por fora", extraídos do preço total' : 'LC 214, art. 12',
     },
     {
       grupo: 'IBS/CBS',
@@ -300,6 +343,9 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
     credOutras,
     perdidoSimples,
     saldoCredor: Math.max(0, -liquido),
+    reducaoPrecoVenda: pisCofinsVenda,
+    reducaoPrecoCompras: pisCofinsCompra,
+    reducaoPrecoOutras: pisCofinsOutras,
     memoria,
   }
 }
@@ -474,9 +520,10 @@ function aplicarIbsCbsNaDre(d: DreDados, x: ReturnType<typeof ibsCbsRegular>, re
   d.creditosCompras += x.credCompras + x.credSimples
   d.creditosDespesas += x.credOutras
   if (p.premissaPreco === 'repasse') {
-    d.receitaBruta += x.debito
-    d.cmv += x.credCompras + x.credSimples
-    d.servicosTomados += x.credOutras
+    // preço de venda = valor atual − PIS/COFINS extintos + IBS/CBS por fora; compras idem do lado do fornecedor
+    d.receitaBruta += x.debito - x.reducaoPrecoVenda
+    d.cmv += x.credCompras + x.credSimples - x.reducaoPrecoCompras
+    d.servicosTomados += x.credOutras - x.reducaoPrecoOutras
   }
 }
 

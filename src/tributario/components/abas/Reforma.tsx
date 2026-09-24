@@ -79,8 +79,9 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
           </label>
         </div>
         <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-600">
-          Premissa: o valor das operações registrado hoje é mantido como base de cálculo; IBS e CBS são calculados "por fora" e sem ICMS/ISS/PIS/COFINS/IPI na base (LC 214/2025,
-          art. 12, §2º). As alíquotas de referência definitivas serão fixadas pelo Senado — a da CBS de 2027 até 15/12/2026. {CENARIOS_ALIQUOTA.find((c) => c.id === p.cenarioAliquotas)?.fonte}
+          Premissa de preço: {p.premissaPreco === 'preco_mantido' ? 'preço ao cliente mantido — a CBS/IBS é extraída do preço total, ocupando o espaço do PIS/COFINS extinto' : `repasse por fora — o preço perde o PIS/COFINS embutido hoje (${((ctx.pisCofinsEmbutido ?? 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% da receita) e a CBS/IBS é somada`}.
+          A base da CBS/IBS exclui ICMS, ISS, IPI, PIS e COFINS (LC 214/2025, art. 12, §2º) — tributos "por dentro" × "por fora": veja o exemplo na aba Alíquotas. As alíquotas de
+          referência definitivas serão fixadas pelo Senado — a da CBS de 2027 até 15/12/2026. {CENARIOS_ALIQUOTA.find((c) => c.id === p.cenarioAliquotas)?.fonte}
         </p>
       </Section>
 

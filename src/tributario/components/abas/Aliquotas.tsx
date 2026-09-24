@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Percent, TableProperties } from 'lucide-react'
+import { ArrowDownUp, Percent, TableProperties } from 'lucide-react'
 import { Section } from '../../../components/ui'
 import { faixaSimples } from '../../engine/apuracao'
 import { ANEXOS_SIMPLES, ICMS_INTERNO_UF, regrasDoAno, type TributoDas } from '../../engine/tabelas'
@@ -141,6 +141,8 @@ export function Aliquotas({ d }: { d: DadosAnalise }) {
         </div>
       </Section>
 
+      <PorDentroPorFora d={d} ano={ano} />
+
       <Section title={`Simples Nacional — ${ANEXOS_SIMPLES[params.anexo].nome} (LC 123/2006)`} icone={TableProperties} cor="sky">
         <p className="-mt-2 mb-3 text-sm text-slate-500">
           RBT12 projetado de {moeda(rbt12)} → faixa {fx.faixa}, alíquota efetiva {pct(fx.efetiva, 4)} = (RBT12 × nominal − parcela a deduzir) ÷ RBT12.
@@ -182,5 +184,77 @@ export function Aliquotas({ d }: { d: DadosAnalise }) {
         </p>
       </Section>
     </div>
+  )
+}
+
+/**
+ * Formação do preço e da base: hoje o ICMS e o PIS/COFINS estão "por dentro" do valor da nota; a CBS e o IBS são "por fora"
+ * e sua base exclui ICMS, ISS, IPI, PIS e COFINS (LC 214, art. 12, §2º). Exemplo com R$ 100,00 de venda.
+ */
+function PorDentroPorFora({ d, ano }: { d: DadosAnalise; ano: number }) {
+  const { params } = d
+  const anoRef = Math.max(ano, 2027)
+  const regras = regrasDoAno(anoRef, params.cbsReferencia, params.ibsReferencia, params.aliquotasAno[String(anoRef)])
+  const matriz = d.estabs.find((e) => e.matriz) ?? d.estabs[0]
+  const icmsAliq = (matriz?.aliquota_icms ?? ICMS_INTERNO_UF[matriz?.uf ?? 'SP'] ?? 18) / 100
+  const pc = d.ctx.pisCofinsEmbutido ?? 0
+  const a = regras.cbs + regras.ibs
+  const preco = 100
+  const icmsHoje = preco * icmsAliq
+  const pcHoje = preco * pc
+  const icmsAno = preco * icmsAliq * regras.icmsIssFator
+  // repasse: valor líquido sem o PIS/COFINS extinto; CBS/IBS somados por fora
+  const baseRep = preco - icmsAno - pcHoje
+  const cbsRep = baseRep * regras.cbs
+  const ibsRep = baseRep * regras.ibs
+  const precoRep = preco - pcHoje + cbsRep + ibsRep
+  // preço mantido: CBS/IBS extraídos do preço total
+  const baseMan = (preco - icmsAno) / (1 + a)
+  const cbsMan = baseMan * regras.cbs
+  const ibsMan = baseMan * regras.ibs
+  const linhas: { rotulo: string; hoje: number | null; rep: number | null; man: number | null; forte?: boolean }[] = [
+    { rotulo: 'Preço cobrado do cliente', hoje: preco, rep: precoRep, man: preco, forte: true },
+    { rotulo: `ICMS "por dentro" — regime normal (${pct(icmsAliq)} × fator ${pct(regras.icmsIssFator, 0)})`, hoje: icmsHoje, rep: icmsAno, man: icmsAno },
+    { rotulo: 'PIS/COFINS "por dentro" (extintos em 2027)', hoje: pcHoje, rep: 0, man: 0 },
+    { rotulo: 'Base da CBS/IBS (sem ICMS, ISS, PIS e COFINS)', hoje: null, rep: baseRep, man: baseMan },
+    { rotulo: `CBS "por fora" (${pct(regras.cbs)})`, hoje: null, rep: cbsRep, man: cbsMan },
+    { rotulo: `IBS "por fora" (${pct(regras.ibs, 3)})`, hoje: null, rep: ibsRep, man: ibsMan },
+    { rotulo: 'Fica para a empresa (preço − tributos sobre a venda)', hoje: preco - icmsHoje - pcHoje, rep: precoRep - icmsAno - cbsRep - ibsRep, man: preco - icmsAno - cbsMan - ibsMan, forte: true },
+  ]
+  const fmt = (v: number | null) => (v === null ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
+  return (
+    <Section title={`Por dentro × por fora — R$ 100,00 de venda em ${anoRef}`} icone={ArrowDownUp} cor="amber">
+      <p className="-mt-2 mb-3 text-sm text-slate-500">
+        Hoje o ICMS e o PIS/COFINS estão embutidos no preço ("por dentro"). A CBS e o IBS são calculados "por fora", e a base deles exclui ICMS, ISS, IPI, PIS e COFINS (LC
+        214/2025, art. 12, §2º). Com a extinção do PIS/COFINS em 2027, o valor líquido encolhe e a base da CBS fica menor. PIS/COFINS embutidos no preço atual desta empresa (
+        {d.regimeAtual === 'simples' ? 'parcela do DAS' : 'débito do regime'}): <strong>{pct(pc)}</strong> da receita.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <th className="py-2 pr-3 text-left">Composição</th>
+              <th className="px-3 py-2">Hoje (2026)</th>
+              <th className={`px-3 py-2 ${params.premissaPreco === 'repasse' ? 'text-brand-700' : ''}`}>{anoRef} — repasse por fora</th>
+              <th className={`px-3 py-2 ${params.premissaPreco === 'preco_mantido' ? 'text-brand-700' : ''}`}>{anoRef} — preço mantido</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {linhas.map((l) => (
+              <tr key={l.rotulo} className={`border-b border-slate-100 text-right ${l.forte ? 'font-bold text-slate-900' : 'text-slate-700'}`}>
+                <td className="py-2 pr-3 text-left">{l.rotulo}</td>
+                <td className="px-3 py-2">{fmt(l.hoje)}</td>
+                <td className={`px-3 py-2 ${params.premissaPreco === 'repasse' ? 'bg-brand-50/60' : ''}`}>{fmt(l.rep)}</td>
+                <td className={`px-3 py-2 ${params.premissaPreco === 'preco_mantido' ? 'bg-brand-50/60' : ''}`}>{fmt(l.man)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        Coluna destacada = premissa usada nos cálculos (Parâmetros). Considera o IBS/CBS fora da base do ICMS em 2027–2032 — há entendimentos estaduais em sentido contrário, ainda
+        em discussão. Nas compras vale o mesmo: o fornecedor do regime regular deixa de embutir PIS/COFINS ({pct(params.pisCofinsFornecedores / 100)} no repasse).
+      </p>
+    </Section>
   )
 }

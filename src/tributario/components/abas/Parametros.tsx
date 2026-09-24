@@ -227,6 +227,13 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
           </Field>
           <Num label="CBS de referência" valor={params.cbsReferencia} sufixo="%" onChange={(v) => onParams({ ...params, cbsReferencia: v ?? 0, cenarioAliquotas: 'personalizado' })} />
           <Num label="IBS de referência (UF + município)" valor={params.ibsReferencia} sufixo="%" onChange={(v) => onParams({ ...params, ibsReferencia: v ?? 0, cenarioAliquotas: 'personalizado' })} />
+          <Num
+            label="PIS/COFINS embutidos no preço dos fornecedores"
+            valor={params.pisCofinsFornecedores}
+            sufixo="%"
+            onChange={(v) => set('pisCofinsFornecedores', v ?? 0)}
+            ajuda="Premissa de repasse: sai do preço de compra em 2027 (9,25% Real; 3,65% Presumido)"
+          />
           <Num label="Crescimento anual da receita" valor={params.crescimentoAnual} sufixo="%" onChange={(v) => set('crescimentoAnual', v ?? 0)} />
           <Num
             label="Vendas para empresas (B2B)"
