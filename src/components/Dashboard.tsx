@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { formatarData } from '../lib/format'
+import { REGEX_VIABILIDADE, formatarData, mascaraViabilidade } from '../lib/format'
 import {
   ACOMPANHAMENTO_POR_TIPO,
   STATUS_PROCESSO,
@@ -133,7 +133,7 @@ export function Dashboard({ session }: { session: Session }) {
     })
   }, [processos, busca, filtroStatus, filtroTipo, filtroParceiro])
 
-  async function atualizarCampo(p: Processo, campo: CampoAcompanhamento | 'status', valor: string) {
+  async function atualizarCampo(p: Processo, campo: CampoAcompanhamento | 'status' | 'numero_viabilidade' | 'numero_dbe', valor: string | null) {
     setProcessos((lista) => lista.map((x) => (x.id === p.id ? { ...x, [campo]: valor } : x)))
     const { error } = await supabase.from('soc_processos').update({ [campo]: valor }).eq('id', p.id)
     if (error) {
@@ -412,6 +412,7 @@ export function Dashboard({ session }: { session: Session }) {
                           <td colSpan={6} className="px-5 pt-1 pb-5">
                             <div className="animar-modal rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
                               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                <NumeroReferencia processo={p} onSalvar={(campo, valor) => atualizarCampo(p, campo, valor)} />
                                 {etapas.map((a, i) => {
                                   const cor = corEtapa(a, p[a.campo])
                                   return (
@@ -511,6 +512,44 @@ export function Dashboard({ session }: { session: Session }) {
       {mostrarParceiros && (
         <Parceiros parceiros={parceiros} processos={processos} onClose={() => setMostrarParceiros(false)} onChanged={carregar} />
       )}
+    </div>
+  )
+}
+
+function NumeroReferencia({
+  processo: p,
+  onSalvar,
+}: {
+  processo: Processo
+  onSalvar: (campo: 'numero_viabilidade' | 'numero_dbe', valor: string | null) => void
+}) {
+  const baixa = p.tipo === 'baixa'
+  const campo = baixa ? 'numero_dbe' : 'numero_viabilidade'
+  const atual = p[campo] ?? ''
+  const [valor, setValor] = useState(atual)
+  const invalido = !baixa && valor !== '' && !REGEX_VIABILIDADE.test(valor)
+
+  function salvar() {
+    if (invalido || valor === atual) return
+    onSalvar(campo, valor || null)
+  }
+
+  return (
+    <div className={`rounded-xl border p-3 ${baixa ? 'border-rose-100 bg-rose-50/50' : 'border-brand-100 bg-brand-50/50'}`}>
+      <div className="mb-2 flex items-center gap-2">
+        <span className={`flex h-5 items-center rounded-full px-1.5 text-[10px] font-bold text-white ${baixa ? 'bg-rose-500' : 'bg-brand-500'}`}>Nº</span>
+        <span className="text-xs font-semibold text-slate-600">{baixa ? 'Número DBE' : 'Número da Viabilidade'}</span>
+      </div>
+      <input
+        className={`w-full rounded-lg border bg-white px-2.5 py-1.5 font-mono text-sm tracking-wider outline-none transition focus:ring-2 ${invalido ? 'border-rose-300 focus:ring-rose-100' : 'border-slate-200 focus:border-brand-400 focus:ring-brand-100'}`}
+        value={valor}
+        placeholder={baixa ? 'Não informado' : 'SPN2633893093'}
+        maxLength={baixa ? undefined : 13}
+        onChange={(e) => setValor(baixa ? e.target.value.toUpperCase() : mascaraViabilidade(e.target.value))}
+        onBlur={salvar}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+      />
+      {invalido && <span className="mt-1 block text-[11px] text-rose-600">3 letras + 10 números</span>}
     </div>
   )
 }
