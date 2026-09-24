@@ -151,6 +151,10 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
           <input type="checkbox" checked={params.excluirIcmsBasePisCofins} onChange={(e) => set('excluirIcmsBasePisCofins', e.target.checked)} />
           Excluir o ICMS da base de PIS/COFINS (STF, Tema 69)
         </label>
+        <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={params.realPisCofinsCumulativo} onChange={(e) => set('realPisCofinsCumulativo', e.target.checked)} />
+          Lucro Real com PIS/COFINS cumulativo (receitas do art. 10 da Lei 10.833/2003 — até 2026)
+        </label>
       </Section>
 
       <Section title="IRPJ / CSLL" icone={Landmark} cor="violet">

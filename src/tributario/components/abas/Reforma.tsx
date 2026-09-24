@@ -215,6 +215,8 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
         )}
       </Section>
 
+      <Sensibilidade bases={bases} ctx={ctx} />
+
       <Section
         title="Cronograma da transição e expectativas de alíquota"
         icone={CalendarRange}
@@ -293,5 +295,113 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
 
       <Alertas itens={alertas} />
     </div>
+  )
+}
+
+/** Mesma empresa, vários cenários de alíquota de referência: carga de cada regime ano a ano (2027–2033). */
+function Sensibilidade({ bases, ctx }: { bases: BaseMensal[]; ctx: Contexto }) {
+  const [regime, setRegime] = useState<RegimeId | 'melhor'>('melhor')
+  const [custom, setCustom] = useState([
+    { nome: 'Pessimista', cbs: 9.5, ibs: 19 },
+    { nome: 'Otimista', cbs: 8.5, ibs: 17 },
+  ])
+  const projecoes = useMemo(() => {
+    const cenarios = [
+      { id: 'atual', nome: 'Parâmetros atuais', cbs: ctx.params.cbsReferencia, ibs: ctx.params.ibsReferencia, ajustes: ctx.params.aliquotasAno },
+      ...CENARIOS_ALIQUOTA.map((c) => ({ id: c.id, nome: c.nome, cbs: c.cbs, ibs: c.ibs, ajustes: {} })),
+      ...custom.map((c, i) => ({ id: `custom${i}`, nome: c.nome, cbs: c.cbs, ibs: c.ibs, ajustes: {} })),
+    ]
+    return cenarios.map((c) => ({ c, anos: projetar(bases, { ...ctx, params: { ...ctx.params, cbsReferencia: c.cbs, ibsReferencia: c.ibs, aliquotasAno: c.ajustes } }) }))
+  }, [bases, ctx, custom])
+  const anos = projecoes[0]?.anos.filter((a) => a.ano >= 2027) ?? []
+  return (
+    <Section
+      title="Cenários de alíquota — ano a ano"
+      icone={LineChart}
+      cor="sky"
+      actions={
+        <select className="input w-auto py-1.5" value={regime} onChange={(e) => setRegime(e.target.value as RegimeId | 'melhor')}>
+          <option value="melhor">Regime de menor carga</option>
+          {REGIMES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.curto}
+            </option>
+          ))}
+        </select>
+      }
+    >
+      <p className="-mt-2 mb-3 text-sm text-slate-500">
+        Cada linha recalcula toda a transição com outra alíquota de referência (CBS 2027–2028 = referência − 0,1 p.p.; IBS de 0,1% em 2027–2028, 10% a 40% da referência de
+        2029 a 2032 e 100% em 2033). Edite os dois cenários personalizados para testar expectativas.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[960px] text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <th className="py-2 pr-3 text-left">Cenário</th>
+              <th className="px-2 py-2">CBS ref.</th>
+              <th className="px-2 py-2">IBS ref.</th>
+              {anos.map((a) => (
+                <th key={a.ano} className="px-2 py-2">
+                  {a.ano}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {projecoes.map(({ c, anos: proj }) => {
+              const k = custom.findIndex((_, i) => c.id === `custom${i}`)
+              return (
+                <tr key={c.id} className={`border-b border-slate-100 text-right ${c.id === 'atual' ? 'bg-brand-50/50 font-semibold' : ''}`}>
+                  <td className="py-2 pr-3 text-left">
+                    {k >= 0 ? (
+                      <input className="input w-32 py-1" value={custom[k].nome} onChange={(e) => setCustom((l) => l.map((x, i) => (i === k ? { ...x, nome: e.target.value } : x)))} />
+                    ) : (
+                      c.nome
+                    )}
+                  </td>
+                  {(['cbs', 'ibs'] as const).map((campo) => (
+                    <td key={campo} className="px-2 py-2">
+                      {k >= 0 ? (
+                        <input
+                          className="input w-20 py-1 text-right"
+                          type="number"
+                          step="0.1"
+                          value={custom[k][campo]}
+                          onChange={(e) => setCustom((l) => l.map((x, i) => (i === k ? { ...x, [campo]: Number(e.target.value) || 0 } : x)))}
+                        />
+                      ) : (
+                        `${c[campo].toLocaleString('pt-BR')}%`
+                      )}
+                    </td>
+                  ))}
+                  {proj
+                    .filter((a) => a.ano >= 2027)
+                    .map((a) => {
+                      const reg = regime === 'melhor' ? a.melhor : regime
+                      const r = reg ? a.resultados[reg] : undefined
+                      return (
+                        <td key={a.ano} className="px-2 py-2">
+                          {r ? (
+                            <>
+                              {moedaCurta(r.total)}
+                              <div className="text-[11px] font-medium text-slate-500">
+                                {pct(r.carga)}
+                                {regime === 'melhor' && ` · ${nomeRegime(r.regime)}`}
+                              </div>
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      )
+                    })}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Section>
   )
 }

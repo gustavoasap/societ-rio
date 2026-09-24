@@ -2,7 +2,7 @@ import { classificarCfop, destinoCfop, fornecedorDoSimples, type Natureza } from
 import { icmsDaEntrada, icmsDaVenda, naoContribuinte } from './icms'
 import { tratamentoNcm } from './ncm'
 import { ICMS_INTERNO_UF } from './tabelas'
-import { BASE_VAZIA, receitaBruta, type BaseMensal, type MixProdutos, type MovimentoLinha, type Parametros } from './tipos'
+import { BASE_VAZIA, receitaBruta, type BaseMensal, type MixProdutos, type MovimentoLinha, type Parametros, type RegimeFornecedor } from './tipos'
 
 export function naturezaDe(l: MovimentoLinha, ajustes: Record<string, Natureza>): Natureza {
   if (l.tipo === 'servico_tomado') return ajustes[`SERV-T:${l.servico}`] ?? 'servico_tomado'
@@ -24,6 +24,18 @@ const servicoCreditavel = (codigo: string, prefixos: string[]) => {
 /** Chave usada para incluir/excluir um CFOP ou código de serviço da análise. */
 export const chaveCfop = (l: MovimentoLinha) =>
   l.tipo === 'servico_tomado' ? `SERV-T:${l.servico}` : l.tipo === 'servico_prestado' ? `SERV-P:${l.servico}` : l.cfop
+
+/**
+ * Regime do fornecedor/prestador da nota: o informado pelo contador (Clientes e fornecedores) ou, na falta,
+ * pessoa física pelo CPF, Simples pelo CSOSN da nota de entrada (101 a 900) e "regime normal" nos demais casos.
+ */
+export function regimeDoFornecedor(l: MovimentoLinha, params: Parametros): RegimeFornecedor {
+  const informado = l.parceiro ? params.regimeFornecedores[l.parceiro] : undefined
+  if (informado) return informado
+  if (l.destinatario === 'PF') return 'pf'
+  if (l.tipo === 'entrada' && fornecedorDoSimples(l.cst)) return 'simples'
+  return 'normal'
+}
 
 /** A linha entra na análise? (CFOP e cliente/fornecedor não excluídos pelo contador) */
 export function linhaConsiderada(l: MovimentoLinha, params: Parametros) {
@@ -114,7 +126,13 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
         b.icmsCompras += l.icms
         b.ipiCompras += l.ipi
         b.stCompras += l.icms_st
-        if (fornecedorDoSimples(l.cst)) b.comprasFornecedorSimples += v
+        {
+          const rf = regimeDoFornecedor(l, params)
+          if (rf === 'simples') b.comprasFornecedorSimples += v
+          else if (rf === 'mei') b.comprasMei += v
+          else if (rf === 'pf') b.comprasPF += v
+          else if (rf === 'presumido') b.comprasPresumido += v
+        }
         if (l.ncm && tratamentoNcm(l.ncm, params.ncms).monofasico) b.comprasMonofasico += v
         {
           const e = estab(l.estabelecimento_id)
@@ -149,7 +167,15 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
         b.servicosTomados += v
         b.issTomados += l.iss
         b.retencoes += l.retencoes
-        if (servicoCreditavel(l.servico, prefixos)) b.servicosTomadosCreditaveis += v
+        {
+          const rf = regimeDoFornecedor(l, params)
+          if (rf === 'simples') b.servicosSimples += v
+          else if (rf === 'mei') b.servicosMei += v
+          else if (rf === 'pf') b.servicosPF += v
+          else if (rf === 'presumido') b.servicosPresumido += v
+          // PIS/COFINS no Real: só serviços de PJ (Lei 10.833, art. 3º, §3º, I) e dos itens creditáveis
+          if (rf !== 'pf' && servicoCreditavel(l.servico, prefixos)) b.servicosTomadosCreditaveis += v
+        }
         break
       default:
         b.neutras += v
@@ -171,7 +197,7 @@ export function estimarMix(linhas: MovimentoLinha[], params: Parametros): MixPro
     const n = naturezaDe(l, params.cfopNatureza)
     if (l.tipo === 'entrada' && (n === 'compra_revenda' || n === 'compra_insumo')) {
       pesos.compras += l.valor_contabil
-      if (fornecedorDoSimples(l.cst)) pesos.simples += l.valor_contabil
+      if (regimeDoFornecedor(l, params) === 'simples') pesos.simples += l.valor_contabil
     }
     if (l.tipo === 'saida' && n === 'venda' && l.destinatario) {
       pesos.comDest += l.valor_contabil

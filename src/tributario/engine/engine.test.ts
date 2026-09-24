@@ -418,3 +418,106 @@ describe('por dentro × por fora na transição (PIS/COFINS → CBS)', () => {
     expect(com.tributos.CBS + com.tributos.IBS).toBeCloseTo(((100_000 - 18_000) / (1 + a) - (50_000 - 6_000) / (1 + a)) * a, 2)
   })
 })
+
+describe('regime do fornecedor e crédito', () => {
+  const l = (x: Partial<MovimentoLinha>): MovimentoLinha => ({
+    estabelecimento_id: null, competencia: '2027-06', tipo: 'entrada', cfop: '1102', ncm: '', uf: 'SP', cst: '000', servico: '', destinatario: 'PJ_C', parceiro: '',
+    itens: 1, valor_contabil: 0, bc_icms: 0, icms: 0, icms_st: 0, ipi: 0, pis: 0, cofins: 0, iss: 0, difal: 0, retencoes: 0, ...x,
+  })
+  const estab = () => ({ uf: 'SP', aliquota: 18 })
+  const venda = l({ tipo: 'saida', cfop: '5102', valor_contabil: 100_000 })
+  const cbsIbs = (linhas: MovimentoLinha[], p: Partial<Parametros> = {}) => {
+    const params = { ...PARAMETROS_PADRAO, premissaPreco: 'repasse' as const, ...p }
+    const r = apurar('presumido', montarBases(linhas, params, estab), ctx(params))
+    return r.tributos.CBS + r.tributos.IBS
+  }
+
+  it('compras de pessoa física e MEI não geram crédito de IBS/CBS; do Simples, só o valor do DAS', () => {
+    const semCompra = cbsIbs([venda])
+    const normal = semCompra - cbsIbs([venda, l({ valor_contabil: 10_000, parceiro: '11222333000181' })])
+    const pf = semCompra - cbsIbs([venda, l({ valor_contabil: 10_000, destinatario: 'PF' })])
+    const mei = semCompra - cbsIbs([venda, l({ valor_contabil: 10_000, parceiro: '11222333000181' })], { regimeFornecedores: { '11222333000181': 'mei' } })
+    const simples = semCompra - cbsIbs([venda, l({ valor_contabil: 10_000, cst: '102', parceiro: '11222333000181' })])
+    expect(pf).toBeCloseTo(0, 6)
+    expect(mei).toBeCloseTo(0, 6)
+    expect(simples).toBeGreaterThan(0)
+    expect(simples).toBeLessThan(normal / 5)
+  })
+
+  it('serviços tomados: prestador do Simples dá crédito limitado; o regime informado prevalece', () => {
+    const serv = l({ tipo: 'servico_tomado', cfop: '', servico: '11.04', valor_contabil: 10_000, parceiro: '99888777000100' })
+    const semServ = cbsIbs([venda])
+    const normal = semServ - cbsIbs([venda, serv])
+    const simples = semServ - cbsIbs([venda, serv], { regimeFornecedores: { '99888777000100': 'simples' } })
+    expect(normal).toBeGreaterThan(simples * 5)
+  })
+
+  it('repasse: fornecedor do Presumido embute 3,65% de PIS/COFINS, do Real 9,25%', () => {
+    const semCompra = cbsIbs([venda])
+    const presumido = semCompra - cbsIbs([venda, l({ valor_contabil: 10_000, parceiro: '1' })], { regimeFornecedores: { '1': 'presumido' } })
+    const real = semCompra - cbsIbs([venda, l({ valor_contabil: 10_000, parceiro: '1' })], { regimeFornecedores: { '1': 'real' } })
+    expect(presumido / real).toBeCloseTo((1 - 0.0365) / (1 - 0.0925), 3)
+  })
+
+  it('Lucro Real: PIS/COFINS sem crédito sobre compras de pessoa física; opção cumulativa (art. 10)', () => {
+    const b = mes('2026-06', { vendas: 100_000, vendasInternas: 100_000, icmsVendasInternas: 18_000, compras: 50_000, comprasPF: 20_000 })
+    const r = apurar('real', [b], ctx())
+    expect(r.creditos.pisCofinsCompras).toBeCloseTo(30_000 * 0.0925, 4)
+    const cumulativo = apurar('real', [b], ctx({ realPisCofinsCumulativo: true }))
+    expect(cumulativo.tributos.PIS + cumulativo.tributos.COFINS).toBeCloseTo((100_000 - 18_000) * 0.0365, 4)
+  })
+})
+
+describe('matriz ano a ano 2026-2033 (cada regime em cada ano)', () => {
+  const CBS = 9.21
+  const IBS = 18.7
+  const esperado: Record<number, { cbs: number; ibs: number; icms: number; pisCofins: boolean }> = {
+    2026: { cbs: 0.009, ibs: 0.001, icms: 1, pisCofins: true },
+    2027: { cbs: 0.0911, ibs: 0.001, icms: 1, pisCofins: false },
+    2028: { cbs: 0.0911, ibs: 0.001, icms: 1, pisCofins: false },
+    2029: { cbs: 0.0921, ibs: 0.0187, icms: 0.9, pisCofins: false },
+    2030: { cbs: 0.0921, ibs: 0.0374, icms: 0.8, pisCofins: false },
+    2031: { cbs: 0.0921, ibs: 0.0561, icms: 0.7, pisCofins: false },
+    2032: { cbs: 0.0921, ibs: 0.0748, icms: 0.6, pisCofins: false },
+    2033: { cbs: 0.0921, ibs: 0.187, icms: 0, pisCofins: false },
+  }
+  const params = { cbsReferencia: CBS, ibsReferencia: IBS }
+  const b = (ano: number) => mes(`${ano}-06`, { vendas: 100_000, vendasInternas: 100_000, icmsVendasInternas: 18_000, compras: 40_000, icmsCompras: 4_800 })
+  const simples2026 = apurar('simples', [b(2026)], ctx(params, { rbt12Fixo: 1_200_000 }))
+
+  for (const ano of Object.keys(esperado).map(Number)) {
+    const e = esperado[ano]
+    it(`${ano}: alíquotas, ICMS, PIS/COFINS, IBS/CBS e Simples`, () => {
+      const r = regrasDoAno(ano, CBS, IBS)
+      expect(r.cbs).toBeCloseTo(e.cbs, 6)
+      expect(r.ibs).toBeCloseTo(e.ibs, 6)
+      expect(r.icmsIssFator).toBeCloseTo(e.icms, 6)
+      expect(r.pisCofins).toBe(e.pisCofins)
+
+      const pres = apurar('presumido', [b(ano)], ctx(params))
+      const icmsDevido = (18_000 - 4_800) * e.icms
+      expect(pres.tributos.ICMS).toBeCloseTo(icmsDevido, 4)
+      if (e.pisCofins) {
+        expect(pres.tributos.PIS + pres.tributos.COFINS).toBeCloseTo((100_000 - 18_000) * 0.0365, 4)
+        expect(pres.tributos.CBS + pres.tributos.IBS).toBe(0) // 2026: teste compensável
+      } else {
+        expect(pres.tributos.PIS + pres.tributos.COFINS).toBe(0)
+        // preço mantido: débito = (valor − ICMS da operação) ÷ (1 + a) × a; crédito idem sobre as compras sem ICMS
+        const a = e.cbs + e.ibs
+        const deb = ((100_000 - 18_000 * e.icms) / (1 + a)) * a
+        const cred = ((40_000 - 4_800) / (1 + a)) * a
+        expect(pres.tributos.CBS + pres.tributos.IBS).toBeCloseTo(deb - cred, 2)
+        expect(pres.tributos.CBS / (pres.tributos.CBS + pres.tributos.IBS)).toBeCloseTo(e.cbs / a, 6)
+      }
+
+      // Simples tradicional: mesmo DAS em todos os anos (PIS/COFINS → CBS; parcela do ICMS → IBS pela proporção do ano)
+      const s = apurar('simples', [b(ano)], ctx(params, { rbt12Fixo: 1_200_000 }))
+      expect(s.das).toBeCloseTo(simples2026.das, 6)
+      if (!e.pisCofins) {
+        expect(s.tributos.IBS / (s.tributos.IBS + s.tributos.ICMS)).toBeCloseTo(1 - e.icms, 6)
+        const h = apurar('simples_hibrido', [b(ano)], ctx(params, { rbt12Fixo: 1_200_000 }))
+        expect(h.das).toBeCloseTo(s.das - s.tributos.CBS - s.tributos.IBS, 6)
+      }
+    })
+  }
+})

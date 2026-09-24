@@ -41,6 +41,15 @@ export interface MovimentoLinha {
 /** Cliente/fornecedor: pessoa física, PJ contribuinte do ICMS (com IE) ou PJ não contribuinte. '' = não informado. */
 export type Destinatario = '' | 'PF' | 'PJ_C' | 'PJ_N'
 
+/**
+ * Regime do fornecedor/prestador — define o crédito:
+ * - normal/real/presumido: ICMS destacado, PIS/COFINS (Real) e IBS/CBS integral;
+ * - simples: IBS/CBS limitado ao valor do DAS (LC 214, art. 47, §9º), PIS/COFINS integral no Real;
+ * - mei: sem crédito de IBS/CBS (valores fixos do SIMEI), PIS/COFINS no Real;
+ * - pf: sem crédito (Lei 10.833, art. 3º, §3º, I; LC 214, art. 47).
+ */
+export type RegimeFornecedor = 'normal' | 'real' | 'presumido' | 'simples' | 'mei' | 'pf'
+
 /** Tratamento de um NCM definido pelo contador para a empresa (campos ausentes = padrão do sistema). */
 export interface ConfigNcm {
   monofasico?: boolean
@@ -100,6 +109,10 @@ export interface Parametros {
   aliquotasAno: Record<string, { cbs?: number; ibs?: number }>
   /** Tratamento por NCM (carregado da tabela trib_ncms — não é gravado no JSON de parâmetros). */
   ncms: Record<string, ConfigNcm>
+  /** Regime informado para cada fornecedor (CNPJ) — carregado da tabela trib_parceiros */
+  regimeFornecedores: Record<string, RegimeFornecedor>
+  /** Lucro Real com receitas no regime cumulativo de PIS/COFINS (Lei 10.833/2003, art. 10) */
+  realPisCofinsCumulativo: boolean
   cfopNatureza: Record<string, Natureza> // ajustes do contador na classificação de CFOP
   /** CFOPs (ou SERV-T:/SERV-P: + código de serviço) desconsiderados na análise */
   cfopsExcluidos: string[]
@@ -159,6 +172,8 @@ export const PARAMETROS_PADRAO: Parametros = {
   percentualB2B: null,
   aliquotasAno: {},
   ncms: {},
+  regimeFornecedores: {},
+  realPisCofinsCumulativo: false,
   cfopNatureza: {},
   cfopsExcluidos: [],
   parceirosExcluidos: [],
@@ -200,6 +215,9 @@ export interface BaseMensal {
   icmsSaidas: number // ICMS efetivamente destacado nas saídas (informativo)
   compras: number // revenda + insumos (valor contábil)
   comprasFornecedorSimples: number
+  comprasMei: number
+  comprasPF: number
+  comprasPresumido: number
   comprasMonofasico: number
   icmsCompras: number
   ipiCompras: number
@@ -213,6 +231,10 @@ export interface BaseMensal {
   comunicacao: number
   servicosTomados: number
   servicosTomadosCreditaveis: number // PIS/COFINS no Lucro Real
+  servicosSimples: number // prestadores do Simples
+  servicosMei: number
+  servicosPF: number
+  servicosPresumido: number
   issTomados: number
   retencoes: number
   neutras: number // remessas, retornos, transferências, bonificações (informativo)
@@ -248,6 +270,9 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   icmsSaidas: 0,
   compras: 0,
   comprasFornecedorSimples: 0,
+  comprasMei: 0,
+  comprasPF: 0,
+  comprasPresumido: 0,
   comprasMonofasico: 0,
   icmsCompras: 0,
   ipiCompras: 0,
@@ -261,6 +286,10 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   comunicacao: 0,
   servicosTomados: 0,
   servicosTomadosCreditaveis: 0,
+  servicosSimples: 0,
+  servicosMei: 0,
+  servicosPF: 0,
+  servicosPresumido: 0,
   issTomados: 0,
   retencoes: 0,
   neutras: 0,

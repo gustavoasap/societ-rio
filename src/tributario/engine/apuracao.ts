@@ -281,21 +281,32 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
   const base = valor / div(aliqVenda)
   const debito = base * aliqVenda
 
+  // Compras por regime do fornecedor: regime normal (Presumido/Real) = crédito integral; Simples = valor do DAS; MEI e PF = sem crédito
   const comprasLiquidas = Math.max(0, b.compras - b.devolucoesCompra)
-  const fatorSimples = b.compras ? b.comprasFornecedorSimples / b.compras : 0
-  const tributosCompra = (b.icmsCompras + b.ipiCompras + b.stCompras) * (1 - fatorSimples)
-  const comprasRegularBruto = Math.max(0, comprasLiquidas * (1 - fatorSimples) - tributosCompra)
-  // o fornecedor do regime regular também deixa de embutir PIS/COFINS no preço (só na premissa de repasse)
-  const pcForn = dentro ? 0 : p.pisCofinsFornecedores / 100
-  const pisCofinsCompra = comprasRegularBruto * pcForn
+  const fr_ = (v: number) => (b.compras ? v / b.compras : 0)
+  const fatorSimples = fr_(b.comprasFornecedorSimples)
+  const fatorSemCredito = fr_(b.comprasMei + b.comprasPF)
+  const fatorRegular = Math.max(0, 1 - fatorSimples - fatorSemCredito)
+  const fatorPresumido = fr_(b.comprasPresumido)
+  const tributosCompra = b.icmsCompras + b.ipiCompras + b.stCompras // destacados pelos fornecedores do regime normal
+  const comprasRegularBruto = Math.max(0, comprasLiquidas * fatorRegular - tributosCompra)
+  // Repasse: o fornecedor do regime normal deixa de embutir PIS/COFINS — 3,65% (Presumido) ou o % dos parâmetros (Real/não informado)
+  const pcNormal = p.pisCofinsFornecedores / 100
+  const pcRegular = fatorRegular ? (fatorPresumido * 0.0365 + Math.max(0, fatorRegular - fatorPresumido) * pcNormal) / fatorRegular : pcNormal
+  const pisCofinsCompra = dentro ? 0 : comprasRegularBruto * pcRegular
   const comprasRegular = comprasRegularBruto - pisCofinsCompra
   const aliqCompra = aliq * (1 - mix.reducaoIbsCbs)
   const credCompras = (comprasRegular / div(aliqCompra)) * aliqCompra
+  const aliqSimples = aliquotaCreditoFornecedorSimples(p, regras)
   const comprasSimples = comprasLiquidas * fatorSimples
-  const credSimples = comprasSimples * aliquotaCreditoFornecedorSimples(p, regras)
-  const perdidoSimples = Math.max(0, (comprasSimples / div(aliqCompra)) * aliqCompra - credSimples)
-  const outrasBruto = b.servicosTomados + b.energia + b.fretes + b.comunicacao + b.usoConsumo + b.ativo + p.despesasCreditaveisMensais
-  const pisCofinsOutras = outrasBruto * pcForn
+  const comprasSemCredito = comprasLiquidas * fatorSemCredito
+  // Serviços tomados por regime do prestador (o relatório de serviços não traz CSOSN — ajuste o regime em Clientes e fornecedores)
+  const servRegular = Math.max(0, b.servicosTomados - b.servicosSimples - b.servicosMei - b.servicosPF)
+  const credServSimples = b.servicosSimples * aliqSimples
+  const credSimples = comprasSimples * aliqSimples + credServSimples
+  const perdidoSimples = Math.max(0, ((comprasSimples + comprasSemCredito + b.servicosSimples + b.servicosMei + b.servicosPF) / div(aliqCompra)) * aliqCompra - credSimples)
+  const outrasBruto = servRegular + b.energia + b.fretes + b.comunicacao + b.usoConsumo + b.ativo + p.despesasCreditaveisMensais
+  const pisCofinsOutras = dentro ? 0 : (outrasBruto - b.servicosPresumido) * pcNormal + b.servicosPresumido * 0.0365
   const outras = outrasBruto - pisCofinsOutras
   const credOutras = (outras / div(aliq)) * aliq
   const creditos = credCompras + credSimples + credOutras
@@ -327,7 +338,8 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
       valor: debito,
     },
     { grupo: 'IBS/CBS', descricao: 'Crédito — compras de fornecedores do regime regular', valor: -credCompras },
-    { grupo: 'IBS/CBS', descricao: 'Crédito — compras de fornecedores do Simples (valor do DAS)', valor: -credSimples, formula: 'LC 214, art. 47, §9º' },
+    { grupo: 'IBS/CBS', descricao: 'Crédito — compras e serviços de optantes do Simples (valor do DAS)', valor: -credSimples, formula: 'LC 214, art. 47, §9º' },
+    { grupo: 'IBS/CBS', descricao: 'Sem crédito — compras e serviços de MEI e pessoa física', valor: 0, formula: `${moeda(comprasSemCredito + b.servicosMei + b.servicosPF)} sem crédito` },
     { grupo: 'IBS/CBS', descricao: 'Crédito — serviços, fretes, energia, uso/consumo, ativo e despesas', valor: -credOutras },
     { grupo: 'IBS/CBS', descricao: liquido >= 0 ? 'IBS/CBS a recolher' : 'Saldo credor de IBS/CBS (ressarcimento)', valor: liquido, destaque: true },
   )
@@ -549,7 +561,8 @@ function pisCofinsNaoCumulativo(b: BaseMensal, p: Parametros, mono: number, icms
   const base = Math.max(0, merc * (1 - mono) + b.servicos - exclusaoIcms * (1 - mono))
   // Crédito: bens para revenda (exceto monofásicos, Lei 10.833, art. 3º, I, "b"), sem o ICMS destacado (Lei 14.592/2023),
   // energia, fretes e armazenagem na venda (art. 3º, III e IX) e despesas creditáveis (aluguéis PJ etc.).
-  const comprasNaoMono = Math.max(0, b.compras - b.comprasMonofasico - b.devolucoesCompra)
+  // pessoa física não gera crédito (Lei 10.833, art. 3º, §3º, I); optante do Simples e MEI geram crédito integral
+  const comprasNaoMono = Math.max(0, b.compras - b.comprasMonofasico - b.devolucoesCompra - b.comprasPF)
   const icmsProp = b.compras ? b.icmsCompras * (comprasNaoMono / b.compras) : 0
   const baseCreditoCompras = Math.max(0, comprasNaoMono - icmsProp)
   const baseCreditoDespesas = b.energia + b.fretes + b.servicosTomadosCreditaveis + p.despesasCreditaveisMensais
@@ -638,7 +651,8 @@ function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): Apuraca
   )
   if (regras.pisCofins) {
     // ICMS "a ser excluído" é o destacado na nota (STF, Tema 69 — RE 574.706)
-    if (real) {
+    // Lucro Real é não cumulativo, salvo receitas do art. 10 da Lei 10.833/2003 (opção nos parâmetros)
+    if (real && !p.realPisCofinsCumulativo) {
       const pc = pisCofinsNaoCumulativo(b, p, fr.monofasico, icms.proprio)
       t.PIS = pc.pis + (p.receitasFinanceirasMensais * 0.0065)
       t.COFINS = pc.cofins + p.receitasFinanceirasMensais * 0.04
@@ -662,7 +676,12 @@ function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): Apuraca
       d.deducoes['PIS'] = pc.pis
       d.deducoes['COFINS'] = pc.cofins
       memoria.push(
-        { grupo: 'PIS/COFINS', descricao: 'Base (receita − ICMS − monofásicos)', valor: pc.base, formula: 'Lei 9.718/1998 — 0,65% + 3%' },
+        {
+          grupo: 'PIS/COFINS',
+          descricao: real ? 'Base cumulativa no Lucro Real (receita − ICMS − monofásicos)' : 'Base (receita − ICMS − monofásicos)',
+          valor: pc.base,
+          formula: real ? 'Lei 10.833/2003, art. 10 — 0,65% + 3%' : 'Lei 9.718/1998 — 0,65% + 3%',
+        },
         { grupo: 'PIS/COFINS', descricao: 'PIS + COFINS a recolher', valor: pc.pis + pc.cofins, destaque: true },
       )
     }

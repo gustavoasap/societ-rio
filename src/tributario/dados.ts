@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase'
-import type { ConfigNcm, Estabelecimento, MovimentoLinha, Parametros, RegimeAtual, TipoMovimento } from './engine/tipos'
+import type { ConfigNcm, Estabelecimento, MovimentoLinha, Parametros, RegimeAtual, RegimeFornecedor, TipoMovimento } from './engine/tipos'
 import type { LinhaImportada, Parceiro, TipoRelatorio } from './importacao/relatorios'
 
 export interface Empresa {
@@ -88,7 +88,7 @@ export async function excluirEmpresa(id: string) {
 
 export async function salvarParametros(empresaId: string, parametros: Parametros) {
   // o tratamento por NCM fica na tabela trib_ncms
-  const { ncms: _ncms, ...resto } = parametros
+  const { ncms: _ncms, regimeFornecedores: _regimes, ...resto } = parametros
   const { error } = await supabase.from('trib_empresas').update({ parametros: resto }).eq('id', empresaId)
   erro(error)
 }
@@ -275,12 +275,24 @@ export interface ParceiroRegistro {
   tipo: string
   uf: string | null
   municipio: string | null
+  regime: RegimeFornecedor | null
+}
+
+export async function salvarRegimeFornecedor(empresaId: string, documento: string, regime: RegimeFornecedor | null) {
+  const { error } = await supabase.from('trib_parceiros').update({ regime, updated_at: new Date().toISOString() }).eq('empresa_id', empresaId).eq('documento', documento)
+  erro(error)
+}
+
+export function regimesDosParceiros(registros: ParceiroRegistro[]): Record<string, RegimeFornecedor> {
+  const r: Record<string, RegimeFornecedor> = {}
+  for (const p of registros) if (p.regime) r[p.documento] = p.regime
+  return r
 }
 
 export async function listarParceiros(empresaId: string): Promise<ParceiroRegistro[]> {
   const todos: ParceiroRegistro[] = []
   for (let de = 0; ; de += 1000) {
-    const { data, error } = await supabase.from('trib_parceiros').select('documento, nome, tipo, uf, municipio').eq('empresa_id', empresaId).range(de, de + 999)
+    const { data, error } = await supabase.from('trib_parceiros').select('documento, nome, tipo, uf, municipio, regime').eq('empresa_id', empresaId).range(de, de + 999)
     erro(error)
     todos.push(...((data ?? []) as ParceiroRegistro[]))
     if ((data ?? []).length < 1000) break

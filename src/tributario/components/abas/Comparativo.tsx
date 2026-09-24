@@ -3,7 +3,8 @@ import { Award, Scale } from 'lucide-react'
 import { Section } from '../../../components/ui'
 import { apurar, type Contexto } from '../../engine/apuracao'
 import { nomeMes } from '../../engine/base'
-import type { BaseMensal, RegimeId } from '../../engine/tipos'
+import type { BaseMensal, RegimeId, Resultado } from '../../engine/tipos'
+import { linhasDre } from '../../engine/dre'
 import { COR_REGIME, moeda, nomeRegime, pct, recomendacao } from '../../formatacao'
 import { Alertas, Memoria, Segmentado, TabelaTributos, PontoRegime } from '../comum'
 import { BarrasHorizontais } from '../graficos'
@@ -85,6 +86,8 @@ export function Comparativo({ bases, ctx, regimeAtual }: { bases: BaseMensal[]; 
         </div>
       </div>
 
+      <PisCofinsSistemas meses={meses} ctx={ctx} presumido={resultados.find((r) => r.regime === 'presumido')!} />
+
       <Section
         title={`Detalhamento — ${nomeRegime(res.regime)}`}
         icone={Scale}
@@ -97,5 +100,70 @@ export function Comparativo({ bases, ctx, regimeAtual }: { bases: BaseMensal[]; 
         </div>
       </Section>
     </div>
+  )
+}
+
+/**
+ * PIS/COFINS cumulativo (0,65% + 3%, sem créditos — Lei 9.718/1998; Lucro Real só nas receitas do art. 10 da Lei 10.833/2003)
+ * × não cumulativo (1,65% + 7,6% com créditos — Leis 10.637/2002 e 10.833/2003), pela legislação vigente em 2026.
+ */
+function PisCofinsSistemas({ meses, ctx, presumido }: { meses: BaseMensal[]; ctx: Contexto; presumido: Resultado }) {
+  const nc = useMemo(() => apurar('real', meses, { ...ctx, params: { ...ctx.params, realPisCofinsCumulativo: false } }), [meses, ctx])
+  const cu = useMemo(() => apurar('real', meses, { ...ctx, params: { ...ctx.params, realPisCofinsCumulativo: true } }), [meses, ctx])
+  const colunas = [
+    { id: 'pres', titulo: 'Lucro Presumido (cumulativo)', r: presumido },
+    { id: 'realc', titulo: 'Lucro Real — cumulativo', r: cu },
+    { id: 'realnc', titulo: 'Lucro Real — não cumulativo', r: nc },
+  ]
+  const debitoNc = (nc.dre.deducoes['PIS'] ?? 0) + (nc.dre.deducoes['COFINS'] ?? 0)
+  const creditosNc = nc.creditos.pisCofinsCompras + nc.creditos.pisCofinsDespesas
+  const razao = debitoNc ? creditosNc / debitoNc : 0
+  const equilibrio = 1 - 0.0365 / 0.0925 // base de crédito ÷ base de débito a partir da qual o não cumulativo fica mais barato
+  const linhas: [string, (r: Resultado) => number, boolean?][] = [
+    ['Débito de PIS + COFINS', (r) => (r.dre.deducoes['PIS'] ?? 0) + (r.dre.deducoes['COFINS'] ?? 0)],
+    ['(−) Créditos de PIS/COFINS', (r) => -(r.creditos.pisCofinsCompras + r.creditos.pisCofinsDespesas)],
+    ['PIS + COFINS a recolher', (r) => r.tributos.PIS + r.tributos.COFINS, true],
+    ['IRPJ + CSLL', (r) => r.tributos.IRPJ + r.tributos.CSLL],
+    ['Carga tributária total', (r) => r.total, true],
+    ['Lucro líquido (DRE)', (r) => linhasDre(r.dre).find((l) => l.chave === 'll')?.valor ?? 0, true],
+  ]
+  return (
+    <Section title="PIS/COFINS: cumulativo × não cumulativo (legislação de 2026)" icone={Scale} cor="amber">
+      <p className="-mt-2 mb-3 text-sm text-slate-500">
+        Mesmo com a extinção em 2027, a escolha de hoje depende disso. Cumulativo: 0,65% + 3% sem créditos (Lei 9.718/1998) — obrigatório no Presumido e, no Lucro Real, só
+        para as receitas do art. 10 da Lei 10.833/2003. Não cumulativo: 1,65% + 7,6% com créditos (Leis 10.637/2002 e 10.833/2003).
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <th className="py-2 pr-3 text-left" />
+              {colunas.map((c) => (
+                <th key={c.id} className="px-3 py-2">
+                  {c.titulo}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {linhas.map(([rot, f, forte]) => (
+              <tr key={rot} className={`border-b border-slate-100 text-right ${forte ? 'font-bold' : ''}`}>
+                <td className="py-2 pr-3 text-left">{rot}</td>
+                {colunas.map((c) => (
+                  <td key={c.id} className="px-3 py-2">
+                    {moeda(f(c.r))}
+                    {forte && c.r.receita > 0 && rot !== 'Lucro líquido (DRE)' && <div className="text-[11px] font-medium text-slate-500">{pct(f(c.r) / c.r.receita)}</div>}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        O não cumulativo fica mais barato quando a base de créditos passa de <strong>{pct(equilibrio, 1)}</strong> da base de débito (9,25% × (1 − x) &lt; 3,65%). Nesta
+        empresa a base de créditos é <strong>{pct(razao, 1)}</strong> — {razao > equilibrio ? 'o não cumulativo compensa.' : 'o cumulativo sairia mais barato, mas no Lucro Real ele só vale para as receitas do art. 10.'}
+      </p>
+    </Section>
   )
 }

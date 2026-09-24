@@ -3,10 +3,10 @@ import { HandCoins, Search, Truck } from 'lucide-react'
 import { Section } from '../../../components/ui'
 import { mascaraCnpj } from '../../../lib/format'
 import { apurar } from '../../engine/apuracao'
-import { fornecedorDoSimples } from '../../engine/cfop'
+import { regimeDoFornecedor } from '../../engine/base'
 import { tratamentoNcm } from '../../engine/ncm'
 import { ANEXOS_SIMPLES, regrasDoAno } from '../../engine/tabelas'
-import type { CreditosResumo, RegimeId, Resultado } from '../../engine/tipos'
+import type { CreditosResumo, RegimeFornecedor, RegimeId, Resultado } from '../../engine/tipos'
 import { moeda, moedaCurta, nomeRegime, pct } from '../../formatacao'
 import { Kpi, Segmentado } from '../comum'
 import type { DadosAnalise } from '../contexto'
@@ -20,8 +20,16 @@ const LINHAS: { chave: keyof CreditosResumo; rotulo: string; base: string }[] = 
   { chave: 'ibsCbsDespesas', rotulo: 'IBS/CBS — serviços, fretes, energia, consumo e ativo', base: 'LC 214/2025, art. 47 (crédito amplo)' },
 ]
 
-type Tipo = 'regular' | 'simples' | 'pf' | 'exterior' | 'servico'
-const NOME_TIPO: Record<Tipo, string> = { regular: 'Regime normal', simples: 'Simples Nacional', pf: 'Pessoa física', exterior: 'Exterior', servico: 'Serviço' }
+type Tipo = RegimeFornecedor | 'exterior'
+const NOME_TIPO: Record<Tipo, string> = {
+  normal: 'Regime normal',
+  real: 'Lucro Real',
+  presumido: 'Lucro Presumido',
+  simples: 'Simples Nacional',
+  mei: 'MEI',
+  pf: 'Pessoa física',
+  exterior: 'Exterior',
+}
 
 export function Creditos({ d }: { d: DadosAnalise }) {
   const { params } = d
@@ -49,23 +57,25 @@ export function Creditos({ d }: { d: DadosAnalise }) {
       const compra = d.eCompra(l)
       const servico = l.tipo === 'servico_tomado'
       if (!compra && !servico) continue
-      const tipo: Tipo = servico ? 'servico' : l.cfop.startsWith('3') ? 'exterior' : l.destinatario === 'PF' ? 'pf' : fornecedorDoSimples(l.cst) ? 'simples' : 'regular'
+      const tipo: Tipo = l.cfop.startsWith('3') ? 'exterior' : regimeDoFornecedor(l, params)
       const chave = l.parceiro || (tipo === 'pf' ? 'PF' : `sem-${tipo}`)
       const nome = d.parceiros.get(l.parceiro)?.nome || (tipo === 'pf' ? 'Pessoas físicas' : '(não identificado)')
       const x = m.get(chave) ?? { chave, nome, tipo, valor: 0, icms: 0, pisCofins: 0, ibsCbs: 0, ibsCbsIntegral: 0 }
       const v = l.valor_contabil
       const baseLiquida = Math.max(0, v - l.icms - l.ipi - l.icms_st)
-      const integral = ((dentro ? baseLiquida / (1 + aliq) : baseLiquida) * aliq) || 0
+      // repasse: o preço do fornecedor perde o PIS/COFINS embutido (3,65% Presumido; % dos parâmetros para Real/não informado)
+      const pcForn = tipo === 'presumido' ? 0.0365 : params.pisCofinsFornecedores / 100
+      const integral = ((dentro ? baseLiquida / (1 + aliq) : baseLiquida * (1 - pcForn)) * aliq) || 0
       x.valor += v
-      if (tipo !== 'simples' && tipo !== 'pf' && !servico) x.icms += l.icms
+      if (!servico && ['normal', 'real', 'presumido', 'exterior'].includes(tipo)) x.icms += l.icms
       const mono = l.ncm ? tratamentoNcm(l.ncm, params.ncms).monofasico : false
       if (!servico && !mono && tipo !== 'pf') x.pisCofins += Math.max(0, v - l.icms) * 0.0925
       x.ibsCbsIntegral += integral
-      x.ibsCbs += tipo === 'pf' ? 0 : tipo === 'simples' ? v * aliqSimples : integral
+      x.ibsCbs += tipo === 'pf' || tipo === 'mei' ? 0 : tipo === 'simples' ? v * aliqSimples : integral
       m.set(chave, x)
     }
     return [...m.values()].sort((a, b) => b.valor - a.valor)
-  }, [d.linhas, d.eCompra, d.parceiros, params.ncms, aliq, aliqSimples, dentro])
+  }, [d.linhas, d.eCompra, d.parceiros, params, aliq, aliqSimples, dentro])
 
   const termo = busca.trim().toLowerCase()
   const lista = fornecedores.filter((f) => !termo || f.nome.toLowerCase().includes(termo) || f.chave.includes(termo.replace(/\D/g, '') || '§'))
@@ -186,7 +196,7 @@ export function Creditos({ d }: { d: DadosAnalise }) {
                   </td>
                   <td className="px-3 py-1.5 text-left">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${f.tipo === 'regular' || f.tipo === 'servico' ? 'bg-emerald-50 text-emerald-700' : f.tipo === 'simples' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${['normal', 'real', 'presumido'].includes(f.tipo) ? 'bg-emerald-50 text-emerald-700' : f.tipo === 'simples' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}
                     >
                       {NOME_TIPO[f.tipo]}
                     </span>

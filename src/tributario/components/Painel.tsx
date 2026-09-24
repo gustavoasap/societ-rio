@@ -24,13 +24,15 @@ import { apurar, type Contexto } from '../engine/apuracao'
 import { estimarMix, linhaConsiderada, montarBases, naturezaDe, receitaDaBase, type DadosEstab } from '../engine/base'
 import { projetar } from '../engine/projecao'
 import { ICMS_INTERNO_UF } from '../engine/tabelas'
-import { comPadrao, type Parametros as P, type MovimentoLinha, type RegimeId } from '../engine/tipos'
+import { comPadrao, type Parametros as P, type MovimentoLinha, type RegimeFornecedor, type RegimeId } from '../engine/tipos'
 import {
   carregarMovimentos,
   configDosNcms,
   listarImportacoes,
   listarNcms,
   listarParceiros,
+  regimesDosParceiros,
+  salvarRegimeFornecedor,
   salvarNcm,
   salvarParametros,
   type CamposNcm,
@@ -133,7 +135,16 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     [estabs],
   )
   // o tratamento por NCM vem da tabela trib_ncms
-  const params = useMemo(() => ({ ...paramsSalvos, ncms: configDosNcms(ncms) }), [paramsSalvos, ncms])
+  const params = useMemo(() => ({ ...paramsSalvos, ncms: configDosNcms(ncms), regimeFornecedores: regimesDosParceiros(parceiros) }), [paramsSalvos, ncms, parceiros])
+
+  async function mudarRegimeFornecedor(documento: string, regime: RegimeFornecedor | null) {
+    setParceiros((l) => l.map((p) => (p.documento === documento ? { ...p, regime } : p)))
+    try {
+      await salvarRegimeFornecedor(empresa.id, documento, regime)
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
 
   async function mudarNcm(ncm: string, campos: CamposNcm) {
     setNcms((l) => (l.some((n) => n.ncm === ncm) ? l.map((n) => (n.ncm === ncm ? { ...n, ...campos } : n)) : [...l, { empresa_id: empresa.id, ncm, descricao: null, ...campos }]))
@@ -271,7 +282,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
           )}
         </>
       )}
-      {!carregando && aba === 'parceiros' && <Parceiros d={dados} />}
+      {!carregando && aba === 'parceiros' && <Parceiros d={dados} onRegime={mudarRegimeFornecedor} />}
       {!carregando && aba === 'ncm' && <Produtos linhas={linhas} registros={ncms} params={params} onMudar={mudarNcm} />}
       {!carregando && aba === 'importar' && <Importar empresaId={empresa.id} estabelecimentos={estabs} importacoes={importacoes} onAlterado={carregar} />}
       {aba === 'parametros' && (

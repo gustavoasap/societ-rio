@@ -7,6 +7,7 @@ import { fornecedorDoSimples } from '../../engine/cfop'
 import { moeda, pct } from '../../formatacao'
 import { Segmentado } from '../comum'
 import type { DadosAnalise } from '../contexto'
+import type { RegimeFornecedor } from '../../engine/tipos'
 
 const TIPO: Record<string, string> = { PF: 'Pessoa física', PJ_C: 'PJ contribuinte', PJ_N: 'PJ não contribuinte', '': '—' }
 
@@ -22,7 +23,17 @@ interface Linha {
   simples: boolean
 }
 
-export function Parceiros({ d }: { d: DadosAnalise }) {
+const REGIMES_FORN: { value: RegimeFornecedor; label: string }[] = [
+  { value: 'normal', label: 'Regime normal (Presumido/Real)' },
+  { value: 'real', label: 'Lucro Real' },
+  { value: 'presumido', label: 'Lucro Presumido' },
+  { value: 'simples', label: 'Simples Nacional' },
+  { value: 'mei', label: 'MEI' },
+  { value: 'pf', label: 'Pessoa física' },
+]
+const nomeRegimeForn = (r: RegimeFornecedor) => REGIMES_FORN.find((x) => x.value === r)?.label ?? r
+
+export function Parceiros({ d, onRegime }: { d: DadosAnalise; onRegime: (documento: string, regime: RegimeFornecedor | null) => void }) {
   const { params } = d
   const [filtro, setFiltro] = useState<'clientes' | 'fornecedores' | 'todos'>('clientes')
   const [busca, setBusca] = useState('')
@@ -116,14 +127,15 @@ export function Parceiros({ d }: { d: DadosAnalise }) {
       >
         <p className="-mt-2 mb-3 text-sm text-slate-500">
           Desmarque um cliente ou fornecedor para tirá-lo de todos os cálculos (ex.: operações com partes relacionadas ou não recorrentes). Pessoas físicas ficam agrupadas.
-          A escolha é salva automaticamente.
+          O <strong>regime do fornecedor</strong> define o crédito: regime normal dá crédito integral de IBS/CBS; Simples, só o IBS/CBS do DAS; MEI e pessoa física, nenhum.
+          O sistema identifica o Simples pelo CSOSN das notas de entrada; prestadores de serviço e Presumido × Real precisam ser informados aqui. Tudo é salvo automaticamente.
         </p>
         <div className="relative mb-3">
           <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input className="input pl-10" placeholder="Buscar por nome ou CNPJ..." value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
         <div className="max-h-[600px] overflow-auto">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[1140px] text-sm">
             <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="w-10 py-2.5 pr-2">Usar</th>
@@ -135,6 +147,7 @@ export function Parceiros({ d }: { d: DadosAnalise }) {
                 <th className="px-2 py-2.5 text-right">% vendas</th>
                 <th className="px-2 py-2.5 text-right">Compras</th>
                 <th className="px-2 py-2.5 text-right">Serviços</th>
+                <th className="px-2 py-2.5">Regime do fornecedor (crédito)</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
@@ -156,12 +169,28 @@ export function Parceiros({ d }: { d: DadosAnalise }) {
                     <td className="px-2 py-2 text-right text-slate-500">{x.vendas && totalVendas ? pct(x.vendas / totalVendas, 1) : ''}</td>
                     <td className="px-2 py-2 text-right">{x.compras ? moeda(x.compras) : <span className="text-slate-300">—</span>}</td>
                     <td className="px-2 py-2 text-right">{x.servicos ? moeda(x.servicos) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-2 py-2">
+                      {x.chave !== 'PF' && x.compras + x.servicos > 0 ? (
+                        <select
+                          className={`input w-56 py-1 text-xs no-underline ${d.params.regimeFornecedores[x.chave] ? 'border-emerald-300 bg-emerald-50 font-semibold' : 'text-slate-500'}`}
+                          value={d.params.regimeFornecedores[x.chave] ?? ''}
+                          onChange={(e) => onRegime(x.chave, (e.target.value || null) as RegimeFornecedor | null)}
+                        >
+                          <option value="">Automático: {nomeRegimeForn(x.simples ? 'simples' : 'normal')}</option>
+                          {REGIMES_FORN.map((r) => (
+                            <option key={r.value} value={r.value}>
+                              {r.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
+                    </td>
                   </tr>
                 )
               })}
               {exibidos.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate-400">
+                  <td colSpan={10} className="py-10 text-center text-slate-400">
                     Nenhum cliente/fornecedor identificado. Reimporte os relatórios detalhados para trazer o CNPJ de cada nota.
                   </td>
                 </tr>
