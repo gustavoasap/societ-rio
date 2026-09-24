@@ -47,10 +47,18 @@ export function Dashboard({ session }: { session: Session }) {
   const [mostrarParceiros, setMostrarParceiros] = useState(false)
 
   const carregar = useCallback(async () => {
-    const [proc, parc] = await Promise.all([
-      supabase.from('soc_processos').select('*').order('data_inicio', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('soc_parceiros').select('*').order('nome'),
-    ])
+    const buscar = () =>
+      Promise.all([
+        supabase.from('soc_processos').select('*').order('data_inicio', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('soc_parceiros').select('*').order('nome'),
+      ])
+    let [proc, parc] = await buscar()
+    // Logo após o login, o token pode chegar com horário levemente à frente do servidor
+    // de dados ("JWT issued at future"). Aguarda um pouco e tenta de novo.
+    for (let tentativa = 0; tentativa < 3 && /issued at future/i.test((proc.error ?? parc.error)?.message ?? ''); tentativa++) {
+      await new Promise((r) => setTimeout(r, 1500))
+      ;[proc, parc] = await buscar()
+    }
     if (proc.error || parc.error) setErro((proc.error ?? parc.error)!.message)
     else setErro(null)
     setProcessos((proc.data as Processo[]) ?? [])
