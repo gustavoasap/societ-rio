@@ -85,7 +85,7 @@ interface ParcelaDas {
 }
 
 /** DAS de uma parcela de receita, com as segregações legais e a conversão da partilha na reforma. */
-function dasDaReceita(
+export function dasDaReceita(
   receita: number,
   anexo: Anexo,
   rbt12: number,
@@ -231,7 +231,7 @@ export function icmsRegular(b: BaseMensal, p: Parametros, regras: RegrasAno) {
 // ---------------------------------------------------------------------------
 
 /** Crédito de IBS/CBS nas compras de optantes do Simples: valor de CBS/IBS embutido no DAS deles (LC 214, art. 47, §9º). */
-function aliquotaCreditoFornecedorSimples(p: Parametros, regras: RegrasAno) {
+export function aliquotaCreditoFornecedorSimples(p: Parametros, regras: RegrasAno) {
   const f = ANEXOS_SIMPLES.I.faixas[2].partilha
   const share = (f.PIS ?? 0) + (f.COFINS ?? 0) + (f.ICMS ?? 0) * (1 - regras.icmsIssFator)
   return (p.aliquotaFornecedoresSimples / 100) * share

@@ -8,6 +8,7 @@ import { moeda, pct } from '../../formatacao'
 import { Segmentado } from '../comum'
 import type { DadosAnalise } from '../contexto'
 import type { RegimeFornecedor } from '../../engine/tipos'
+import { REGIMES_FORN } from '../../formatacao'
 
 const TIPO: Record<string, string> = { PF: 'Pessoa física', PJ_C: 'PJ contribuinte', PJ_N: 'PJ não contribuinte', '': '—' }
 
@@ -23,14 +24,6 @@ interface Linha {
   simples: boolean
 }
 
-const REGIMES_FORN: { value: RegimeFornecedor; label: string }[] = [
-  { value: 'normal', label: 'Regime normal (Presumido/Real)' },
-  { value: 'real', label: 'Lucro Real' },
-  { value: 'presumido', label: 'Lucro Presumido' },
-  { value: 'simples', label: 'Simples Nacional' },
-  { value: 'mei', label: 'MEI' },
-  { value: 'pf', label: 'Pessoa física' },
-]
 const nomeRegimeForn = (r: RegimeFornecedor) => REGIMES_FORN.find((x) => x.value === r)?.label ?? r
 
 export function Parceiros({ d, onRegime }: { d: DadosAnalise; onRegime: (documento: string, regime: RegimeFornecedor | null) => void }) {

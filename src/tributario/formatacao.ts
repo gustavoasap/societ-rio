@@ -1,4 +1,4 @@
-import { REGIMES, type RegimeId, type Resultado, type Tributo } from './engine/tipos'
+import { REGIMES, type RegimeFornecedor, type RegimeId, type Resultado, type Tributo } from './engine/tipos'
 
 /** Cor fixa por regime (paleta categórica validada — a cor acompanha o regime, nunca a posição). */
 export const COR_REGIME: Record<RegimeId, string> = {
@@ -50,3 +50,13 @@ export function recomendacao(resultados: Resultado[], atual: RegimeId, periodo: 
   return { melhor: melhor.regime, texto }
 }
 
+
+/** Regime do fornecedor, para o crédito das compras. */
+export const REGIMES_FORN: { value: RegimeFornecedor; label: string }[] = [
+  { value: 'normal', label: 'Regime normal (Presumido/Real)' },
+  { value: 'real', label: 'Lucro Real' },
+  { value: 'presumido', label: 'Lucro Presumido' },
+  { value: 'simples', label: 'Simples Nacional' },
+  { value: 'mei', label: 'MEI' },
+  { value: 'pf', label: 'Pessoa física' },
+]

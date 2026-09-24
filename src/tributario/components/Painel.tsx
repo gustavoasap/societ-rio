@@ -6,6 +6,7 @@ import {
   Calculator,
   CalendarRange,
   CheckCircle2,
+  FileDown,
   FileSpreadsheet,
   HandCoins,
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
   Scale,
   Settings2,
   Table2,
+  Tags,
   Upload,
   Users,
 } from 'lucide-react'
@@ -54,8 +56,10 @@ import { Legislacao } from './abas/Legislacao'
 import { Movimento } from './abas/Movimento'
 import { Parceiros } from './abas/Parceiros'
 import { Parametros } from './abas/Parametros'
+import { Preco } from './abas/Preco'
 import { Produtos } from './abas/Produtos'
 import { Reforma } from './abas/Reforma'
+import { Relatorio } from './abas/Relatorio'
 import { VisaoGeral } from './abas/VisaoGeral'
 
 type Aba =
@@ -68,6 +72,8 @@ type Aba =
   | 'icms'
   | 'creditos'
   | 'aliquotas'
+  | 'preco'
+  | 'relatorio'
   | 'reforma'
   | 'ncm'
   | 'importar'
@@ -196,6 +202,8 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     { id: 'creditos', label: 'Créditos', icone: <HandCoins className="h-4 w-4" />, grupo: 'Análises' },
     { id: 'aliquotas', label: 'Alíquotas', icone: <Percent className="h-4 w-4" />, grupo: 'Análises' },
     { id: 'apuracao', label: 'Apuração atual', icone: <Calculator className="h-4 w-4" />, grupo: 'Análises' },
+    { id: 'preco', label: 'Preço e markup', icone: <Tags className="h-4 w-4" />, grupo: 'Análises' },
+    { id: 'relatorio', label: 'Relatório PDF', icone: <FileDown className="h-4 w-4" />, grupo: 'Análises' },
     { id: 'movimento', label: 'Movimento e CFOP', icone: <Table2 className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'parceiros', label: 'Clientes e fornecedores', icone: <Users className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'ncm', label: 'Produtos (NCM)', icone: <Barcode className="h-4 w-4" />, grupo: 'Dados' },
@@ -207,7 +215,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-lg shadow-asap-900/5 ring-1 ring-slate-200/70">
+      <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-lg shadow-asap-900/5 ring-1 ring-slate-200/70 ${aba === 'relatorio' ? 'no-print' : ''}`}>
         <div className="flex min-w-0 items-center gap-3">
           <button className="icon-btn no-print" onClick={onVoltar} title="Voltar às empresas">
             <ArrowLeft className="h-5 w-5" />
@@ -277,6 +285,8 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
           {aba === 'creditos' && <Creditos d={dados} />}
           {aba === 'aliquotas' && <Aliquotas d={dados} />}
           {aba === 'apuracao' && <Apuracao bases={bases} ctx={ctx} regime={regimeAtual} />}
+          {aba === 'preco' && <Preco d={dados} />}
+          {aba === 'relatorio' && <Relatorio d={dados} empresa={empresa} />}
           {aba === 'movimento' && (
             <Movimento bases={basesFiltradas} linhas={estabFiltro ? linhas.filter((l) => l.estabelecimento_id === estabFiltro) : linhas} params={params} onParams={mudarParams} />
           )}

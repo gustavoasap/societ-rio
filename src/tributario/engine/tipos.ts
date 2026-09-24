@@ -124,6 +124,8 @@ export interface Parametros {
   antecipacaoSimples: boolean
   /** Simulação de ICMS: benefício fiscal ou mudança de UF do estabelecimento */
   cenarioIcms: CenarioIcms
+  /** Observações do contador impressas no relatório ao cliente */
+  observacoesRelatorio: string
 }
 
 export interface CenarioIcms {
@@ -180,6 +182,7 @@ export const PARAMETROS_PADRAO: Parametros = {
   premissaPreco: 'preco_mantido',
   antecipacaoSimples: true,
   cenarioIcms: { ativo: false, descricao: '', uf: 'SC', aliquotaInterna: null, cargaInterestadual: null, manterCreditos: true },
+  observacoesRelatorio: '',
 }
 
 export const comPadrao = (p: Partial<Parametros> | null | undefined): Parametros => ({ ...PARAMETROS_PADRAO, ...(p ?? {}) })

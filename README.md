@@ -4,7 +4,8 @@
 - **Planejamento tributário** (`#/tributario`) — importa os relatórios fiscais (entradas, saídas e serviços) da matriz e das filiais,
   mostra o movimento mensal/semestral/anual, apura o regime atual e compara Simples Nacional (tradicional e híbrido), Lucro Presumido
   e Lucro Real ano a ano durante a Reforma Tributária (2026–2033). O motor de cálculo fica em `src/tributario/engine`, com a base legal
-  citada em cada regra (`legislacao.ts`) e testes em `engine.test.ts` (`npm test`).
+  citada em cada regra (`legislacao.ts`) e testes em `engine.test.ts` (`npm test`). Inclui simulador de formação de preço/markup
+  por regime e ano (`preco.ts`) e relatório ao cliente em PDF (aba "Relatório PDF", pela impressão do navegador).
 
 - Frontend: React + Vite + Tailwind (deploy na Vercel)
 - Banco e login: Supabase (tabelas `soc_processos` e `soc_parceiros`, com RLS — só usuários logados acessam)
