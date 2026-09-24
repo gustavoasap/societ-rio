@@ -224,7 +224,7 @@ export function Dashboard({ session }: { session: Session }) {
                         <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-700">{p.cnpj || '—'}</td>
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-800">{p.razao_social || '—'}</div>
-                          <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 whitespace-nowrap text-xs text-slate-500">
                             <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200" title={`${feitos} de ${ACOMPANHAMENTO.length} etapas concluídas`}>
                               <div className="h-full rounded-full bg-emerald-500" style={{ width: `${(feitos / ACOMPANHAMENTO.length) * 100}%` }} />
                             </div>
