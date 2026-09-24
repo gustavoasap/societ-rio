@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, supabaseConfigurado } from './lib/supabase'
-import { Dashboard } from './components/Dashboard'
 import { Login } from './components/Login'
+import { Portal } from './portal/Portal'
 
 function NovaSenha({ onDone }: { onDone: () => void }) {
   const [senha, setSenha] = useState('')
@@ -59,5 +59,5 @@ export default function App() {
   if (!pronto) return null
   if (recuperando && session) return <NovaSenha onDone={() => setRecuperando(false)} />
   if (!session) return <Login />
-  return <Dashboard session={session} />
+  return <Portal session={session} />
 }

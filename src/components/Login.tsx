@@ -34,11 +34,11 @@ export function Login() {
         <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="relative h-12 w-auto self-start" />
         <div className="relative mt-auto max-w-md">
           <h2 className="text-4xl leading-tight font-extrabold">
-            Processos societários <span className="bg-gradient-to-r from-brand-300 to-cyan-300 bg-clip-text text-transparent">sob controle.</span>
+            O escritório inteiro <span className="bg-gradient-to-r from-brand-300 to-cyan-300 bg-clip-text text-transparent">em um só lugar.</span>
           </h2>
-          <p className="mt-4 text-white/60">Aberturas, alterações e baixas de CNPJ em um só painel, com cada etapa acompanhada de perto.</p>
+          <p className="mt-4 text-white/60">Portal interno da ASAP: as ferramentas de cada departamento reunidas com um único login.</p>
           <div className="mt-8 grid grid-cols-3 gap-3 text-sm">
-            {['Viabilidade', 'DBE', 'Registro'].map((t) => (
+            {['Societário', 'Contábil', 'Fiscal'].map((t) => (
               <div key={t} className="rounded-xl bg-white/5 px-3 py-2.5 ring-1 ring-white/10">
                 <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400" />
                 {t}
