@@ -114,7 +114,7 @@ export function Relatorio({ d, empresa }: { d: DadosAnalise; empresa: EmpresaCom
         </label>
       </div>
 
-      <article className="relatorio mx-auto max-w-[210mm] space-y-7 bg-white p-8 text-[13px] leading-relaxed text-slate-800 shadow-lg ring-1 ring-slate-200 print:max-w-none print:p-0 print:shadow-none print:ring-0">
+      <article className="relatorio mx-auto max-w-[210mm] space-y-7 bg-white p-8 text-[0.8125rem] leading-relaxed text-slate-800 shadow-lg ring-1 ring-slate-200 print:max-w-none print:p-0 print:shadow-none print:ring-0">
         <header className="flex items-start justify-between gap-6 border-b border-slate-200 pb-4">
           <div>
             <p className="text-xs font-semibold tracking-wider text-brand-700 uppercase">Análise e planejamento tributário</p>
@@ -178,7 +178,7 @@ export function Relatorio({ d, empresa }: { d: DadosAnalise; empresa: EmpresaCom
           <Bloco titulo={`DRE gerencial por regime — ${periodo}`} quebra>
             <table className="w-full text-right tabular-nums">
               <thead>
-                <tr className="border-b border-slate-300 text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                <tr className="border-b border-slate-300 text-[0.6875rem] font-bold tracking-wider text-slate-500 uppercase">
                   <th className="py-1.5 text-left" />
                   {resultados.map((r) => (
                     <th key={r.regime} className="px-2 py-1.5">
@@ -219,7 +219,7 @@ export function Relatorio({ d, empresa }: { d: DadosAnalise; empresa: EmpresaCom
           <Bloco titulo="ICMS, DIFAL e créditos">
             <table className="w-full text-right tabular-nums">
               <thead>
-                <tr className="border-b border-slate-300 text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                <tr className="border-b border-slate-300 text-[0.6875rem] font-bold tracking-wider text-slate-500 uppercase">
                   <th className="py-1.5 text-left" />
                   {resultados.map((r) => (
                     <th key={r.regime} className="px-2 py-1.5">
@@ -278,7 +278,7 @@ export function Relatorio({ d, empresa }: { d: DadosAnalise; empresa: EmpresaCom
             />
             <table className="mt-3 w-full text-right tabular-nums">
               <thead>
-                <tr className="border-b border-slate-300 text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                <tr className="border-b border-slate-300 text-[0.6875rem] font-bold tracking-wider text-slate-500 uppercase">
                   <th className="py-1.5 text-left">Ano</th>
                   <th className="px-2 py-1.5">Receita</th>
                   {REGIMES.map((r) => (
@@ -300,7 +300,7 @@ export function Relatorio({ d, empresa }: { d: DadosAnalise; empresa: EmpresaCom
                           {x ? (
                             <>
                               {moeda(x.total)}
-                              <div className="text-[10px] text-slate-500">{pct(x.carga)}</div>
+                              <div className="text-[0.625rem] text-slate-500">{pct(x.carga)}</div>
                             </>
                           ) : (
                             '—'
@@ -366,7 +366,7 @@ export function Relatorio({ d, empresa }: { d: DadosAnalise; empresa: EmpresaCom
           </Bloco>
         )}
 
-        <footer className="border-t border-slate-200 pt-3 text-[11px] text-slate-500">
+        <footer className="border-t border-slate-200 pt-3 text-[0.6875rem] text-slate-500">
           Estudo elaborado pela ASAP Assessoria Contábil com base nos relatórios fiscais importados e nos parâmetros informados. As projeções da Reforma Tributária dependem da
           regulamentação e das alíquotas de referência ainda a serem fixadas pelo Senado Federal (LC 214/2025, arts. 18 e 353 a 359). Este documento não substitui a análise
           individual de cada operação.
@@ -395,9 +395,9 @@ function ordemDre(k: string) {
 function Indicador({ titulo, valor, detalhe }: { titulo: string; valor: string; detalhe?: string }) {
   return (
     <div className="rounded-lg border border-slate-200 px-3 py-2">
-      <div className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">{titulo}</div>
+      <div className="text-[0.625rem] font-semibold tracking-wider text-slate-500 uppercase">{titulo}</div>
       <div className="text-lg font-extrabold text-slate-900 tabular-nums">{valor}</div>
-      {detalhe && <div className="text-[11px] text-slate-500">{detalhe}</div>}
+      {detalhe && <div className="text-[0.6875rem] text-slate-500">{detalhe}</div>}
     </div>
   )
 }

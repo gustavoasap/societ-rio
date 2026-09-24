@@ -240,9 +240,9 @@ export function Importar({
       <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
         <div className="border-b border-slate-100 px-5 py-3 text-sm font-bold text-slate-800">Importações realizadas</div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[45rem] text-sm">
             <thead>
-              <tr className="text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="px-5 py-2.5">Arquivo</th>
                 <th className="px-3 py-2.5">Tipo</th>
                 <th className="px-3 py-2.5">Estabelecimento</th>

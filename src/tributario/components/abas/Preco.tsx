@@ -118,7 +118,7 @@ export function Preco({ d }: { d: DadosAnalise }) {
     <label className="block">
       <span className="text-xs font-semibold text-slate-500">{rotulo}</span>
       <input className="input mt-1" type="number" step={passo} value={Number.isFinite(valor) ? valor : 0} onChange={(ev) => onChange(num(ev.target.value))} />
-      {dica && <span className="mt-1 block text-[11px] text-slate-400">{dica}</span>}
+      {dica && <span className="mt-1 block text-[0.6875rem] text-slate-400">{dica}</span>}
     </label>
   )
 
@@ -206,14 +206,14 @@ export function Preco({ d }: { d: DadosAnalise }) {
           {lista.map((x) => (
             <div key={x.regime} className={`relative rounded-2xl p-5 ring-1 ${melhorConsumidor === x.regime ? 'bg-emerald-50/60 ring-2 ring-emerald-400' : 'bg-white ring-slate-200'}`}>
               {melhorConsumidor === x.regime && (
-                <span className="absolute -top-3 left-5 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white shadow">
+                <span className="absolute -top-3 left-5 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-0.5 text-[0.6875rem] font-bold text-white shadow">
                   <Award className="h-3.5 w-3.5" /> {modo === 'margem' ? 'Menor preço final' : 'Maior lucro'}
                 </span>
               )}
               <div className="flex items-center gap-2 font-bold text-slate-800">
                 <PontoRegime regime={x.regime} />
                 {nomeRegime(x.regime)}
-                {x.regime === d.regimeAtual && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">atual</span>}
+                {x.regime === d.regimeAtual && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[0.625rem] font-semibold text-slate-500">atual</span>}
               </div>
               {x.viavel ? (
                 <>
@@ -248,9 +248,9 @@ export function Preco({ d }: { d: DadosAnalise }) {
         )}
 
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[45rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2 pr-3 text-left">Composição por unidade</th>
                 {lista.map((x) => (
                   <th key={x.regime} className="px-3 py-2">

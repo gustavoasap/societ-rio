@@ -108,7 +108,7 @@ export function Portal({ session }: { session: Session }) {
               </span>
               <span className="text-sm text-white/80">
                 {nomeExibicao}
-                {admin && <span className="ml-1.5 rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold">Admin</span>}
+                {admin && <span className="ml-1.5 rounded-full bg-white/15 px-2 py-0.5 text-[0.6875rem] font-semibold">Admin</span>}
               </span>
             </div>
             <button className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => supabase.auth.signOut()} title="Sair">
@@ -128,13 +128,13 @@ export function Portal({ session }: { session: Session }) {
         )}
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[250px_1fr]">
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[15.625rem_1fr]">
         <nav className="flex gap-1 overflow-x-auto pb-1 lg:sticky lg:top-6 lg:flex-col lg:self-start lg:overflow-visible" aria-label="Menu do portal">
           <Link para="/" onClick={() => setBusca('')} className={itemMenu(rota === '/' && !busca)} aria-current={rota === '/' ? 'page' : undefined}>
             <House className="h-4.5 w-4.5 shrink-0" />
             Página inicial
           </Link>
-          <div className="hidden px-3 pt-4 pb-1 text-[11px] font-bold tracking-wider text-slate-400 uppercase lg:block">Departamentos</div>
+          <div className="hidden px-3 pt-4 pb-1 text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase lg:block">Departamentos</div>
           {departamentos.map((d) => {
             const I = iconeDe(d.icone)
             const ativo = d.slug === slugAtual && !busca
@@ -149,7 +149,7 @@ export function Portal({ session }: { session: Session }) {
           })}
           {admin && (
             <>
-              <div className="hidden px-3 pt-4 pb-1 text-[11px] font-bold tracking-wider text-slate-400 uppercase lg:block">Gestão</div>
+              <div className="hidden px-3 pt-4 pb-1 text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase lg:block">Gestão</div>
               <Link para="/admin" onClick={() => setBusca('')} className={itemMenu(rota === '/admin' && !busca)}>
                 <Settings className="h-4.5 w-4.5 shrink-0" />
                 Administração

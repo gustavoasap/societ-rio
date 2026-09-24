@@ -130,9 +130,9 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
         <p className="mt-1 text-xs text-slate-500">● marca o regime de menor carga em cada ano. O Simples híbrido (IBS/CBS por fora do DAS) só existe a partir de 2027.</p>
 
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[47.5rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2.5 pr-3 text-left">Regime</th>
                 {anos.map((a) => (
                   <th key={a.ano} className="px-2 py-2.5">
@@ -159,7 +159,7 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
                           {x ? (
                             <>
                               {moedaCurta(x.total)}
-                              <div className="text-[11px] font-medium text-slate-500">{pct(x.carga)}</div>
+                              <div className="text-[0.6875rem] font-medium text-slate-500">{pct(x.carga)}</div>
                             </>
                           ) : (
                             <span className="text-slate-300">—</span>
@@ -234,9 +234,9 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
           alterações recalculam toda a projeção na hora.
         </p>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[40rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2.5 pr-3 text-left">Ano</th>
                 <th className="px-3 py-2.5">PIS/COFINS</th>
                 <th className="px-3 py-2.5">IPI</th>
@@ -335,9 +335,9 @@ function Sensibilidade({ bases, ctx }: { bases: BaseMensal[]; ctx: Contexto }) {
         2029 a 2032 e 100% em 2033). Edite os dois cenários personalizados para testar expectativas.
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[960px] text-sm">
+        <table className="w-full min-w-[60rem] text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+            <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
               <th className="py-2 pr-3 text-left">Cenário</th>
               <th className="px-2 py-2">CBS ref.</th>
               <th className="px-2 py-2">IBS ref.</th>
@@ -385,7 +385,7 @@ function Sensibilidade({ bases, ctx }: { bases: BaseMensal[]; ctx: Contexto }) {
                           {r ? (
                             <>
                               {moedaCurta(r.total)}
-                              <div className="text-[11px] font-medium text-slate-500">
+                              <div className="text-[0.6875rem] font-medium text-slate-500">
                                 {pct(r.carga)}
                                 {regime === 'melhor' && ` · ${nomeRegime(r.regime)}`}
                               </div>

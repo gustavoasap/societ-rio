@@ -54,9 +54,9 @@ export function Apuracao({ bases, ctx, regime }: { bases: BaseMensal[]; ctx: Con
       {regime.startsWith('simples') && (
         <Section title="Resumo PGDAS-D (matriz + filiais consolidadas)" icone={FileText} cor="sky">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[40rem] text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                   <th className="py-2.5 pr-3 text-left">Competência</th>
                   <th className="px-3 py-2.5">Receita bruta</th>
                   <th className="px-3 py-2.5">RBT12</th>

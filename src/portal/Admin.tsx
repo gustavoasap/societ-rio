@@ -172,7 +172,7 @@ function Chave({ ligado, onChange, desabilitado, label }: { ligado: boolean; onC
         onClick={() => onChange(!ligado)}
         className={`relative h-5 w-9 shrink-0 rounded-full transition ${ligado ? 'bg-brand-500' : 'bg-slate-300'} disabled:cursor-not-allowed`}
       >
-        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${ligado ? 'left-[18px]' : 'left-0.5'}`} />
+        <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${ligado ? 'translate-x-4' : ''}`} />
       </button>
       {label}
     </label>

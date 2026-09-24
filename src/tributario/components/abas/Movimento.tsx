@@ -104,7 +104,7 @@ export function Movimento({
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="sticky left-0 bg-white py-2.5 pr-4 text-left">Descrição</th>
                 {colunas.map((g) => (
                   <th key={g.chave} className="px-3 py-2.5 whitespace-nowrap">
@@ -117,7 +117,7 @@ export function Movimento({
               {LINHAS.map((l) =>
                 l.tipo === 'titulo' ? (
                   <tr key={l.rotulo}>
-                    <td colSpan={colunas.length + 1} className="sticky left-0 bg-slate-50 px-2 py-1.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+                    <td colSpan={colunas.length + 1} className="sticky left-0 bg-slate-50 px-2 py-1.5 text-[0.6875rem] font-bold tracking-wider text-slate-500 uppercase">
                       {l.rotulo}
                     </td>
                   </tr>
@@ -148,9 +148,9 @@ export function Movimento({
           exemplo, entradas em venda à ordem (x923) sem a nota de compra (x121) correspondente. Desmarque "Usar" para tirar um CFOP de toda a análise. Alterações são salvas e valem para todos os cálculos desta empresa.
         </p>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[40rem] text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="w-12 py-2.5 pr-2">Usar</th>
                 <th className="py-2.5 pr-3">Tipo</th>
                 <th className="px-3 py-2.5">CFOP / serviço</th>
@@ -250,9 +250,9 @@ function Destinos({ linhas, params }: { linhas: MovimentoLinha[]; params: Parame
             <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">PJ não contribuinte {pct(tot.PJ_N / (dados.totalVendas || 1), 1)}</span>
           </div>
           <div className="max-h-96 overflow-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[35rem] text-sm">
               <thead className="sticky top-0 bg-white">
-                <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                   <th className="py-2 pr-3 text-left">UF</th>
                   <th className="px-3 py-2">Vendas</th>
                   <th className="px-3 py-2">%</th>

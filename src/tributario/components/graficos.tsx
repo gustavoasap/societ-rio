@@ -95,7 +95,7 @@ export function BarrasAgrupadas({
         {passos.map((p) => (
           <g key={p}>
             <line x1={margem.l} x2={margem.l + w} y1={y(p)} y2={y(p)} stroke="#e2e8f0" strokeWidth={1} />
-            <text x={margem.l - 8} y={y(p)} dy="0.32em" textAnchor="end" className="fill-slate-400 text-[10px]">
+            <text x={margem.l - 8} y={y(p)} dy="0.32em" textAnchor="end" className="fill-slate-400 text-[0.625rem]">
               {compacto(p)}
             </text>
           </g>
@@ -145,7 +145,7 @@ export function BarrasAgrupadas({
                   </g>
                 )
               })}
-              <text x={margem.l + gi * larguraGrupo + larguraGrupo / 2} y={altura - 8} textAnchor="middle" className="fill-slate-500 text-[11px] font-medium">
+              <text x={margem.l + gi * larguraGrupo + larguraGrupo / 2} y={altura - 8} textAnchor="middle" className="fill-slate-500 text-[0.6875rem] font-medium">
                 {g.rotulo}
               </text>
             </g>
