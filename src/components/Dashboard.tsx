@@ -27,6 +27,7 @@ import {
   FilePenLine,
   FolderOpen,
   Handshake,
+  Landmark,
   LogOut,
   Pencil,
   Plus,
@@ -199,6 +200,10 @@ export function Dashboard({ session }: { session: Session }) {
             <p className="mt-1 text-sm text-white/60">Acompanhe as aberturas, alterações e baixas de CNPJ do escritório.</p>
           </div>
           <div className="flex gap-2">
+            <a href="#/tributario" className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20">
+              <Landmark className="h-4 w-4" />
+              Planejamento tributário
+            </a>
             <button className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setMostrarParceiros(true)}>
               <Handshake className="h-4 w-4" />
               Parceiros

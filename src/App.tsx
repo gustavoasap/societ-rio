@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase, supabaseConfigurado } from './lib/supabase'
 import { Dashboard } from './components/Dashboard'
 import { Login } from './components/Login'
+import { Tributario } from './tributario/components/Tributario'
 
 function NovaSenha({ onDone }: { onDone: () => void }) {
   const [senha, setSenha] = useState('')
@@ -27,7 +28,18 @@ function NovaSenha({ onDone }: { onDone: () => void }) {
   )
 }
 
+function useRota() {
+  const [rota, setRota] = useState(() => window.location.hash)
+  useEffect(() => {
+    const mudou = () => setRota(window.location.hash)
+    window.addEventListener('hashchange', mudou)
+    return () => window.removeEventListener('hashchange', mudou)
+  }, [])
+  return rota
+}
+
 export default function App() {
+  const rota = useRota()
   const [session, setSession] = useState<Session | null>(null)
   const [pronto, setPronto] = useState(false)
   const [recuperando, setRecuperando] = useState(false)
@@ -59,5 +71,6 @@ export default function App() {
   if (!pronto) return null
   if (recuperando && session) return <NovaSenha onDone={() => setRecuperando(false)} />
   if (!session) return <Login />
+  if (rota.startsWith('#/tributario')) return <Tributario session={session} />
   return <Dashboard session={session} />
 }
