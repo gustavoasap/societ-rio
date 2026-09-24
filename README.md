@@ -9,12 +9,13 @@ Portal interno da **ASAP Assessoria Contábil**. Reúne as ferramentas do escrit
 Ferramentas já integradas:
 
 - **Processos Societários** (`/societario/processos`): acompanhamento de abertura, alteração e baixa de CNPJ (tabelas `soc_processos` e `soc_parceiros`). Só quem tem acesso ao departamento Societário (ou é administrador) vê esses dados.
+- **Reforma Tributária (IBS/CBS)** (`/fiscal/reforma-tributaria`): análise e planejamento tributário a partir dos relatórios fiscais (entradas, saídas e serviços) da matriz e das filiais — comparativo Simples Nacional (tradicional e híbrido), Lucro Presumido e Lucro Real, DRE por regime, transição da reforma ano a ano (2026–2033), ICMS/DIFAL, créditos, simulador de preço/markup e relatório em PDF ao cliente (tabelas `trib_*`). Só quem tem acesso ao departamento Fiscal (ou é administrador) vê esses dados. O motor de cálculo fica em `src/tributario/engine`, com a base legal de cada regra em `legislacao.ts` e testes (`npm test`).
 
 Tecnologia: React + Vite + Tailwind (deploy na Vercel) e Supabase (banco, login e regras de acesso).
 
 ## Configuração
 
-1. No Supabase (SQL Editor), rode as migrations da pasta `supabase/migrations` em ordem. A do portal é `20260925000000_portal.sql`: ela cria as tabelas `portal_*`, os departamentos iniciais e o atalho para Processos Societários.
+1. No Supabase (SQL Editor), rode as migrations da pasta `supabase/migrations` em ordem. A do portal é `20260925000000_portal.sql`: ela cria as tabelas `portal_*`, os departamentos iniciais e o atalho para Processos Societários. As da Reforma Tributária (`20260925020000_planejamento_tributario.sql` a `20260928000000_regime_fornecedor.sql`) criam as tabelas `trib_*` e dependem da do portal.
 2. Torne-se administrador (só na primeira vez), trocando o e-mail:
    ```sql
    update public.portal_perfis set admin = true where email = 'seu-email@asapcont.com';

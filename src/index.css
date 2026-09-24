@@ -63,6 +63,11 @@ body {
 .animar-fundo { animation: fundo 0.15s ease-out; }
 
 @media print {
-  body { background: white; }
+  @page { size: A4; margin: 12mm; }
+  body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .no-print { display: none !important; }
+  .relatorio { font-size: 11px; }
+  .relatorio-bloco { break-inside: avoid; }
+  .relatorio-quebra { break-before: page; }
+  .relatorio tr { break-inside: avoid; }
 }
