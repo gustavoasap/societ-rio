@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 import type { ConfigNcm, Estabelecimento, MovimentoLinha, Parametros, RegimeAtual, TipoMovimento } from './engine/tipos'
-import type { LinhaImportada, TipoRelatorio } from './importacao/relatorios'
+import type { LinhaImportada, Parceiro, TipoRelatorio } from './importacao/relatorios'
 
 export interface Empresa {
   id: string
@@ -100,7 +100,7 @@ export async function listarImportacoes(empresaId: string): Promise<Importacao[]
 }
 
 const CAMPOS_MOV =
-  'estabelecimento_id, competencia, tipo, cfop, ncm, uf, cst, servico, destinatario, itens, valor_contabil, bc_icms, icms, icms_st, ipi, pis, cofins, iss, difal, retencoes'
+  'estabelecimento_id, competencia, tipo, cfop, ncm, uf, cst, servico, destinatario, parceiro, itens, valor_contabil, bc_icms, icms, icms_st, ipi, pis, cofins, iss, difal, retencoes'
 
 /** Carrega todo o movimento da empresa (paginado — o Supabase devolve no máximo 1.000 linhas por consulta). */
 export async function carregarMovimentos(empresaId: string): Promise<MovimentoLinha[]> {
@@ -157,6 +157,7 @@ export async function gravarImportacao(args: {
   registros: number
   substituir: string[]
   produtos?: Record<string, string>
+  parceiros?: Record<string, Parceiro>
 }) {
   const comps = args.linhas.map((l) => l.competencia).sort()
   if (!comps.length) throw new Error('Nenhuma linha para importar.')
@@ -193,6 +194,7 @@ export async function gravarImportacao(args: {
     throw e
   }
   if (args.produtos) await registrarNcms(args.empresaId, args.produtos)
+  if (args.parceiros) await registrarParceiros(args.empresaId, args.parceiros)
 }
 
 // ---------------------------------------------------------------------------
@@ -206,12 +208,15 @@ export interface NcmRegistro {
   monofasico: boolean | null
   st: boolean | null
   reducao: number | null
+  aliquota_icms: number | null
+  mva: number | null
 }
 
 export async function listarNcms(empresaId: string): Promise<NcmRegistro[]> {
   const { data, error } = await supabase.from('trib_ncms').select('*').eq('empresa_id', empresaId)
   erro(error)
-  return ((data ?? []) as NcmRegistro[]).map((n) => ({ ...n, reducao: n.reducao === null ? null : Number(n.reducao) }))
+  const num = (v: number | null | undefined) => (v === null || v === undefined ? null : Number(v))
+  return ((data ?? []) as NcmRegistro[]).map((n) => ({ ...n, reducao: num(n.reducao), aliquota_icms: num(n.aliquota_icms), mva: num(n.mva) }))
 }
 
 /** Registra os NCMs novos encontrados na importação (os já existentes mantêm o tratamento definido). */
@@ -223,7 +228,9 @@ export async function registrarNcms(empresaId: string, produtos: Record<string, 
   }
 }
 
-export async function salvarNcm(empresaId: string, ncm: string, campos: Pick<NcmRegistro, 'monofasico' | 'st' | 'reducao'>) {
+export type CamposNcm = Pick<NcmRegistro, 'monofasico' | 'st' | 'reducao' | 'aliquota_icms' | 'mva'>
+
+export async function salvarNcm(empresaId: string, ncm: string, campos: CamposNcm) {
   const { error } = await supabase.from('trib_ncms').upsert({ empresa_id: empresaId, ncm, ...campos, updated_at: new Date().toISOString() }, { onConflict: 'empresa_id,ncm' })
   erro(error)
 }
@@ -235,6 +242,8 @@ export function configDosNcms(registros: NcmRegistro[]): Record<string, ConfigNc
     if (n.monofasico !== null) c.monofasico = n.monofasico
     if (n.st !== null) c.st = n.st
     if (n.reducao !== null) c.reducao = n.reducao
+    if (n.aliquota_icms !== null) c.aliquotaIcms = n.aliquota_icms
+    if (n.mva !== null) c.mva = n.mva
     if (Object.keys(c).length) r[n.ncm] = c
   }
   return r
@@ -254,4 +263,42 @@ export async function adicionarEstabelecimento(empresaId: string, e: Omit<Estabe
   if (error?.message.includes('trib_estabelecimentos_cnpj_unico')) throw new Error(`O CNPJ ${e.cnpj} já está cadastrado em outra empresa.`)
   erro(error)
   return data!.id as string
+}
+
+// ---------------------------------------------------------------------------
+// Clientes e fornecedores
+// ---------------------------------------------------------------------------
+
+export interface ParceiroRegistro {
+  documento: string
+  nome: string | null
+  tipo: string
+  uf: string | null
+  municipio: string | null
+}
+
+export async function listarParceiros(empresaId: string): Promise<ParceiroRegistro[]> {
+  const todos: ParceiroRegistro[] = []
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await supabase.from('trib_parceiros').select('documento, nome, tipo, uf, municipio').eq('empresa_id', empresaId).range(de, de + 999)
+    erro(error)
+    todos.push(...((data ?? []) as ParceiroRegistro[]))
+    if ((data ?? []).length < 1000) break
+  }
+  return todos
+}
+
+export async function registrarParceiros(empresaId: string, parceiros: Record<string, Parceiro>) {
+  const linhas = Object.entries(parceiros).map(([documento, p]) => ({
+    empresa_id: empresaId,
+    documento,
+    nome: p.nome || null,
+    tipo: p.tipo,
+    uf: p.uf || null,
+    municipio: p.municipio || null,
+  }))
+  for (let i = 0; i < linhas.length; i += 500) {
+    const { error } = await supabase.from('trib_parceiros').upsert(linhas.slice(i, i + 500), { onConflict: 'empresa_id,documento', ignoreDuplicates: true })
+    erro(error)
+  }
 }

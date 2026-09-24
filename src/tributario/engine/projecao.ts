@@ -23,6 +23,7 @@ export function montarAnoBase(bases: BaseMensal[]): { meses: BaseMensal[]; meses
 export interface AnoProjetado {
   ano: number
   receita: number
+  meses: BaseMensal[]
   resultados: Partial<Record<RegimeId, Resultado>>
   melhor: RegimeId | null
 }
@@ -44,7 +45,7 @@ export function projetar(bases: BaseMensal[], ctx: Contexto, anos: readonly numb
     for (const r of regimesDoAno(ano)) resultados[r] = apurar(r, mesesAno, ctxAno)
     const elegiveis = Object.values(resultados).filter((r) => r.elegivel)
     const melhor = elegiveis.length ? elegiveis.reduce((a, b) => (b.total < a.total ? b : a)).regime : null
-    return { ano, receita, resultados, melhor }
+    return { ano, receita, meses: mesesAno, resultados, melhor }
   })
 }
 

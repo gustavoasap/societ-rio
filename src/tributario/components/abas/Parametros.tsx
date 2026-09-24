@@ -194,6 +194,26 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
       </Section>
 
       <Section title="Reforma Tributária" icone={Landmark} cor="emerald">
+        <div className="mb-4 grid gap-4 sm:grid-cols-2">
+          <Field label="Premissa de preço com IBS/CBS">
+            <Select
+              value={params.premissaPreco}
+              onChange={(v) => set('premissaPreco', v as P['premissaPreco'])}
+              opcoes={[
+                { value: 'preco_mantido', label: 'Preço ao cliente mantido (IBS/CBS sai da margem)' },
+                { value: 'repasse', label: 'IBS/CBS repassado por fora (preço sobe)' },
+              ]}
+            />
+            <span className="mt-1 block text-xs text-slate-500">Define a base de cálculo e o efeito na DRE a partir de 2027.</span>
+          </Field>
+          <label className="flex items-start gap-2 pt-6 text-sm text-slate-700">
+            <input type="checkbox" className="mt-0.5" checked={params.antecipacaoSimples} onChange={(e) => set('antecipacaoSimples', e.target.checked)} />
+            <span>
+              Cobrar antecipação/ICMS-ST nas entradas interestaduais do Simples
+              <span className="block text-xs text-slate-500">LC 123, art. 13, §1º, XIII, "a" e "g"; STF Tema 517 — conforme a legislação da UF.</span>
+            </span>
+          </label>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Cenário de alíquotas">
             <Select

@@ -11,7 +11,7 @@
 
 ## Configuração
 
-1. No Supabase, rode as migrations de `supabase/migrations/` em ordem (SQL Editor) — as `20260925000000_planejamento_tributario.sql` e `20260926000000_ncm_destinatario.sql` criam as tabelas do planejamento tributário.
+1. No Supabase, rode as migrations de `supabase/migrations/` em ordem (SQL Editor) — as `20260925000000_planejamento_tributario.sql`, `20260926000000_ncm_destinatario.sql` e `20260927000000_parceiros_icms.sql` criam as tabelas do planejamento tributário.
 2. Em **Authentication → Users**, crie os usuários do escritório (e desative "Allow new users to sign up").
 3. Na Vercel, importe este repositório e defina as variáveis:
    - `VITE_SUPABASE_URL`

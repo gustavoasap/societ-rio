@@ -19,6 +19,13 @@ export const NOMES_RELATORIO: Record<TipoRelatorio, string> = {
 
 export type LinhaImportada = Omit<MovimentoLinha, 'estabelecimento_id'>
 
+export interface Parceiro {
+  nome: string
+  tipo: Destinatario
+  uf: string
+  municipio: string
+}
+
 export interface RelatorioLido {
   arquivo: string
   tipo: TipoRelatorio
@@ -35,6 +42,8 @@ export interface RelatorioLido {
   valorTotal: number
   /** NCM -> nome de um produto (para a tabela de NCM da empresa) */
   produtos: Record<string, string>
+  /** CNPJ -> dados do cliente/fornecedor (pessoas físicas ficam agrupadas) */
+  parceiros: Record<string, Parceiro>
   /** Resumos que cobrem mais de um mês precisam de uma competência (ou rateio) escolhida pelo usuário. */
   exigeCompetencia: boolean
   avisos: string[]
@@ -96,10 +105,13 @@ function cpfValido(c: string) {
 export function tipoDestinatario(documento: Celula | undefined, ie: Celula | undefined): Destinatario {
   const d = texto(documento).replace(/\D/g, '')
   if (!d) return ''
-  const pf = d.length <= 11 ? cpfValido(d.padStart(11, '0')) : !cnpjValido(d) && cpfValido(d.slice(-11))
-  if (pf) return 'PF'
   const inscricao = texto(ie).replace(/\W/g, '').toUpperCase()
-  return inscricao && inscricao !== 'ISENTO' && inscricao !== 'ISENTA' ? 'PJ_C' : 'PJ_N'
+  const temIe = Boolean(inscricao) && inscricao !== 'ISENTO' && inscricao !== 'ISENTA'
+  // CPF vem completado com zeros até 14 dígitos. CPFs com muitos zeros à esquerda também "passam" como CNPJ —
+  // por isso, começando com 000 e sem inscrição estadual, prevalece a leitura como CPF.
+  const pf = d.length <= 11 || (d.startsWith('000') && !temIe && cpfValido(d.slice(-11))) || (!cnpjValido(d) && (cpfValido(d.slice(-11)) || d.startsWith('000')))
+  if (pf) return 'PF'
+  return temIe ? 'PJ_C' : 'PJ_N'
 }
 
 function cabecalhoDoArquivo(celulas: Celula[][]) {
@@ -145,7 +157,7 @@ class Agregador {
   valorTotal = 0
 
   somar(chave: Omit<LinhaImportada, 'itens' | 'valor_contabil' | 'bc_icms' | 'icms' | 'icms_st' | 'ipi' | 'pis' | 'cofins' | 'iss' | 'difal' | 'retencoes'>, v: Partial<LinhaImportada>) {
-    const k = [chave.competencia, chave.tipo, chave.cfop, chave.ncm, chave.uf, chave.cst, chave.servico, chave.destinatario].join('|')
+    const k = [chave.competencia, chave.tipo, chave.cfop, chave.ncm, chave.uf, chave.cst, chave.servico, chave.destinatario, chave.parceiro].join('|')
     const atual =
       this.mapa.get(k) ??
       ({ ...chave, itens: 0, valor_contabil: 0, bc_icms: 0, icms: 0, icms_st: 0, ipi: 0, pis: 0, cofins: 0, iss: 0, difal: 0, retencoes: 0 } as LinhaImportada)
@@ -174,7 +186,15 @@ class Agregador {
   }
 }
 
-function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[], produtos: Record<string, string>) {
+/** Registra o parceiro (PJ) e devolve o CNPJ usado como chave; pessoa física fica agrupada (chave vazia). */
+function registrarParceiro(parceiros: Record<string, Parceiro>, documento: Celula | undefined, tipo: Destinatario, nome: Celula | undefined, uf: string, municipio: Celula | undefined) {
+  const d = texto(documento).replace(/\D/g, '')
+  if (!d || tipo === 'PF' || tipo === '') return ''
+  if (!parceiros[d]) parceiros[d] = { nome: texto(nome), tipo, uf, municipio: texto(municipio) }
+  return d
+}
+
+function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[], produtos: Record<string, string>, parceiros: Record<string, Parceiro>) {
   const cab = acharCabecalho(celulas, ['cfop'])
   if (!cab) throw new Error('Cabeçalho com a coluna CFOP não encontrado.')
   const ix = cab.indice
@@ -201,6 +221,8 @@ function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]
     documento: coluna(ix, 'CNPJ/CPF Forn/Cliente', 'CNPJ/CPF', 'CNPJ', 'CPF/CNPJ'),
     ie: coluna(ix, 'Inscrição Estadual', 'IE'),
     produto: coluna(ix, 'Nome Produto', 'Descrição', 'Produto'),
+    nome: coluna(ix, 'Nome Forn/Cliente', 'Nome Fornecedor/Cliente', 'Cliente', 'Fornecedor'),
+    municipio: coluna(ix, 'Municipio Forn/Cliente', 'Município Forn/Cliente', 'Município'),
   }
   if (c.data < 0) throw new Error('Coluna de data não encontrada no relatório detalhado.')
   if (c.total < 0 && c.contabil < 0) throw new Error('Coluna de valor não encontrada no relatório detalhado.')
@@ -222,16 +244,19 @@ function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]
     const valor = c.contabil >= 0 ? v(c.contabil) : v(c.total) - v(c.desconto) + v(c.frete) + v(c.seguro) + v(c.outras) + ipi + st
     const ncm = texto(l[c.ncm]).replace(/\D/g, '')
     if (ncm && !produtos[ncm] && c.produto >= 0) produtos[ncm] = texto(l[c.produto])
+    const uf = texto(l[c.uf]).toUpperCase()
+    const destinatario = c.documento >= 0 ? tipoDestinatario(l[c.documento], c.ie >= 0 ? l[c.ie] : null) : ''
     ag.somar(
       {
         competencia: comp,
         tipo,
         cfop,
         ncm,
-        uf: texto(l[c.uf]).toUpperCase(),
+        uf,
         cst: texto(l[c.cst]).replace(/\D/g, ''),
         servico: '',
-        destinatario: c.documento >= 0 ? tipoDestinatario(l[c.documento], c.ie >= 0 ? l[c.ie] : null) : '',
+        destinatario,
+        parceiro: registrarParceiro(parceiros, l[c.documento], destinatario, l[c.nome], uf, l[c.municipio]),
       },
       {
         valor_contabil: valor,
@@ -269,14 +294,14 @@ function lerResumoCfop(celulas: Celula[][], tipo: TipoMovimento, competencia: st
     if (cfop.length !== 4) continue
     const v = (j: number) => (j >= 0 ? numero(l[j]) : 0)
     ag.somar(
-      { competencia, tipo, cfop, ncm: '', uf: '', cst: '', servico: '', destinatario: '' },
+      { competencia, tipo, cfop, ncm: '', uf: '', cst: '', servico: '', destinatario: '', parceiro: '' },
       { valor_contabil: v(c.contabil), bc_icms: v(c.bcIcms), icms: v(c.icms), icms_st: v(c.st), ipi: v(c.ipi) },
     )
   }
   return ag
 }
 
-function lerServicos(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]) {
+function lerServicos(celulas: Celula[][], tipo: TipoMovimento, avisos: string[], parceiros: Record<string, Parceiro>) {
   const cab = acharCabecalho(celulas, ['atividade'])
   if (!cab) throw new Error('Cabeçalho do registro de serviços (coluna Atividade) não encontrado.')
   const ix = cab.indice
@@ -291,6 +316,8 @@ function lerServicos(celulas: Celula[][], tipo: TipoMovimento, avisos: string[])
     cofins: coluna(ix, 'Vr, Cofins', 'Vr. Cofins'),
     ret: ['INSS', 'IRRF', 'CSLL', 'Vr. PIS Retido', 'Vr. Cofins Retido'].map((n) => coluna(ix, n)).filter((i) => i >= 0),
     documento: coluna(ix, 'CNPJ', 'CNPJ/CPF', 'CPF/CNPJ'),
+    nome: coluna(ix, 'Nome Fornecedor/Cliente', 'Nome Forn/Cliente', 'Fornecedor', 'Cliente'),
+    municipio: coluna(ix, 'Município Fornec/Cliente', 'Municipio Fornec/Cliente'),
   }
   const ag = new Agregador()
   let semData = 0
@@ -304,16 +331,19 @@ function lerServicos(celulas: Celula[][], tipo: TipoMovimento, avisos: string[])
       continue
     }
     if (!valor) continue
+    const uf = texto(l[c.uf]).toUpperCase()
+    const destinatario = c.documento >= 0 ? tipoDestinatario(l[c.documento], null) : ''
     ag.somar(
       {
         competencia: comp,
         tipo,
         cfop: '',
         ncm: '',
-        uf: texto(l[c.uf]).toUpperCase(),
+        uf,
         cst: '',
         servico: texto(l[c.atividade]).replace(/[^\d.]/g, ''),
-        destinatario: c.documento >= 0 ? tipoDestinatario(l[c.documento], null) : '',
+        destinatario,
+        parceiro: registrarParceiro(parceiros, l[c.documento], destinatario, l[c.nome], uf, l[c.municipio]),
       },
       { valor_contabil: valor, iss: v(c.iss), pis: v(c.pis), cofins: v(c.cofins), retencoes: c.ret.reduce((s, j) => s + v(j), 0) },
     )
@@ -330,6 +360,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
   const tn = normalizar(titulo)
   const avisos: string[] = []
   const produtos: Record<string, string> = {}
+  const parceiros: Record<string, Parceiro> = {}
 
   let tipo: TipoRelatorio
   if (tn.includes('servico')) tipo = 'servicos'
@@ -344,7 +375,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
   let servico: RelatorioLido['tipoServico'] = null
   if (tipo === 'servicos') {
     servico = /prestad/i.test(titulo) ? 'servico_prestado' : /tomad/i.test(titulo) ? 'servico_tomado' : null
-    ag = lerServicos(celulas, tipoServico ?? servico ?? 'servico_tomado', avisos)
+    ag = lerServicos(celulas, tipoServico ?? servico ?? 'servico_tomado', avisos, parceiros)
   } else if (tipo === 'saidas_resumo' || tipo === 'entradas_resumo') {
     const umMes = cab.periodo && cab.periodo.inicio === cab.periodo.fim
     exigeCompetencia = !umMes
@@ -356,7 +387,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
           : 'Período do resumo não identificado: escolha a competência.',
       )
   } else {
-    ag = lerDetalhado(celulas, tipo === 'saidas_detalhado' ? 'saida' : 'entrada', avisos, produtos)
+    ag = lerDetalhado(celulas, tipo === 'saidas_detalhado' ? 'saida' : 'entrada', avisos, produtos, parceiros)
   }
 
   const linhas = ag.linhas()
@@ -376,6 +407,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
     registros: ag.registros,
     valorTotal: Math.round(ag.valorTotal * 100) / 100,
     produtos,
+    parceiros,
     exigeCompetencia,
     avisos,
   }

@@ -150,8 +150,8 @@ describe('Simples Nacional', () => {
 
   it('híbrido: DAS sem CBS/IBS + IBS/CBS por fora com créditos', () => {
     const b = mes('2027-06', { vendas: 100_000, vendasInternas: 100_000, compras: 60_000, icmsCompras: 7_200 })
-    const trad = apurar('simples', [b], ctx({}, { rbt12Fixo: 1_200_000 }))
-    const hib = apurar('simples_hibrido', [b], ctx({}, { rbt12Fixo: 1_200_000 }))
+    const trad = apurar('simples', [b], ctx({ premissaPreco: 'repasse' }, { rbt12Fixo: 1_200_000 }))
+    const hib = apurar('simples_hibrido', [b], ctx({ premissaPreco: 'repasse' }, { rbt12Fixo: 1_200_000 }))
     expect(hib.das).toBeCloseTo(trad.das - trad.tributos.CBS, 6)
     const aliq = regrasDoAno(2027, PARAMETROS_PADRAO.cbsReferencia, PARAMETROS_PADRAO.ibsReferencia)
     const esperado = (100_000 - trad.tributos.ICMS) * (aliq.cbs + aliq.ibs) - (60_000 - 7_200) * (aliq.cbs + aliq.ibs)
@@ -211,6 +211,7 @@ describe('agregação e projeção', () => {
     cst: '',
     servico: '',
     destinatario: '',
+    parceiro: '',
     itens: 1,
     valor_contabil: 0,
     bc_icms: 0,
@@ -269,7 +270,7 @@ describe('agregação e projeção', () => {
 
 describe('saídas detalhadas: destinatário, UF e NCM', () => {
   const l = (x: Partial<MovimentoLinha>): MovimentoLinha => ({
-    estabelecimento_id: null, competencia: '2026-06', tipo: 'saida', cfop: '6106', ncm: '', uf: '', cst: '', servico: '', destinatario: '',
+    estabelecimento_id: null, competencia: '2026-06', tipo: 'saida', cfop: '6106', ncm: '', uf: '', cst: '', servico: '', destinatario: '', parceiro: '',
     itens: 1, valor_contabil: 0, bc_icms: 0, icms: 0, icms_st: 0, ipi: 0, pis: 0, cofins: 0, iss: 0, difal: 0, retencoes: 0, ...x,
   })
   const estab = () => ({ uf: 'SP', aliquota: 18 })
@@ -321,5 +322,77 @@ describe('saídas detalhadas: destinatário, UF e NCM', () => {
     expect(tipoDestinatario('11222333000181', '123456789')).toBe('PJ_C')
     expect(tipoDestinatario('11222333000181', 'ISENTO')).toBe('PJ_N')
     expect(tipoDestinatario('', '')).toBe('')
+  })
+})
+
+describe('ICMS nas entradas, cenário de ICMS, premissa de preço, filtros e DRE', () => {
+  const l = (x: Partial<MovimentoLinha>): MovimentoLinha => ({
+    estabelecimento_id: null, competencia: '2026-06', tipo: 'entrada', cfop: '2102', ncm: '', uf: 'MG', cst: '000', servico: '', destinatario: 'PJ_C', parceiro: '',
+    itens: 1, valor_contabil: 0, bc_icms: 0, icms: 0, icms_st: 0, ipi: 0, pis: 0, cofins: 0, iss: 0, difal: 0, retencoes: 0, ...x,
+  })
+  const estab = () => ({ uf: 'SP', aliquota: 18 })
+
+  it('antecipação sem ST: valor × (interna do NCM − interestadual)', () => {
+    const [b] = montarBases([l({ valor_contabil: 1000, bc_icms: 1000, icms: 120, ncm: '73269090' })], PARAMETROS_PADRAO, estab)
+    expect(b.antecipacao).toBeCloseTo(1000 * 0.06, 6)
+    const cfg = { ...PARAMETROS_PADRAO, ncms: { '73269090': { aliquotaIcms: 25 } } }
+    expect(montarBases([l({ valor_contabil: 1000, bc_icms: 1000, icms: 120, ncm: '73269090' })], cfg, estab)[0].antecipacao).toBeCloseTo(130, 6)
+  })
+
+  it('ICMS-ST na entrada com MVA ajustada (Conv. ICMS 142/2018)', () => {
+    const cfg = { ...PARAMETROS_PADRAO, ncms: { '33059000': { st: true, mva: 40 } } }
+    const [b] = montarBases([l({ valor_contabil: 1000, bc_icms: 1000, icms: 70, ncm: '33059000' })], cfg, estab)
+    const mvaAj = (1.4 * (1 - 0.07)) / (1 - 0.18) - 1
+    expect(b.stEntradas).toBeCloseTo(1000 * (1 + mvaAj) * 0.18 - 70, 6)
+    expect(b.antecipacao).toBe(0)
+  })
+
+  it('Simples: antecipação entra como ICMS fora do DAS', () => {
+    const b = mes('2026-06', { vendas: 100_000, vendasInternas: 100_000, antecipacao: 3_000 })
+    const com = apurar('simples', [b], ctx({}, { rbt12Fixo: 1_200_000 }))
+    const sem = apurar('simples', [b], ctx({ antecipacaoSimples: false }, { rbt12Fixo: 1_200_000 }))
+    expect(com.total - sem.total).toBeCloseTo(3_000, 6)
+    expect(com.dre.icmsEntradas).toBeCloseTo(3_000, 6)
+  })
+
+  it('cenário: mudança de UF com carga efetiva e sem créditos', () => {
+    const venda = (uf: string, dest: MovimentoLinha['destinatario']) =>
+      l({ tipo: 'saida', cfop: uf === 'SP' ? '5102' : '6102', uf, destinatario: dest, valor_contabil: 1000 })
+    const p = { ...PARAMETROS_PADRAO, cenarioIcms: { ativo: true, descricao: 'SC', uf: 'SC', aliquotaInterna: null, cargaInterestadual: 1, manterCreditos: false } }
+    const [b] = montarBases([venda('SP', 'PJ_C'), venda('BA', 'PF')], p, estab)
+    // SP e BA passam a ser interestaduais a partir de SC: carga de 1%; DIFAL BA = 20,5% − 7%
+    expect(b.cenIcms).toBeCloseTo(20, 6)
+    expect(b.cenDifal).toBeCloseTo(1000 * (0.205 - 0.07), 6)
+  })
+
+  it('preço mantido: IBS/CBS calculado "por dentro" do valor da nota', () => {
+    const b = mes('2033-06', { vendas: 100_000, vendasInternas: 100_000 })
+    const repasse = apurar('presumido', [b], ctx({ premissaPreco: 'repasse' }))
+    const mantido = apurar('presumido', [b], ctx({ premissaPreco: 'preco_mantido' }))
+    const a = (PARAMETROS_PADRAO.cbsReferencia + PARAMETROS_PADRAO.ibsReferencia) / 100
+    expect(repasse.tributos.CBS + repasse.tributos.IBS).toBeCloseTo(100_000 * a, 4)
+    expect(mantido.tributos.CBS + mantido.tributos.IBS).toBeCloseTo((100_000 / (1 + a)) * a, 4)
+  })
+
+  it('exclui CFOPs e clientes/fornecedores escolhidos', () => {
+    const linhas = [
+      l({ tipo: 'saida', cfop: '5102', uf: 'SP', parceiro: '11222333000181', valor_contabil: 500 }),
+      l({ tipo: 'saida', cfop: '5102', uf: 'SP', destinatario: 'PF', valor_contabil: 300 }),
+      l({ tipo: 'saida', cfop: '5106', uf: 'SP', valor_contabil: 200 }),
+    ]
+    const soma = (p: Partial<Parametros>) => montarBases(linhas, { ...PARAMETROS_PADRAO, ...p }, estab)[0]?.vendas ?? 0
+    expect(soma({})).toBe(1000)
+    expect(soma({ parceirosExcluidos: ['11222333000181'] })).toBe(500)
+    expect(soma({ parceirosExcluidos: ['PF'] })).toBe(700)
+    expect(soma({ cfopsExcluidos: ['5106'] })).toBe(800)
+  })
+
+  it('DRE do Presumido fecha com os tributos apurados', () => {
+    const b = mes('2026-01', { vendas: 300_000, vendasInternas: 300_000, icmsVendasInternas: 54_000, compras: 150_000, icmsCompras: 18_000 })
+    const r = apurar('presumido', [b], ctx())
+    const ded = Object.values(r.dre.deducoes).reduce((a, v) => a + v, 0)
+    // deduções − créditos de compras = ICMS + PIS + COFINS devidos
+    expect(ded - r.dre.creditosCompras).toBeCloseTo(r.tributos.ICMS + r.tributos.PIS + r.tributos.COFINS, 4)
+    expect(r.dre.irpj).toBeCloseTo(r.tributos.IRPJ, 6)
   })
 })

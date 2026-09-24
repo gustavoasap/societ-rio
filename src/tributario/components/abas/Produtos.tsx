@@ -4,10 +4,10 @@ import { Section } from '../../../components/ui'
 import { naturezaDe } from '../../engine/base'
 import { ncmMonofasico, reducaoIbsCbs, tratamentoNcm } from '../../engine/ncm'
 import type { MovimentoLinha, Parametros } from '../../engine/tipos'
-import type { NcmRegistro } from '../../dados'
+import type { CamposNcm, NcmRegistro } from '../../dados'
 import { moeda, pct } from '../../formatacao'
 
-type Campos = Pick<NcmRegistro, 'monofasico' | 'st' | 'reducao'>
+type Campos = CamposNcm
 
 const mascaraNcm = (n: string) => (n.length === 8 ? `${n.slice(0, 4)}.${n.slice(4, 6)}.${n.slice(6)}` : n)
 
@@ -22,6 +22,25 @@ function SimNao({ valor, padrao, onChange }: { valor: boolean | null; padrao: bo
       <option value="s">Sim</option>
       <option value="n">Não</option>
     </select>
+  )
+}
+
+/** Campo numérico que só grava ao sair do campo (evita uma gravação por tecla). */
+function NumeroNcm({ valor, placeholder, onChange }: { valor: number | null; placeholder: string; onChange: (v: number | null) => void }) {
+  return (
+    <input
+      key={String(valor)}
+      className={`input w-24 py-1.5 text-right ${valor !== null ? 'border-emerald-300 bg-emerald-50 font-semibold' : ''}`}
+      type="number"
+      step="0.01"
+      min={0}
+      defaultValue={valor ?? ''}
+      placeholder={placeholder}
+      onBlur={(e) => {
+        const v = e.target.value === '' ? null : Number(e.target.value)
+        if (v !== valor) onChange(v)
+      }}
+    />
   )
 }
 
@@ -67,7 +86,13 @@ export function Produtos({
     (x) => (!soVendidos || x.vendas > 0) && (!termo || x.ncm.includes(termo.replace(/\D/g, '') || '§') || (x.reg?.descricao ?? '').toLowerCase().includes(termo)),
   )
 
-  const campos = (x: (typeof lista)[number]): Campos => ({ monofasico: x.reg?.monofasico ?? null, st: x.reg?.st ?? null, reducao: x.reg?.reducao ?? null })
+  const campos = (x: (typeof lista)[number]): Campos => ({
+    monofasico: x.reg?.monofasico ?? null,
+    st: x.reg?.st ?? null,
+    reducao: x.reg?.reducao ?? null,
+    aliquota_icms: x.reg?.aliquota_icms ?? null,
+    mva: x.reg?.mva ?? null,
+  })
 
   return (
     <div className="space-y-5">
@@ -96,7 +121,7 @@ export function Produtos({
         }
       >
         <p className="-mt-2 mb-4 text-sm text-slate-500">
-          Os NCMs chegam automaticamente de cada importação. "Padrão" é a sugestão do sistema: monofásico pelas Leis 10.147/2000, 10.485/2002 e 13.097/2015; redução de IBS/CBS
+          Os NCMs chegam automaticamente de cada importação. Informe MVA (produtos com ST) e alíquota interna própria do NCM — usadas no ICMS das vendas internas, na ST e na antecipação das entradas. "Padrão" é a sugestão do sistema: monofásico pelas Leis 10.147/2000, 10.485/2002 e 13.097/2015; redução de IBS/CBS
           pelo Anexo VIII (60%) e art. 147 (alíquota zero) da LC 214/2025. Ajuste o que for diferente para este cliente — vale na hora para todos os cálculos.
         </p>
         <div className="relative mb-3">
@@ -104,7 +129,7 @@ export function Produtos({
           <input className="input pl-10" placeholder="Buscar NCM ou produto..." value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[1180px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2.5 pr-3">NCM</th>
@@ -113,6 +138,8 @@ export function Produtos({
                 <th className="px-3 py-2.5 text-right">Compras</th>
                 <th className="px-3 py-2.5">PIS/COFINS monofásico</th>
                 <th className="px-3 py-2.5">ICMS-ST</th>
+                <th className="px-3 py-2.5">MVA %</th>
+                <th className="px-3 py-2.5">ICMS interno %</th>
                 <th className="px-3 py-2.5">Redução IBS/CBS</th>
               </tr>
             </thead>
@@ -135,6 +162,12 @@ export function Produtos({
                       <SimNao valor={c.st} padrao={false} onChange={(v) => onMudar(x.ncm, { ...c, st: v })} />
                     </td>
                     <td className="px-3 py-2">
+                      <NumeroNcm valor={c.mva} placeholder={x.trat.st ? 'informar' : '—'} onChange={(v) => onMudar(x.ncm, { ...c, mva: v })} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <NumeroNcm valor={c.aliquota_icms} placeholder="modal" onChange={(v) => onMudar(x.ncm, { ...c, aliquota_icms: v })} />
+                    </td>
+                    <td className="px-3 py-2">
                       <select
                         className={`input w-40 py-1.5 ${c.reducao === null ? 'text-slate-500' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}
                         value={c.reducao === null ? '' : String(c.reducao)}
@@ -153,7 +186,7 @@ export function Produtos({
               })}
               {filtrada.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-400">
+                  <td colSpan={9} className="py-10 text-center text-slate-400">
                     Nenhum NCM encontrado. Importe relatórios detalhados (com NCM) de entradas ou saídas.
                   </td>
                 </tr>

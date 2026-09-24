@@ -145,12 +145,13 @@ export function Movimento({
       <Section title="Classificação dos CFOPs e serviços" icone={ListTree} cor="violet">
         <p className="-mt-2 mb-4 text-sm text-slate-500">
           O sistema classifica cada CFOP pela tabela do Ajuste SINIEF 07/2001. Revise principalmente os valores altos marcados como neutros (remessas, retornos, "outros") — por
-          exemplo, entradas em venda à ordem (x923) sem a nota de compra (x121) correspondente. Alterações valem para todos os cálculos desta empresa.
+          exemplo, entradas em venda à ordem (x923) sem a nota de compra (x121) correspondente. Desmarque "Usar" para tirar um CFOP de toda a análise. Alterações são salvas e valem para todos os cálculos desta empresa.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                <th className="w-12 py-2.5 pr-2">Usar</th>
                 <th className="py-2.5 pr-3">Tipo</th>
                 <th className="px-3 py-2.5">CFOP / serviço</th>
                 <th className="px-3 py-2.5 text-right">Itens</th>
@@ -162,7 +163,21 @@ export function Movimento({
               {cfops.map((c) => {
                 const grupo = NATUREZAS.find((n) => n.value === c.natureza)?.grupo
                 return (
-                  <tr key={c.chave} className="border-b border-slate-100">
+                  <tr key={c.chave} className={`border-b border-slate-100 ${params.cfopsExcluidos.includes(c.chave) ? 'bg-slate-50 opacity-50' : ''}`}>
+                    <td className="py-2 pr-2">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer"
+                        title="Considerar este CFOP na análise"
+                        checked={!params.cfopsExcluidos.includes(c.chave)}
+                        onChange={() =>
+                          onParams({
+                            ...params,
+                            cfopsExcluidos: params.cfopsExcluidos.includes(c.chave) ? params.cfopsExcluidos.filter((x) => x !== c.chave) : [...params.cfopsExcluidos, c.chave],
+                          })
+                        }
+                      />
+                    </td>
                     <td className="py-2 pr-3 text-slate-500">{NOME_TIPO[c.tipo]}</td>
                     <td className="px-3 py-2 font-semibold text-slate-800">{c.codigo}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-slate-500">{c.itens.toLocaleString('pt-BR')}</td>

@@ -1,6 +1,7 @@
-import { classificarCfop, destinoCfop, fornecedorDoSimples, vendaNaoContribuinte, type Natureza } from './cfop'
+import { classificarCfop, destinoCfop, fornecedorDoSimples, type Natureza } from './cfop'
+import { icmsDaEntrada, icmsDaVenda, naoContribuinte } from './icms'
 import { tratamentoNcm } from './ncm'
-import { ICMS_INTERNO_UF, aliquotaInterestadual, origemDoCst } from './tabelas'
+import { ICMS_INTERNO_UF } from './tabelas'
 import { BASE_VAZIA, receitaBruta, type BaseMensal, type MixProdutos, type MovimentoLinha, type Parametros } from './tipos'
 
 export function naturezaDe(l: MovimentoLinha, ajustes: Record<string, Natureza>): Natureza {
@@ -20,6 +21,20 @@ const servicoCreditavel = (codigo: string, prefixos: string[]) => {
   return prefixos.some((p) => c === p || c.startsWith(p + '.'))
 }
 
+/** Chave usada para incluir/excluir um CFOP ou código de serviço da análise. */
+export const chaveCfop = (l: MovimentoLinha) =>
+  l.tipo === 'servico_tomado' ? `SERV-T:${l.servico}` : l.tipo === 'servico_prestado' ? `SERV-P:${l.servico}` : l.cfop
+
+/** A linha entra na análise? (CFOP e cliente/fornecedor não excluídos pelo contador) */
+export function linhaConsiderada(l: MovimentoLinha, params: Parametros) {
+  if (params.cfopsExcluidos.length && params.cfopsExcluidos.includes(chaveCfop(l))) return false
+  if (params.parceirosExcluidos.length) {
+    if (l.parceiro && params.parceirosExcluidos.includes(l.parceiro)) return false
+    if (l.destinatario === 'PF' && params.parceirosExcluidos.includes('PF')) return false
+  }
+  return true
+}
+
 /** UF e alíquota interna de ICMS (%) do estabelecimento que emitiu a nota. */
 export type DadosEstab = (estabelecimentoId: string | null) => { uf: string; aliquota: number }
 
@@ -28,7 +43,9 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
   const meses = new Map<string, BaseMensal>()
   const prefixos = prefixosServico(params.servicosCreditaveisPisCofins)
 
+  const cen = params.cenarioIcms
   for (const l of linhas) {
+    if (!linhaConsiderada(l, params)) continue
     const b = meses.get(l.competencia) ?? BASE_VAZIA(l.competencia)
     meses.set(l.competencia, b)
     const v = l.valor_contabil
@@ -39,19 +56,31 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
         b.vendas += v
         b.icmsSaidas += l.icms
         const e = estab(l.estabelecimento_id)
-        const naoContribuinte = l.destinatario ? l.destinatario !== 'PJ_C' : vendaNaoContribuinte(l.cfop)
+        const icms = icmsDaVenda(l, params, { uf: e.uf, aliquotaInterna: e.aliquota }, 'cfop')
         if (destinoCfop(l.cfop) === 'interestadual') {
           b.vendasInterestaduais += v
-          if (l.uf && ICMS_INTERNO_UF[l.uf]) {
+          if (icms) {
             // alíquota nota a nota: origem da mercadoria + UF de origem e destino; DIFAL para não contribuinte (EC 87/2015)
-            const inter = aliquotaInterestadual(origemDoCst(l.cst), e.uf, l.uf)
             b.vendasInterCalc += v
-            b.icmsInterCalc += (v * inter) / 100
-            if (naoContribuinte) b.difalCalc += (v * Math.max(0, ICMS_INTERNO_UF[l.uf] - inter)) / 100
-          } else if (naoContribuinte) b.vendasNaoContribuinte += v
+            b.icmsInterCalc += icms.proprio
+            b.difalCalc += icms.difal
+          } else if (naoContribuinte(l)) b.vendasNaoContribuinte += v
         } else {
           b.vendasInternas += v
-          b.icmsVendasInternas += (v * e.aliquota) / 100
+          b.icmsVendasInternas += icms?.proprio ?? 0
+        }
+        if (cen.ativo) {
+          const c = icmsDaVenda(
+            l,
+            params,
+            { uf: cen.uf, aliquotaInterna: ICMS_INTERNO_UF[cen.uf] ?? 18, cargaInterna: cen.aliquotaInterna, cargaInterestadual: cen.cargaInterestadual },
+            'destino',
+          )
+          if (c) {
+            b.cenVendasCalc += v
+            b.cenIcms += c.proprio
+            b.cenDifal += c.difal
+          }
         }
         if (l.ncm) {
           const t = tratamentoNcm(l.ncm, params.ncms)
@@ -87,6 +116,15 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
         b.stCompras += l.icms_st
         if (fornecedorDoSimples(l.cst)) b.comprasFornecedorSimples += v
         if (l.ncm && tratamentoNcm(l.ncm, params.ncms).monofasico) b.comprasMonofasico += v
+        {
+          const e = estab(l.estabelecimento_id)
+          const ent = icmsDaEntrada(l, params, e.uf, e.aliquota)
+          if (ent) {
+            b.stEntradas += ent.st
+            b.antecipacao += ent.antecipacao
+            if (ent.semMva) b.stSemMva += v
+          }
+        }
         break
       case 'devolucao_compra':
         b.devolucoesCompra += v
@@ -129,6 +167,7 @@ export function estimarMix(linhas: MovimentoLinha[], params: Parametros): MixPro
   const excluidas: Natureza[] = ['uso_consumo', 'ativo', 'energia', 'frete', 'comunicacao', 'servico_tomado']
   const temSaidasComNcm = linhas.some((l) => l.tipo === 'saida' && l.ncm && naturezaDe(l, params.cfopNatureza) === 'venda')
   for (const l of linhas) {
+    if (!linhaConsiderada(l, params)) continue
     const n = naturezaDe(l, params.cfopNatureza)
     if (l.tipo === 'entrada' && (n === 'compra_revenda' || n === 'compra_insumo')) {
       pesos.compras += l.valor_contabil

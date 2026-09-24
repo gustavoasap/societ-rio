@@ -43,11 +43,18 @@ export function reducaoIbsCbs(ncm: string): number {
 }
 
 /** Tratamento efetivo do NCM na empresa: o que o contador definiu, senão o padrão do sistema. */
-export function tratamentoNcm(ncm: string, config: Record<string, { monofasico?: boolean; st?: boolean; reducao?: number }>) {
+export function tratamentoNcm(
+  ncm: string,
+  config: Record<string, { monofasico?: boolean; st?: boolean; reducao?: number; aliquotaIcms?: number; mva?: number }>,
+) {
   const c = config[limpar(ncm)] ?? {}
   return {
     monofasico: c.monofasico ?? ncmMonofasico(ncm),
     st: c.st ?? false,
     reducao: c.reducao !== undefined ? c.reducao / 100 : reducaoIbsCbs(ncm),
+    /** alíquota interna específica do NCM (%) — null = alíquota modal do estabelecimento */
+    aliquotaIcms: c.aliquotaIcms ?? null,
+    /** MVA original (%) para o cálculo da ST */
+    mva: c.mva ?? null,
   }
 }

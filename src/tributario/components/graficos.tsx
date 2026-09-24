@@ -66,12 +66,16 @@ export function BarrasAgrupadas({
   formatar,
   destaque,
   altura = 280,
+  aoClicar,
+  selecionado,
 }: {
   grupos: { rotulo: string; valores: Record<string, number | undefined>; extra?: Record<string, string> }[]
   series: Serie[]
   formatar: (v: number) => string
   destaque?: (grupo: number, serie: string) => boolean
   altura?: number
+  aoClicar?: (grupo: number) => void
+  selecionado?: number | null
 }) {
   const [ref, largura] = useLargura<HTMLDivElement>()
   const [dica, setDica] = useState<Dica | null>(null)
@@ -102,6 +106,7 @@ export function BarrasAgrupadas({
           const x0 = margem.l + gi * larguraGrupo + (larguraGrupo - total) / 2
           return (
             <g key={g.rotulo}>
+              {selecionado === gi && <rect x={margem.l + gi * larguraGrupo + 2} y={margem.t} width={larguraGrupo - 4} height={h} rx={8} fill="#eef4ff" />}
               {presentes.map((s, si) => {
                 const v = g.valores[s.id] ?? 0
                 const x = x0 + si * (larguraBarra + 2)
@@ -118,6 +123,8 @@ export function BarrasAgrupadas({
                       width={larguraBarra + 2}
                       height={h}
                       fill="transparent"
+                      style={aoClicar ? { cursor: 'pointer' } : undefined}
+                      onClick={() => aoClicar?.(gi)}
                       onMouseMove={(e) => {
                         const box = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect()
                         setDica({

@@ -24,6 +24,7 @@ export interface MovimentoLinha {
   cst: string
   servico: string // item da lista da LC 116 (serviços)
   destinatario: Destinatario // tipo do cliente/fornecedor da nota
+  parceiro: string // CNPJ do cliente/fornecedor (vazio para pessoa física ou não informado)
   itens: number
   valor_contabil: number
   bc_icms: number
@@ -45,6 +46,8 @@ export interface ConfigNcm {
   monofasico?: boolean
   st?: boolean
   reducao?: number // % de redução das alíquotas de IBS/CBS (0, 30, 40, 60, 100)
+  aliquotaIcms?: number // alíquota interna de ICMS do NCM na UF da empresa (%)
+  mva?: number // MVA original da substituição tributária (%)
 }
 
 export interface Estabelecimento {
@@ -97,6 +100,25 @@ export interface Parametros {
   /** Tratamento por NCM (carregado da tabela trib_ncms — não é gravado no JSON de parâmetros). */
   ncms: Record<string, ConfigNcm>
   cfopNatureza: Record<string, Natureza> // ajustes do contador na classificação de CFOP
+  /** CFOPs (ou SERV-T:/SERV-P: + código de serviço) desconsiderados na análise */
+  cfopsExcluidos: string[]
+  /** CNPJs de clientes/fornecedores desconsiderados; 'PF' = todas as pessoas físicas */
+  parceirosExcluidos: string[]
+  /** Premissa de preço na reforma: preço ao cliente mantido (IBS/CBS "sai" da margem) ou IBS/CBS repassado por fora */
+  premissaPreco: 'preco_mantido' | 'repasse'
+  /** Simples: cobrar antecipação/ST nas entradas interestaduais (LC 123, art. 13, §1º, XIII, "g") */
+  antecipacaoSimples: boolean
+  /** Simulação de ICMS: benefício fiscal ou mudança de UF do estabelecimento */
+  cenarioIcms: CenarioIcms
+}
+
+export interface CenarioIcms {
+  ativo: boolean
+  descricao: string
+  uf: string // UF de onde as mercadorias passariam a sair
+  aliquotaInterna: number | null // alíquota/carga efetiva nas vendas internas (null = modal da UF)
+  cargaInterestadual: number | null // carga efetiva nas vendas interestaduais com benefício (null = 4/7/12%)
+  manterCreditos: boolean // benefício com ou sem manutenção dos créditos de entrada
 }
 
 export const PARAMETROS_PADRAO: Parametros = {
@@ -136,6 +158,11 @@ export const PARAMETROS_PADRAO: Parametros = {
   aliquotasAno: {},
   ncms: {},
   cfopNatureza: {},
+  cfopsExcluidos: [],
+  parceirosExcluidos: [],
+  premissaPreco: 'preco_mantido',
+  antecipacaoSimples: true,
+  cenarioIcms: { ativo: false, descricao: '', uf: 'SC', aliquotaInterna: null, cargaInterestadual: null, manterCreditos: true },
 }
 
 export const comPadrao = (p: Partial<Parametros> | null | undefined): Parametros => ({ ...PARAMETROS_PADRAO, ...(p ?? {}) })
@@ -158,6 +185,12 @@ export interface BaseMensal {
   vendasComDestinatario: number
   vendasB2B: number // vendas a PJ contribuinte (aproveitam crédito)
   vendasPF: number
+  cenVendasCalc: number // cenário de ICMS: vendas com destino conhecido
+  cenIcms: number // cenário de ICMS: ICMS próprio nas vendas
+  cenDifal: number // cenário de ICMS: DIFAL
+  stEntradas: number // ICMS-ST devido nas entradas interestaduais sem retenção (MVA)
+  stSemMva: number // valor de entradas com ST sem MVA informada (alerta)
+  antecipacao: number // antecipação de ICMS nas entradas interestaduais sem ST (alíquota interna − interestadual)
   servicos: number
   exportacao: number
   devolucoesVenda: number
@@ -200,6 +233,12 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   vendasComDestinatario: 0,
   vendasB2B: 0,
   vendasPF: 0,
+  cenVendasCalc: 0,
+  cenIcms: 0,
+  cenDifal: 0,
+  stEntradas: 0,
+  stSemMva: 0,
+  antecipacao: 0,
   servicos: 0,
   exportacao: 0,
   devolucoesVenda: 0,
@@ -259,6 +298,67 @@ export interface ResultadoMes {
   simples?: { rbt12: number; proporcional: boolean; faixa: number; aliquota: number; das: number }
 }
 
+/** Valores para montar a DRE de cada regime (tudo em R$ no período). */
+export interface DreDados {
+  receitaBruta: number // vendas + serviços + exportação (com IBS/CBS quando repassado por fora)
+  devolucoes: number
+  deducoes: Record<string, number> // tributos sobre a receita (débitos): DAS, ICMS próprio, DIFAL, PIS, COFINS, ISS, IPI, CBS, IBS
+  cmv: number // custo das mercadorias pelo valor das notas
+  creditosCompras: number // créditos recuperáveis sobre as compras (ICMS, PIS/COFINS, IBS/CBS)
+  icmsEntradas: number // ICMS-ST e antecipação nas entradas (custo)
+  servicosTomados: number
+  despesasOperacionais: number // fretes, energia, comunicação, uso e consumo
+  pessoal: number // folha + FGTS + pró-labore
+  encargos: number // CPP fora do DAS (INSS patronal, RAT, terceiros)
+  despesasGerais: number
+  creditosDespesas: number // créditos sobre serviços e despesas (PIS/COFINS no Real, IBS/CBS)
+  receitasFinanceiras: number
+  tributosFinanceiros: number
+  irpj: number
+  csll: number
+}
+
+export const DRE_VAZIA = (): DreDados => ({
+  receitaBruta: 0,
+  devolucoes: 0,
+  deducoes: {},
+  cmv: 0,
+  creditosCompras: 0,
+  icmsEntradas: 0,
+  servicosTomados: 0,
+  despesasOperacionais: 0,
+  pessoal: 0,
+  encargos: 0,
+  despesasGerais: 0,
+  creditosDespesas: 0,
+  receitasFinanceiras: 0,
+  tributosFinanceiros: 0,
+  irpj: 0,
+  csll: 0,
+})
+
+/** Composição do ICMS no período. */
+export interface IcmsResumo {
+  proprio: number // débito das vendas (interna + interestadual)
+  difal: number // DIFAL das vendas a não contribuinte
+  credito: number // créditos das entradas e devoluções
+  st: number // ICMS-ST nas entradas sem retenção
+  antecipacao: number // antecipação nas entradas interestaduais
+  noDas: number // parcela de ICMS dentro do DAS
+}
+
+/** Créditos aproveitados por origem. */
+export interface CreditosResumo {
+  icms: number
+  pisCofinsCompras: number
+  pisCofinsDespesas: number
+  ibsCbsFornecedorRegular: number
+  ibsCbsFornecedorSimples: number
+  ibsCbsDespesas: number
+  /** crédito de IBS/CBS que se perde por comprar de optante do Simples (diferença para o crédito integral) */
+  ibsCbsPerdidoSimples: number
+}
+
 export interface Resultado {
   regime: RegimeId
   ano: number
@@ -271,6 +371,9 @@ export interface Resultado {
   saldoCredor: number // créditos de IBS/CBS acima dos débitos (a ressarcir/compensar)
   creditoTransferido: number // IBS/CBS que os clientes podem se creditar
   porMes: ResultadoMes[]
+  dre: DreDados
+  icms: IcmsResumo
+  creditos: CreditosResumo
   memoria: LinhaMemoria[]
   alertas: string[]
   elegivel: boolean

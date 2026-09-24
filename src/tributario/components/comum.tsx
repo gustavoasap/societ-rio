@@ -142,18 +142,34 @@ export function Memoria({ linhas, titulo = 'Memória de cálculo' }: { linhas: L
   )
 }
 
-export function Abas<T extends string>({ abas, ativa, onChange }: { abas: { id: T; label: string; icone: ReactNode }[]; ativa: T; onChange: (a: T) => void }) {
+export function Abas<T extends string>({
+  abas,
+  ativa,
+  onChange,
+}: {
+  abas: { id: T; label: string; icone: ReactNode; grupo?: string }[]
+  ativa: T
+  onChange: (a: T) => void
+}) {
+  const grupos = [...new Set(abas.map((a) => a.grupo ?? ''))]
   return (
-    <div className="no-print flex gap-1 overflow-x-auto rounded-2xl bg-white p-1.5 shadow-sm ring-1 ring-slate-200/70">
-      {abas.map((a) => (
-        <button
-          key={a.id}
-          onClick={() => onChange(a.id)}
-          className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${ativa === a.id ? 'bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-md shadow-brand-500/25' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
-        >
-          {a.icone}
-          {a.label}
-        </button>
+    <div className="no-print space-y-1 rounded-2xl bg-white p-1.5 shadow-sm ring-1 ring-slate-200/70">
+      {grupos.map((g) => (
+        <div key={g} className="flex flex-wrap items-center gap-1">
+          {g && <span className="w-20 shrink-0 px-2 text-[10px] font-bold tracking-wider text-slate-400 uppercase">{g}</span>}
+          {abas
+            .filter((a) => (a.grupo ?? '') === g)
+            .map((a) => (
+              <button
+                key={a.id}
+                onClick={() => onChange(a.id)}
+                className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${ativa === a.id ? 'bg-gradient-to-r from-brand-600 to-brand-500 text-white shadow-md shadow-brand-500/25' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
+              >
+                {a.icone}
+                {a.label}
+              </button>
+            ))}
+        </div>
       ))}
     </div>
   )
