@@ -1,4 +1,4 @@
-import { calcularRbt12, somarBases } from './base'
+import { calcularRbt12, fracoesDoMes, somarBases } from './base'
 import {
   ANEXOS_SIMPLES,
   LC224_ACRESCIMO,
@@ -39,7 +39,8 @@ const pct = (v: number, casas = 2) => `${(v * 100).toLocaleString('pt-BR', { max
 const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 function regrasPara(b: BaseMensal, ctx: Contexto): RegrasAno {
-  return regrasDoAno(ctx.anoRegras ?? ano(b.competencia), ctx.params.cbsReferencia, ctx.params.ibsReferencia)
+  const a = ctx.anoRegras ?? ano(b.competencia)
+  return regrasDoAno(a, ctx.params.cbsReferencia, ctx.params.ibsReferencia, ctx.params.aliquotasAno[String(a)])
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +155,8 @@ function apurarSimples(bases: BaseMensal[], ctx: Contexto, hibrido: boolean): Re
 
     const merc = Math.max(0, b.vendas - b.devolucoesVenda)
     const serv = Math.max(0, b.servicos - Math.max(0, b.devolucoesVenda - b.vendas))
-    const seg = { monofasico: mix.monofasico, st: params.percentualSt / 100, exportacao: false }
+    const fr = fracoesDoMes(b, params, mix)
+    const seg = { monofasico: fr.monofasico, st: fr.st, exportacao: false }
     const partes = [
       dasDaReceita(merc, params.anexo, r.rbt12, regras, seg, hib, foraSublimite),
       dasDaReceita(serv, params.anexoServicos, r.rbt12, regras, { ...seg, monofasico: 0, st: 0 }, hib, foraSublimite),
@@ -172,7 +174,7 @@ function apurarSimples(bases: BaseMensal[], ctx: Contexto, hibrido: boolean): Re
     // Tributos fora do DAS
     if (params.anexo === 'IV' || params.anexoServicos === 'IV') tMes.CPP += cppFolha(params, 1, params.anexoServicos === 'IV' && params.anexo !== 'IV' ? serv / (rb || 1) : 1)
     if (foraSublimite) {
-      const icms = icmsRegular(b, params, regras)
+      const icms = icmsRegular(b, params, regras, fr.st)
       tMes.ICMS += icms.devido
     }
     let ibsCbs: ReturnType<typeof ibsCbsRegular> | null = null
@@ -182,9 +184,9 @@ function apurarSimples(bases: BaseMensal[], ctx: Contexto, hibrido: boolean): Re
       tMes.IBS += ibsCbs.ibs
       creditos += ibsCbs.creditos
       saldoCredor += ibsCbs.saldoCredor
-      creditoTransferido += ibsCbs.debito * (params.percentualB2B / 100)
+      creditoTransferido += ibsCbs.debito * fr.b2b
     } else {
-      creditoTransferido += cbsIbsDas * (params.percentualB2B / 100)
+      creditoTransferido += cbsIbsDas * fr.b2b
     }
 
     const totalMes = Object.values(tMes).reduce((a, v) => a + v, 0)
@@ -250,13 +252,13 @@ export function cppFolha(p: Parametros, meses: number, fator = 1) {
 }
 
 /** ICMS pelo regime de débito e crédito (LC 87/1996), com DIFAL (EC 87/2015). */
-export function icmsRegular(b: BaseMensal, p: Parametros, regras: RegrasAno) {
-  const st = p.percentualSt / 100
+export function icmsRegular(b: BaseMensal, p: Parametros, regras: RegrasAno, st: number) {
   const debInternas = b.icmsVendasInternas * (1 - st)
-  const inter = b.vendasInterestaduais
-  const naoContrib = Math.max(b.vendasNaoContribuinte, (inter * p.percentualNaoContribuinte) / 100)
-  const debInter = inter * (p.aliquotaIcmsInterestadual / 100)
-  const difal = naoContrib * Math.max(0, (p.aliquotaInternaDestino - p.aliquotaIcmsInterestadual) / 100)
+  // Notas com UF de destino: alíquota e DIFAL calculados nota a nota; as demais usam as médias dos parâmetros
+  const resto = Math.max(0, b.vendasInterestaduais - b.vendasInterCalc)
+  const naoContrib = Math.max(b.vendasNaoContribuinte, (resto * p.percentualNaoContribuinte) / 100)
+  const debInter = b.icmsInterCalc + resto * (p.aliquotaIcmsInterestadual / 100)
+  const difal = b.difalCalc + naoContrib * Math.max(0, (p.aliquotaInternaDestino - p.aliquotaIcmsInterestadual) / 100)
   const debitoBruto = debInternas + debInter + difal
   const aliqMedia = b.vendas ? debitoBruto / b.vendas : 0
   const creditoDevolucao = b.devolucoesVenda * aliqMedia
@@ -276,15 +278,16 @@ function aliquotaCreditoFornecedorSimples(p: Parametros, regras: RegrasAno) {
 /** IBS/CBS pelo regime regular — débito sobre as vendas, crédito sobre as aquisições (LC 214, arts. 12, 28 e 47). */
 export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, icmsOperacao: number, issOperacao: number) {
   const { params: p, mix } = ctx
+  const fr = fracoesDoMes(b, p, mix)
   const memoria: LinhaMemoria[] = []
-  const vazio = { cbs: 0, ibs: 0, debito: 0, creditos: 0, saldoCredor: 0, memoria }
+  const vazio = { b2b: fr.b2b, cbs: 0, ibs: 0, debito: 0, creditos: 0, saldoCredor: 0, memoria }
   if (regras.pisCofins) {
     if (regras.teste)
       memoria.push({ grupo: 'IBS/CBS', descricao: 'Ano-teste 2026: CBS 0,9% e IBS 0,1% destacados, compensáveis/dispensados', valor: 0, formula: 'LC 214, arts. 343, 346 e 348' })
     return vazio
   }
   const aliq = regras.cbs + regras.ibs
-  const reducao = 1 - mix.reducaoIbsCbs
+  const reducao = 1 - fr.reducao
   // Base: valor da operação sem ICMS/ISS/IPI/PIS/COFINS (LC 214, art. 12, §2º); exportação imune (art. 79)
   const base = Math.max(0, b.vendas - b.devolucoesVenda + b.servicos - icmsOperacao - issOperacao)
   const debito = base * aliq * reducao
@@ -304,7 +307,7 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
     { grupo: 'IBS/CBS', descricao: 'Base de cálculo (vendas líquidas − ICMS/ISS)', valor: base, formula: 'LC 214, art. 12, §2º' },
     {
       grupo: 'IBS/CBS',
-      descricao: `Débito (CBS ${pct(regras.cbs)} + IBS ${pct(regras.ibs, 3)}${mix.reducaoIbsCbs ? `, redução média ${pct(mix.reducaoIbsCbs, 1)}` : ''})`,
+      descricao: `Débito (CBS ${pct(regras.cbs)} + IBS ${pct(regras.ibs, 3)}${fr.reducao ? `, redução média ${pct(fr.reducao, 1)}` : ''})`,
       valor: debito,
     },
     { grupo: 'IBS/CBS', descricao: 'Crédito — compras de fornecedores do regime regular', valor: -credCompras },
@@ -314,6 +317,7 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
   )
   const devido = Math.max(0, liquido)
   return {
+    b2b: fr.b2b,
     cbs: devido * cbsShare,
     ibs: devido * (1 - cbsShare),
     debito,
@@ -323,17 +327,17 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
   }
 }
 
-function pisCofinsCumulativo(b: BaseMensal, p: Parametros, mix: MixProdutos, icmsDebito: number) {
+function pisCofinsCumulativo(b: BaseMensal, p: Parametros, mono: number, icmsDebito: number) {
   const merc = Math.max(0, b.vendas - b.devolucoesVenda)
   const exclusaoIcms = p.excluirIcmsBasePisCofins ? icmsDebito : 0
-  const base = Math.max(0, merc * (1 - mix.monofasico) + b.servicos - exclusaoIcms * (1 - mix.monofasico))
+  const base = Math.max(0, merc * (1 - mono) + b.servicos - exclusaoIcms * (1 - mono))
   return { base, pis: base * 0.0065, cofins: base * 0.03 }
 }
 
-function pisCofinsNaoCumulativo(b: BaseMensal, p: Parametros, mix: MixProdutos, icmsDebito: number) {
+function pisCofinsNaoCumulativo(b: BaseMensal, p: Parametros, mono: number, icmsDebito: number) {
   const merc = Math.max(0, b.vendas - b.devolucoesVenda)
   const exclusaoIcms = p.excluirIcmsBasePisCofins ? icmsDebito : 0
-  const base = Math.max(0, merc * (1 - mix.monofasico) + b.servicos - exclusaoIcms * (1 - mix.monofasico))
+  const base = Math.max(0, merc * (1 - mono) + b.servicos - exclusaoIcms * (1 - mono))
   // Crédito: bens para revenda (exceto monofásicos, Lei 10.833, art. 3º, I, "b"), sem o ICMS destacado (Lei 14.592/2023),
   // energia, fretes e armazenagem na venda (art. 3º, III e IX) e despesas creditáveis (aluguéis PJ etc.).
   const comprasNaoMono = Math.max(0, b.compras - b.comprasMonofasico - b.devolucoesCompra)
@@ -372,19 +376,22 @@ interface ApuracaoMensalRegular {
   creditos: number
   saldoCredor: number
   debitoIbsCbs: number
+  creditoTransferido: number
 }
 
 function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): ApuracaoMensalRegular {
   const { params: p, mix } = ctx
+  const fr = fracoesDoMes(b, p, mix)
   const regras = regrasPara(b, ctx)
   const t = TRIBUTOS_ZERO()
   const memoria: LinhaMemoria[] = []
-  const icms = icmsRegular(b, p, regras)
+  const icms = icmsRegular(b, p, regras, fr.st)
   t.ICMS = icms.devido
   t.ISS = issProprio(b, p, regras)
   t.IPI = ipiSaidas(b, p, regras)
   memoria.push(
-    { grupo: 'ICMS', descricao: 'Débito (vendas internas, interestaduais e DIFAL)', valor: icms.debito, formula: `alíquota média ${pct(icms.aliqMedia)}` },
+    { grupo: 'ICMS', descricao: 'Débito (vendas internas e interestaduais)', valor: icms.debito - icms.difal, formula: `alíquota média ${pct(icms.aliqMedia)}` },
+    { grupo: 'ICMS', descricao: 'DIFAL — vendas interestaduais a não contribuintes', valor: icms.difal, formula: 'EC 87/2015; LC 190/2022' },
     { grupo: 'ICMS', descricao: 'Crédito (compras e devoluções de venda)', valor: -icms.credito },
     { grupo: 'ICMS', descricao: 'ICMS a recolher', valor: icms.devido, destaque: true },
   )
@@ -392,7 +399,7 @@ function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): Apuraca
     // ICMS "a ser excluído" é o destacado na nota (STF, Tema 69 — RE 574.706)
     const icmsDestacado = icms.debito
     if (real) {
-      const pc = pisCofinsNaoCumulativo(b, p, mix, icmsDestacado)
+      const pc = pisCofinsNaoCumulativo(b, p, fr.monofasico, icmsDestacado)
       t.PIS = pc.pis
       t.COFINS = pc.cofins
       memoria.push(
@@ -402,7 +409,7 @@ function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): Apuraca
         { grupo: 'PIS/COFINS', descricao: 'PIS + COFINS a recolher', valor: pc.pis + pc.cofins, destaque: true },
       )
     } else {
-      const pc = pisCofinsCumulativo(b, p, mix, icmsDestacado)
+      const pc = pisCofinsCumulativo(b, p, fr.monofasico, icmsDestacado)
       t.PIS = pc.pis
       t.COFINS = pc.cofins
       memoria.push(
@@ -415,7 +422,7 @@ function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): Apuraca
   t.CBS = ibsCbs.cbs
   t.IBS = ibsCbs.ibs
   memoria.push(...ibsCbs.memoria)
-  return { b, regras, t, memoria, creditos: ibsCbs.creditos, saldoCredor: ibsCbs.saldoCredor, debitoIbsCbs: ibsCbs.debito }
+  return { b, regras, t, memoria, creditos: ibsCbs.creditos, saldoCredor: ibsCbs.saldoCredor, debitoIbsCbs: ibsCbs.debito, creditoTransferido: ibsCbs.debito * fr.b2b }
 }
 
 // ---------------------------------------------------------------------------
@@ -531,7 +538,7 @@ function fecharRegular(
   const porMes: ResultadoMes[] = []
   let creditos = 0
   let saldoCredor = 0
-  let debitoIbsCbs = 0
+  let creditoTransferido = 0
   const memoria: LinhaMemoria[] = []
   // Memória dos tributos indiretos consolidada (soma dos meses por descrição)
   const acumulado = new Map<string, LinhaMemoria>()
@@ -539,7 +546,7 @@ function fecharRegular(
     somaTributos(tot, m.t)
     creditos += m.creditos
     saldoCredor += m.saldoCredor
-    debitoIbsCbs += m.debitoIbsCbs
+    creditoTransferido += m.creditoTransferido
     const total = Object.values(m.t).reduce((a, v) => a + v, 0)
     porMes.push({ competencia: m.b.competencia, receita: receitaBruta(m.b), tributos: { ...m.t }, total })
     for (const l of m.memoria) {
@@ -565,7 +572,7 @@ function fecharRegular(
     carga: receita ? total / receita : 0,
     creditosIbsCbs: creditos,
     saldoCredor,
-    creditoTransferido: debitoIbsCbs * (p.percentualB2B / 100),
+    creditoTransferido,
     porMes,
     memoria,
     alertas,

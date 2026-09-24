@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
-import { ListTree, RotateCcw, Table2 } from 'lucide-react'
+import { ListTree, MapPin, RotateCcw, Table2 } from 'lucide-react'
 import { Section, Select } from '../../../components/ui'
 import { naturezaDe } from '../../engine/base'
-import { NATUREZAS, classificarCfop, type Natureza } from '../../engine/cfop'
+import { NATUREZAS, classificarCfop, fornecedorDoSimples, type Natureza } from '../../engine/cfop'
 import { agruparBases, rotuloPeriodo, type Agrupamento } from '../../engine/projecao'
 import { receitaBruta, type BaseMensal, type MovimentoLinha, type Parametros, type TipoMovimento } from '../../engine/tipos'
-import { moeda } from '../../formatacao'
+import { moeda, pct } from '../../formatacao'
 import { Segmentado } from '../comum'
 
 type Linha = { rotulo: string; valor: (b: BaseMensal) => number; tipo?: 'titulo' | 'total' | 'sub' }
@@ -140,6 +140,8 @@ export function Movimento({
         </div>
       </Section>
 
+      <Destinos linhas={linhas} params={params} />
+
       <Section title="Classificação dos CFOPs e serviços" icone={ListTree} cor="violet">
         <p className="-mt-2 mb-4 text-sm text-slate-500">
           O sistema classifica cada CFOP pela tabela do Ajuste SINIEF 07/2001. Revise principalmente os valores altos marcados como neutros (remessas, retornos, "outros") — por
@@ -187,6 +189,100 @@ export function Movimento({
               })}
             </tbody>
           </table>
+        </div>
+      </Section>
+    </div>
+  )
+}
+
+/** Vendas por UF de destino e tipo de cliente; compras por tipo de fornecedor. */
+function Destinos({ linhas, params }: { linhas: MovimentoLinha[]; params: Parametros }) {
+  const dados = useMemo(() => {
+    const ufs = new Map<string, { uf: string; total: number; PF: number; PJ_C: number; PJ_N: number; semInfo: number }>()
+    const forn = { regular: 0, simples: 0, pf: 0, exterior: 0 }
+    let totalVendas = 0
+    for (const l of linhas) {
+      const n = naturezaDe(l, params.cfopNatureza)
+      if (l.tipo === 'saida' && n === 'venda') {
+        totalVendas += l.valor_contabil
+        const uf = l.uf || (l.cfop.startsWith('5') ? 'Interna (sem UF)' : 'Interestadual (sem UF)')
+        const x = ufs.get(uf) ?? { uf, total: 0, PF: 0, PJ_C: 0, PJ_N: 0, semInfo: 0 }
+        x.total += l.valor_contabil
+        if (l.destinatario) x[l.destinatario] += l.valor_contabil
+        else x.semInfo += l.valor_contabil
+        ufs.set(uf, x)
+      }
+      if (l.tipo === 'entrada' && (n === 'compra_revenda' || n === 'compra_insumo')) {
+        if (l.cfop.startsWith('3')) forn.exterior += l.valor_contabil
+        else if (l.destinatario === 'PF') forn.pf += l.valor_contabil
+        else if (fornecedorDoSimples(l.cst)) forn.simples += l.valor_contabil
+        else forn.regular += l.valor_contabil
+      }
+    }
+    return { ufs: [...ufs.values()].sort((a, b) => b.total - a.total), forn, totalVendas }
+  }, [linhas, params.cfopNatureza])
+  const totalForn = dados.forn.regular + dados.forn.simples + dados.forn.pf + dados.forn.exterior
+  if (!dados.totalVendas && !totalForn) return null
+  const tot = dados.ufs.reduce((s, u) => ({ PF: s.PF + u.PF, PJ_C: s.PJ_C + u.PJ_C, PJ_N: s.PJ_N + u.PJ_N }), { PF: 0, PJ_C: 0, PJ_N: 0 })
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-3">
+      <div className="lg:col-span-2">
+        <Section title="Vendas por UF de destino e tipo de cliente" icone={MapPin} cor="sky">
+          <div className="mb-3 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">Consumidor final (CPF) {pct(tot.PF / (dados.totalVendas || 1), 1)}</span>
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">PJ contribuinte — toma crédito {pct(tot.PJ_C / (dados.totalVendas || 1), 1)}</span>
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">PJ não contribuinte {pct(tot.PJ_N / (dados.totalVendas || 1), 1)}</span>
+          </div>
+          <div className="max-h-96 overflow-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-slate-200 text-right text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                  <th className="py-2 pr-3 text-left">UF</th>
+                  <th className="px-3 py-2">Vendas</th>
+                  <th className="px-3 py-2">%</th>
+                  <th className="px-3 py-2">Pessoa física</th>
+                  <th className="px-3 py-2">PJ contribuinte</th>
+                  <th className="px-3 py-2">PJ não contrib.</th>
+                </tr>
+              </thead>
+              <tbody className="tabular-nums">
+                {dados.ufs.map((u) => (
+                  <tr key={u.uf} className="border-b border-slate-100 text-right">
+                    <td className="py-1.5 pr-3 text-left font-semibold text-slate-700">{u.uf}</td>
+                    <td className="px-3 py-1.5">{moeda(u.total)}</td>
+                    <td className="px-3 py-1.5 text-slate-500">{pct(u.total / (dados.totalVendas || 1), 1)}</td>
+                    <td className="px-3 py-1.5">{u.PF ? moeda(u.PF) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-1.5">{u.PJ_C ? moeda(u.PJ_C) : <span className="text-slate-300">—</span>}</td>
+                    <td className="px-3 py-1.5">{u.PJ_N ? moeda(u.PJ_N) : <span className="text-slate-300">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      </div>
+      <Section title="Compras por tipo de fornecedor" icone={MapPin} cor="emerald">
+        <div className="space-y-3 text-sm">
+          {[
+            { r: 'Regime normal', v: dados.forn.regular, d: 'crédito integral de IBS/CBS' },
+            { r: 'Simples Nacional', v: dados.forn.simples, d: 'crédito limitado ao IBS/CBS do DAS' },
+            { r: 'Pessoa física', v: dados.forn.pf, d: 'sem crédito' },
+            { r: 'Exterior (importação)', v: dados.forn.exterior, d: 'crédito do IBS/CBS pago na importação' },
+          ].map((x) => (
+            <div key={x.r}>
+              <div className="flex justify-between">
+                <span className="font-semibold text-slate-700">{x.r}</span>
+                <span className="tabular-nums">{moeda(x.v)}</span>
+              </div>
+              <div className="mt-1 h-2 rounded-full bg-slate-100">
+                <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${totalForn ? (x.v / totalForn) * 100 : 0}%` }} />
+              </div>
+              <div className="mt-0.5 text-xs text-slate-500">
+                {totalForn ? pct(x.v / totalForn, 1) : '—'} · {x.d}
+              </div>
+            </div>
+          ))}
         </div>
       </Section>
     </div>

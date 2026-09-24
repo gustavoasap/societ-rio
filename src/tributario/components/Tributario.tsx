@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { Building2, FolderKanban, LogOut, Plus, Search, Trash2 } from 'lucide-react'
+import { Building2, FolderKanban, Layers, LogOut, Plus, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { mascaraCnpj } from '../../lib/format'
 import { excluirEmpresa, listarEmpresas, type EmpresaComEstab } from '../dados'
 import { EmpresaForm } from './EmpresaForm'
+import { ImportarLote } from './ImportarLote'
 import { Painel } from './Painel'
 
 const NOME_REGIME = { simples: 'Simples Nacional', presumido: 'Lucro Presumido', real: 'Lucro Real' }
@@ -22,6 +23,7 @@ export function Tributario({ session }: { session: Session }) {
     }
   })
   const [editando, setEditando] = useState<EmpresaComEstab | 'nova' | null>(null)
+  const [lote, setLote] = useState(false)
 
   const carregar = useCallback(async () => {
     try {
@@ -86,10 +88,16 @@ export function Tributario({ session }: { session: Session }) {
             <p className="mt-1 text-sm text-white/60">Simples Nacional, Lucro Presumido e Lucro Real — do regime atual até a transição completa para IBS/CBS em 2033.</p>
           </div>
           {!empresa && (
-            <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando('nova')}>
-              <Plus className="h-4 w-4" />
-              Nova empresa
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setLote(true)}>
+                <Layers className="h-4 w-4" />
+                Importar vários clientes
+              </button>
+              <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando('nova')}>
+                <Plus className="h-4 w-4" />
+                Nova empresa
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -165,6 +173,8 @@ export function Tributario({ session }: { session: Session }) {
           </>
         )}
       </main>
+
+      {lote && <ImportarLote empresas={empresas} onClose={() => setLote(false)} onConcluido={carregar} />}
 
       {editando && (
         <EmpresaForm

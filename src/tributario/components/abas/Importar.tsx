@@ -3,23 +3,18 @@ import { CheckCircle2, FileSpreadsheet, Trash2, UploadCloud } from 'lucide-react
 import { Select } from '../../../components/ui'
 import { formatarData, mascaraCnpj } from '../../../lib/format'
 import { nomeMes } from '../../engine/base'
-import type { Estabelecimento, TipoMovimento } from '../../engine/tipos'
+import type { Estabelecimento } from '../../engine/tipos'
 import { excluirImportacao, gravarImportacao, importacoesSobrepostas, type Importacao } from '../../dados'
-import { NOMES_RELATORIO, definirCompetencia, lerRelatorio, type RelatorioLido } from '../../importacao/relatorios'
+import { NOMES_MOV, prepararLinhas, tipoMovimentoDe, type TipoServico } from '../../importacao/preparar'
+import { NOMES_RELATORIO, lerRelatorio, type RelatorioLido } from '../../importacao/relatorios'
 import { moeda } from '../../formatacao'
 
-const NOMES_MOV: Record<TipoMovimento, string> = {
-  entrada: 'Entradas',
-  saida: 'Saídas',
-  servico_tomado: 'Serviços tomados',
-  servico_prestado: 'Serviços prestados',
-}
 
 interface Pendente {
   chave: string
   rel: RelatorioLido
   estabelecimentoId: string
-  tipoServico: 'servico_tomado' | 'servico_prestado'
+  tipoServico: TipoServico
   modo: 'unica' | 'ratear'
   inicio: string
   fim: string
@@ -27,8 +22,6 @@ interface Pendente {
   mensagem?: string
 }
 
-const tipoMovimento = (p: Pendente): TipoMovimento =>
-  p.rel.tipo === 'servicos' ? p.tipoServico : p.rel.tipo.startsWith('entradas') ? 'entrada' : 'saida'
 
 export function Importar({
   empresaId,
@@ -79,12 +72,13 @@ export function Importar({
 
   async function gravar(p: Pendente) {
     if (!p.estabelecimentoId) return alterar(p.chave, { status: 'erro', mensagem: 'Escolha o estabelecimento.' })
-    let linhas = p.rel.linhas
-    if (p.rel.exigeCompetencia) {
-      if (!p.inicio) return alterar(p.chave, { status: 'erro', mensagem: 'Escolha a competência.' })
-      linhas = p.modo === 'ratear' ? definirCompetencia(linhas, p.inicio, p.fim || p.inicio) : definirCompetencia(linhas, p.inicio)
+    let linhas
+    try {
+      linhas = prepararLinhas(p.rel, p.modo, p.inicio, p.fim)
+    } catch (e) {
+      return alterar(p.chave, { status: 'erro', mensagem: (e as Error).message })
     }
-    const tipo = tipoMovimento(p)
+    const tipo = tipoMovimentoDe(p.rel, p.tipoServico)
     const comps = linhas.map((l) => l.competencia).sort()
     alterar(p.chave, { status: 'gravando', mensagem: undefined })
     try {
@@ -104,6 +98,7 @@ export function Importar({
         linhas,
         registros: p.rel.registros,
         substituir: antigas.map((a) => a.id),
+        produtos: p.rel.produtos,
       })
       alterar(p.chave, { status: 'ok' })
       onAlterado()

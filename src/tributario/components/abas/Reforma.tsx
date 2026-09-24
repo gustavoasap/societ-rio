@@ -65,7 +65,16 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
           </label>
           <label className="block">
             <span className="text-xs font-semibold text-slate-500">Vendas para empresas (B2B) %</span>
-            <input className="input mt-1" type="number" step="5" min={0} max={100} value={p.percentualB2B} onChange={(e) => onParams({ ...p, percentualB2B: Number(e.target.value) || 0 })} />
+            <input
+              className="input mt-1"
+              type="number"
+              step="5"
+              min={0}
+              max={100}
+              value={p.percentualB2B ?? ''}
+              placeholder={`automático: ${pct(ctx.mix.b2b, 1)}`}
+              onChange={(e) => onParams({ ...p, percentualB2B: e.target.value === '' ? null : Number(e.target.value) })}
+            />
             <span className="mt-1 block text-xs text-slate-500">Mede o crédito de IBS/CBS que seus clientes aproveitam</span>
           </label>
         </div>
@@ -205,7 +214,22 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
         )}
       </Section>
 
-      <Section title="Cronograma da transição aplicado" icone={CalendarRange} cor="amber">
+      <Section
+        title="Cronograma da transição e expectativas de alíquota"
+        icone={CalendarRange}
+        cor="amber"
+        actions={
+          Object.keys(p.aliquotasAno).length > 0 && (
+            <button className="btn-secondary btn-sm no-print" onClick={() => onParams({ ...p, aliquotasAno: {} })}>
+              Voltar ao cenário legal
+            </button>
+          )
+        }
+      >
+        <p className="-mt-2 mb-3 text-sm text-slate-500">
+          Digite a CBS e o IBS esperados para cada ano (em %) para simular expectativas — em branco, vale o cronograma legal com as alíquotas de referência do cenário. As
+          alterações recalculam toda a projeção na hora.
+        </p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
@@ -213,8 +237,8 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
                 <th className="py-2.5 pr-3 text-left">Ano</th>
                 <th className="px-3 py-2.5">PIS/COFINS</th>
                 <th className="px-3 py-2.5">IPI</th>
-                <th className="px-3 py-2.5">CBS</th>
-                <th className="px-3 py-2.5">IBS</th>
+                <th className="px-3 py-2.5">CBS %</th>
+                <th className="px-3 py-2.5">IBS %</th>
                 <th className="px-3 py-2.5">ICMS/ISS</th>
                 <th className="px-3 py-2.5 text-left">Base legal</th>
               </tr>
@@ -222,13 +246,32 @@ export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMens
             <tbody className="tabular-nums">
               {ANOS_TRANSICAO.map((ano) => {
                 const r = regrasDoAno(ano, p.cbsReferencia, p.ibsReferencia)
+                const aj = p.aliquotasAno[String(ano)] ?? {}
+                const ajustar = (c: 'cbs' | 'ibs', valor: string) => {
+                  const novo = { ...aj, [c]: valor === '' ? undefined : Number(valor) }
+                  const todos = { ...p.aliquotasAno, [String(ano)]: novo }
+                  if (novo.cbs === undefined && novo.ibs === undefined) delete todos[String(ano)]
+                  onParams({ ...p, aliquotasAno: todos })
+                }
+                const campo = (c: 'cbs' | 'ibs') => (
+                  <input
+                    className={`input ml-auto w-24 py-1 text-right ${aj[c] !== undefined ? 'border-amber-300 bg-amber-50 font-semibold' : ''}`}
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={aj[c] ?? ''}
+                    placeholder={(r[c] * 100).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}
+                    onChange={(e) => ajustar(c, e.target.value)}
+                    title="Alíquota esperada em % (vazio = cronograma legal)"
+                  />
+                )
                 return (
                   <tr key={ano} className="border-b border-slate-100 text-right">
                     <td className="py-2 pr-3 text-left font-semibold">{ano}</td>
                     <td className="px-3 py-2">{r.pisCofins ? 'Cobrados' : 'Extintos'}</td>
                     <td className="px-3 py-2">{r.ipi ? 'Cobrado' : 'Zero (exceto ZFM)'}</td>
-                    <td className="px-3 py-2">{r.teste ? '0,9% (teste)' : pct(r.cbs)}</td>
-                    <td className="px-3 py-2">{r.teste ? '0,1% (teste)' : pct(r.ibs, 3)}</td>
+                    <td className="px-3 py-2">{r.teste ? '0,9% (teste)' : campo('cbs')}</td>
+                    <td className="px-3 py-2">{r.teste ? '0,1% (teste)' : campo('ibs')}</td>
                     <td className="px-3 py-2">{pct(r.icmsIssFator, 0)} da alíquota</td>
                     <td className="px-3 py-2 text-left text-xs text-slate-500">
                       {ano === 2026

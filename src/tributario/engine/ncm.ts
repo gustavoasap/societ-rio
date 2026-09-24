@@ -41,3 +41,13 @@ export function reducaoIbsCbs(ncm: string): number {
   if (REDUCAO_60.some((pref) => n.startsWith(pref))) return 0.6
   return 0
 }
+
+/** Tratamento efetivo do NCM na empresa: o que o contador definiu, senão o padrão do sistema. */
+export function tratamentoNcm(ncm: string, config: Record<string, { monofasico?: boolean; st?: boolean; reducao?: number }>) {
+  const c = config[limpar(ncm)] ?? {}
+  return {
+    monofasico: c.monofasico ?? ncmMonofasico(ncm),
+    st: c.st ?? false,
+    reducao: c.reducao !== undefined ? c.reducao / 100 : reducaoIbsCbs(ncm),
+  }
+}

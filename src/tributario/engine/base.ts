@@ -1,5 +1,6 @@
 import { classificarCfop, destinoCfop, fornecedorDoSimples, vendaNaoContribuinte, type Natureza } from './cfop'
-import { ncmMonofasico, reducaoIbsCbs } from './ncm'
+import { tratamentoNcm } from './ncm'
+import { ICMS_INTERNO_UF, aliquotaInterestadual, origemDoCst } from './tabelas'
 import { BASE_VAZIA, receitaBruta, type BaseMensal, type MixProdutos, type MovimentoLinha, type Parametros } from './tipos'
 
 export function naturezaDe(l: MovimentoLinha, ajustes: Record<string, Natureza>): Natureza {
@@ -19,15 +20,11 @@ const servicoCreditavel = (codigo: string, prefixos: string[]) => {
   return prefixos.some((p) => c === p || c.startsWith(p + '.'))
 }
 
-/**
- * Consolida as linhas de movimento em bases mensais.
- * @param aliquotaInterna alíquota interna de ICMS (%) do estabelecimento que emitiu a nota
- */
-export function montarBases(
-  linhas: MovimentoLinha[],
-  params: Parametros,
-  aliquotaInterna: (estabelecimentoId: string | null) => number,
-): BaseMensal[] {
+/** UF e alíquota interna de ICMS (%) do estabelecimento que emitiu a nota. */
+export type DadosEstab = (estabelecimentoId: string | null) => { uf: string; aliquota: number }
+
+/** Consolida as linhas de movimento em bases mensais. */
+export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab: DadosEstab): BaseMensal[] {
   const meses = new Map<string, BaseMensal>()
   const prefixos = prefixosServico(params.servicosCreditaveisPisCofins)
 
@@ -41,13 +38,32 @@ export function montarBases(
       case 'venda': {
         b.vendas += v
         b.icmsSaidas += l.icms
-        const destino = destinoCfop(l.cfop)
-        if (destino === 'interestadual') {
+        const e = estab(l.estabelecimento_id)
+        const naoContribuinte = l.destinatario ? l.destinatario !== 'PJ_C' : vendaNaoContribuinte(l.cfop)
+        if (destinoCfop(l.cfop) === 'interestadual') {
           b.vendasInterestaduais += v
-          if (vendaNaoContribuinte(l.cfop)) b.vendasNaoContribuinte += v
+          if (l.uf && ICMS_INTERNO_UF[l.uf]) {
+            // alíquota nota a nota: origem da mercadoria + UF de origem e destino; DIFAL para não contribuinte (EC 87/2015)
+            const inter = aliquotaInterestadual(origemDoCst(l.cst), e.uf, l.uf)
+            b.vendasInterCalc += v
+            b.icmsInterCalc += (v * inter) / 100
+            if (naoContribuinte) b.difalCalc += (v * Math.max(0, ICMS_INTERNO_UF[l.uf] - inter)) / 100
+          } else if (naoContribuinte) b.vendasNaoContribuinte += v
         } else {
           b.vendasInternas += v
-          b.icmsVendasInternas += (v * aliquotaInterna(l.estabelecimento_id)) / 100
+          b.icmsVendasInternas += (v * e.aliquota) / 100
+        }
+        if (l.ncm) {
+          const t = tratamentoNcm(l.ncm, params.ncms)
+          b.vendasComNcm += v
+          if (t.monofasico) b.vendasMonofasico += v
+          if (t.st) b.vendasSt += v
+          b.vendasReducao += v * t.reducao
+        }
+        if (l.destinatario) {
+          b.vendasComDestinatario += v
+          if (l.destinatario === 'PJ_C') b.vendasB2B += v
+          if (l.destinatario === 'PF') b.vendasPF += v
         }
         break
       }
@@ -70,7 +86,7 @@ export function montarBases(
         b.ipiCompras += l.ipi
         b.stCompras += l.icms_st
         if (fornecedorDoSimples(l.cst)) b.comprasFornecedorSimples += v
-        if (ncmMonofasico(l.ncm)) b.comprasMonofasico += v
+        if (l.ncm && tratamentoNcm(l.ncm, params.ncms).monofasico) b.comprasMonofasico += v
         break
       case 'devolucao_compra':
         b.devolucoesCompra += v
@@ -104,30 +120,50 @@ export function montarBases(
   return [...meses.values()].sort((a, b) => a.competencia.localeCompare(b.competencia))
 }
 
-/** Estima o mix de produtos (monofásico, redução de IBS/CBS, fornecedores do Simples) pelas entradas de mercadorias. */
+/**
+ * Perfil médio do período. Usa as vendas com NCM/destinatário (saídas detalhadas); sem elas, o NCM das entradas de mercadorias.
+ * Os percentuais informados nos parâmetros têm prioridade.
+ */
 export function estimarMix(linhas: MovimentoLinha[], params: Parametros): MixProdutos {
-  let total = 0
-  let mono = 0
-  let reducao = 0
-  let compras = 0
-  let simples = 0
+  const pesos = { total: 0, mono: 0, st: 0, reducao: 0, comDest: 0, b2b: 0, compras: 0, simples: 0 }
   const excluidas: Natureza[] = ['uso_consumo', 'ativo', 'energia', 'frete', 'comunicacao', 'servico_tomado']
+  const temSaidasComNcm = linhas.some((l) => l.tipo === 'saida' && l.ncm && naturezaDe(l, params.cfopNatureza) === 'venda')
   for (const l of linhas) {
-    if (l.tipo !== 'entrada' || !l.ncm) continue
     const n = naturezaDe(l, params.cfopNatureza)
-    if (excluidas.includes(n)) continue
-    total += l.valor_contabil
-    if (ncmMonofasico(l.ncm)) mono += l.valor_contabil
-    reducao += l.valor_contabil * reducaoIbsCbs(l.ncm)
-    if (n === 'compra_revenda' || n === 'compra_insumo') {
-      compras += l.valor_contabil
-      if (fornecedorDoSimples(l.cst)) simples += l.valor_contabil
+    if (l.tipo === 'entrada' && (n === 'compra_revenda' || n === 'compra_insumo')) {
+      pesos.compras += l.valor_contabil
+      if (fornecedorDoSimples(l.cst)) pesos.simples += l.valor_contabil
     }
+    if (l.tipo === 'saida' && n === 'venda' && l.destinatario) {
+      pesos.comDest += l.valor_contabil
+      if (l.destinatario === 'PJ_C') pesos.b2b += l.valor_contabil
+    }
+    const conta = temSaidasComNcm ? l.tipo === 'saida' && n === 'venda' : l.tipo === 'entrada' && !excluidas.includes(n)
+    if (!conta || !l.ncm) continue
+    const t = tratamentoNcm(l.ncm, params.ncms)
+    pesos.total += l.valor_contabil
+    if (t.monofasico) pesos.mono += l.valor_contabil
+    if (t.st) pesos.st += l.valor_contabil
+    pesos.reducao += l.valor_contabil * t.reducao
   }
+  const fr = (manual: number | null, parte: number, total: number) => (manual !== null ? manual / 100 : total ? parte / total : 0)
   return {
-    monofasico: params.percentualMonofasico !== null ? params.percentualMonofasico / 100 : total ? mono / total : 0,
-    reducaoIbsCbs: params.percentualReducaoIbsCbs !== null ? params.percentualReducaoIbsCbs / 100 : total ? reducao / total : 0,
-    fornecedoresSimples: compras ? simples / compras : 0,
+    monofasico: fr(params.percentualMonofasico, pesos.mono, pesos.total),
+    st: fr(params.percentualSt, pesos.st, pesos.total),
+    reducaoIbsCbs: fr(params.percentualReducaoIbsCbs, pesos.reducao, pesos.total),
+    b2b: fr(params.percentualB2B, pesos.b2b, pesos.comDest),
+    fornecedoresSimples: pesos.compras ? pesos.simples / pesos.compras : 0,
+  }
+}
+
+/** Frações do mês: parâmetro manual > saídas do próprio mês com NCM/destinatário > perfil médio do período. */
+export function fracoesDoMes(b: BaseMensal, params: Parametros, mix: MixProdutos) {
+  const fr = (manual: number | null, parte: number, total: number, media: number) => (manual !== null ? manual / 100 : total > 0 ? parte / total : media)
+  return {
+    monofasico: fr(params.percentualMonofasico, b.vendasMonofasico, b.vendasComNcm, mix.monofasico),
+    st: fr(params.percentualSt, b.vendasSt, b.vendasComNcm, mix.st),
+    reducao: fr(params.percentualReducaoIbsCbs, b.vendasReducao, b.vendasComNcm, mix.reducaoIbsCbs),
+    b2b: fr(params.percentualB2B, b.vendasB2B, b.vendasComDestinatario, mix.b2b),
   }
 }
 

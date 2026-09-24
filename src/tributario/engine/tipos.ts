@@ -23,6 +23,7 @@ export interface MovimentoLinha {
   uf: string
   cst: string
   servico: string // item da lista da LC 116 (serviços)
+  destinatario: Destinatario // tipo do cliente/fornecedor da nota
   itens: number
   valor_contabil: number
   bc_icms: number
@@ -34,6 +35,16 @@ export interface MovimentoLinha {
   iss: number
   difal: number
   retencoes: number
+}
+
+/** Cliente/fornecedor: pessoa física, PJ contribuinte do ICMS (com IE) ou PJ não contribuinte. '' = não informado. */
+export type Destinatario = '' | 'PF' | 'PJ_C' | 'PJ_N'
+
+/** Tratamento de um NCM definido pelo contador para a empresa (campos ausentes = padrão do sistema). */
+export interface ConfigNcm {
+  monofasico?: boolean
+  st?: boolean
+  reducao?: number // % de redução das alíquotas de IBS/CBS (0, 30, 40, 60, 100)
 }
 
 export interface Estabelecimento {
@@ -53,11 +64,11 @@ export interface Parametros {
   anexoServicos: Anexo // anexo das receitas de serviços (III, IV ou V)
   inicioAtividade: string // AAAA-MM ('' = anterior aos dados)
   receitasAnteriores: Record<string, number> // AAAA-MM -> receita bruta (para o RBT12)
-  percentualMonofasico: number | null // % das vendas com PIS/COFINS monofásico (null = estimar pelo NCM das entradas)
-  percentualSt: number // % das vendas com ICMS já retido por substituição tributária
-  percentualReducaoIbsCbs: number | null // % médio de redução de IBS/CBS nas vendas (null = estimar pelo NCM)
+  percentualMonofasico: number | null // % das vendas com PIS/COFINS monofásico (null = pelo NCM)
+  percentualSt: number | null // % das vendas com ICMS já retido por substituição tributária (null = pelo NCM)
+  percentualReducaoIbsCbs: number | null // % médio de redução de IBS/CBS nas vendas (null = pelo NCM)
   aliquotaIcmsInterestadual: number // alíquota média nas vendas interestaduais a contribuintes (4, 7 ou 12)
-  percentualNaoContribuinte: number // % das vendas interestaduais destinadas a não contribuintes (DIFAL)
+  percentualNaoContribuinte: number // % das vendas interestaduais a não contribuintes (DIFAL) — só para notas sem destinatário identificado
   aliquotaInternaDestino: number // alíquota interna média das UFs de destino (DIFAL)
   aliquotaIpi: number // IPI médio nas saídas (0 se não for contribuinte/equiparado)
   aliquotaIss: number // ISS próprio sobre serviços prestados (fora do Simples)
@@ -80,7 +91,11 @@ export interface Parametros {
   cbsReferencia: number
   ibsReferencia: number
   crescimentoAnual: number // % ao ano para a projeção
-  percentualB2B: number // % das vendas para empresas que aproveitam crédito
+  percentualB2B: number | null // % das vendas para empresas que aproveitam crédito (null = pelo destinatário das notas)
+  /** Expectativas de alíquota por ano (%), sobrepõem o cenário: { '2027': { cbs: 8.5, ibs: 0.1 } } */
+  aliquotasAno: Record<string, { cbs?: number; ibs?: number }>
+  /** Tratamento por NCM (carregado da tabela trib_ncms — não é gravado no JSON de parâmetros). */
+  ncms: Record<string, ConfigNcm>
   cfopNatureza: Record<string, Natureza> // ajustes do contador na classificação de CFOP
 }
 
@@ -91,7 +106,7 @@ export const PARAMETROS_PADRAO: Parametros = {
   inicioAtividade: '',
   receitasAnteriores: {},
   percentualMonofasico: null,
-  percentualSt: 0,
+  percentualSt: null,
   percentualReducaoIbsCbs: null,
   aliquotaIcmsInterestadual: 12,
   percentualNaoContribuinte: 0,
@@ -117,7 +132,9 @@ export const PARAMETROS_PADRAO: Parametros = {
   cbsReferencia: CENARIOS_ALIQUOTA[0].cbs,
   ibsReferencia: CENARIOS_ALIQUOTA[0].ibs,
   crescimentoAnual: 0,
-  percentualB2B: 0,
+  percentualB2B: null,
+  aliquotasAno: {},
+  ncms: {},
   cfopNatureza: {},
 }
 
@@ -129,8 +146,18 @@ export interface BaseMensal {
   vendas: number // mercadorias no mercado interno (bruto)
   vendasInternas: number
   vendasInterestaduais: number
-  vendasNaoContribuinte: number // parte das interestaduais para não contribuintes (CFOP x107/x108)
+  vendasNaoContribuinte: number // interestaduais sem destinatário identificado, com CFOP x107/x108
   icmsVendasInternas: number // ICMS de débito simulado para regime regular (por alíquota do estabelecimento)
+  vendasInterCalc: number // interestaduais com UF de destino conhecida (alíquota calculada nota a nota)
+  icmsInterCalc: number // ICMS interestadual calculado (4%, 7% ou 12% conforme origem e UFs)
+  difalCalc: number // DIFAL calculado para não contribuintes (alíquota interna da UF de destino − interestadual)
+  vendasComNcm: number // vendas com NCM informado (base das frações abaixo)
+  vendasMonofasico: number
+  vendasSt: number
+  vendasReducao: number // Σ valor × fração de redução de IBS/CBS
+  vendasComDestinatario: number
+  vendasB2B: number // vendas a PJ contribuinte (aproveitam crédito)
+  vendasPF: number
   servicos: number
   exportacao: number
   devolucoesVenda: number
@@ -163,6 +190,16 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   vendasInterestaduais: 0,
   vendasNaoContribuinte: 0,
   icmsVendasInternas: 0,
+  vendasInterCalc: 0,
+  icmsInterCalc: 0,
+  difalCalc: 0,
+  vendasComNcm: 0,
+  vendasMonofasico: 0,
+  vendasSt: 0,
+  vendasReducao: 0,
+  vendasComDestinatario: 0,
+  vendasB2B: 0,
+  vendasPF: 0,
   servicos: 0,
   exportacao: 0,
   devolucoesVenda: 0,
@@ -190,10 +227,12 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
 
 export const receitaBruta = (b: BaseMensal) => b.vendas + b.servicos + b.exportacao - b.devolucoesVenda
 
-/** Perfil do mix de produtos, estimado pelos NCM das entradas. */
+/** Perfil médio do período (usado quando o mês não tem saídas detalhadas): pelos NCM das saídas, ou das entradas. */
 export interface MixProdutos {
   monofasico: number // fração
+  st: number // fração
   reducaoIbsCbs: number // fração média de redução
+  b2b: number // fração das vendas a PJ contribuinte
   fornecedoresSimples: number // fração das compras vindas de optantes do Simples
 }
 

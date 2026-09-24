@@ -65,8 +65,9 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
             label="Vendas com ICMS-ST já retido"
             valor={params.percentualSt}
             sufixo="%"
-            onChange={(v) => set('percentualSt', v ?? 0)}
-            ajuda="Excluído da parcela de ICMS do DAS e do débito de ICMS"
+            vazio={`automático: ${pct(mixEstimado.st, 1)}`}
+            onChange={(v) => set('percentualSt', v)}
+            ajuda="Pelo NCM (aba Produtos). Excluído da parcela de ICMS do DAS e do débito de ICMS."
           />
         </div>
         <div className="mt-5">
@@ -112,7 +113,7 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
             sufixo="%"
             vazio={`automático: ${pct(mixEstimado.monofasico, 1)}`}
             onChange={(v) => set('percentualMonofasico', v)}
-            ajuda="Estimado pelos NCM das entradas (Lei 10.147/2000 etc.). Deixe em branco para usar a estimativa."
+            ajuda="Pelos NCM das vendas (aba Produtos). Deixe em branco para usar o cálculo automático."
           />
           <Num
             label="Redução média de IBS/CBS nas vendas"
@@ -140,7 +141,7 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
             valor={params.percentualNaoContribuinte}
             sufixo="%"
             onChange={(v) => set('percentualNaoContribuinte', v ?? 0)}
-            ajuda="Geram DIFAL (EC 87/2015). CFOP x107/x108 já entram automaticamente."
+            ajuda="Só para notas sem destinatário identificado — com o Registro de Saídas detalhado o DIFAL é calculado nota a nota."
           />
           <Num label="Alíquota interna média no destino" valor={params.aliquotaInternaDestino} sufixo="%" onChange={(v) => set('aliquotaInternaDestino', v ?? 0)} />
           <Num label="IPI médio nas saídas" valor={params.aliquotaIpi} sufixo="%" onChange={(v) => set('aliquotaIpi', v ?? 0)} ajuda="Industrial ou importador equiparado" />
@@ -207,7 +208,14 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
           <Num label="CBS de referência" valor={params.cbsReferencia} sufixo="%" onChange={(v) => onParams({ ...params, cbsReferencia: v ?? 0, cenarioAliquotas: 'personalizado' })} />
           <Num label="IBS de referência (UF + município)" valor={params.ibsReferencia} sufixo="%" onChange={(v) => onParams({ ...params, ibsReferencia: v ?? 0, cenarioAliquotas: 'personalizado' })} />
           <Num label="Crescimento anual da receita" valor={params.crescimentoAnual} sufixo="%" onChange={(v) => set('crescimentoAnual', v ?? 0)} />
-          <Num label="Vendas para empresas (B2B)" valor={params.percentualB2B} sufixo="%" onChange={(v) => set('percentualB2B', v ?? 0)} />
+          <Num
+            label="Vendas para empresas (B2B)"
+            valor={params.percentualB2B}
+            sufixo="%"
+            vazio={`automático: ${pct(mixEstimado.b2b, 1)}`}
+            onChange={(v) => set('percentualB2B', v)}
+            ajuda="Pelo destinatário das notas (PJ com IE)"
+          />
         </div>
       </Section>
     </div>

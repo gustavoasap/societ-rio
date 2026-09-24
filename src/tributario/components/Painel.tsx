@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowLeft, BookOpen, Calculator, CalendarRange, LayoutDashboard, Pencil, Save, Scale, Settings2, Table2, Upload } from 'lucide-react'
+import { ArrowLeft, Barcode, BookOpen, Calculator, CalendarRange, LayoutDashboard, Pencil, Save, Scale, Settings2, Table2, Upload } from 'lucide-react'
 import { mascaraCnpj } from '../../lib/format'
 import type { Contexto } from '../engine/apuracao'
-import { estimarMix, montarBases, receitaDaBase } from '../engine/base'
+import { estimarMix, montarBases, receitaDaBase, type DadosEstab } from '../engine/base'
 import { ICMS_INTERNO_UF } from '../engine/tabelas'
 import { comPadrao, type Parametros as P, type MovimentoLinha, type RegimeId } from '../engine/tipos'
-import { carregarMovimentos, listarImportacoes, salvarParametros, type EmpresaComEstab, type Importacao } from '../dados'
+import {
+  carregarMovimentos,
+  configDosNcms,
+  listarImportacoes,
+  listarNcms,
+  salvarNcm,
+  salvarParametros,
+  type EmpresaComEstab,
+  type Importacao,
+  type NcmRegistro,
+} from '../dados'
 import { Abas, Vazio } from './comum'
 import { Apuracao } from './abas/Apuracao'
 import { Comparativo } from './abas/Comparativo'
@@ -13,10 +23,11 @@ import { Importar } from './abas/Importar'
 import { Legislacao } from './abas/Legislacao'
 import { Movimento } from './abas/Movimento'
 import { Parametros } from './abas/Parametros'
+import { Produtos } from './abas/Produtos'
 import { Reforma } from './abas/Reforma'
 import { VisaoGeral } from './abas/VisaoGeral'
 
-type Aba = 'geral' | 'movimento' | 'apuracao' | 'comparativo' | 'reforma' | 'importar' | 'parametros' | 'legislacao'
+type Aba = 'geral' | 'movimento' | 'apuracao' | 'comparativo' | 'reforma' | 'ncm' | 'importar' | 'parametros' | 'legislacao'
 
 const NOME_REGIME_ATUAL = { simples: 'Simples Nacional', presumido: 'Lucro Presumido', real: 'Lucro Real' }
 
@@ -26,16 +37,18 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [aba, setAba] = useState<Aba>('geral')
-  const [params, setParams] = useState<P>(() => comPadrao(empresa.parametros))
+  const [paramsSalvos, setParams] = useState<P>(() => comPadrao(empresa.parametros))
+  const [ncms, setNcms] = useState<NcmRegistro[]>([])
   const [alterado, setAlterado] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [estabFiltro, setEstabFiltro] = useState('')
 
   const carregar = useCallback(async () => {
     try {
-      const [movs, imps] = await Promise.all([carregarMovimentos(empresa.id), listarImportacoes(empresa.id)])
+      const [movs, imps, regs] = await Promise.all([carregarMovimentos(empresa.id), listarImportacoes(empresa.id), listarNcms(empresa.id)])
       setLinhas(movs)
       setImportacoes(imps)
+      setNcms(regs)
       setErro(null)
     } catch (e) {
       setErro((e as Error).message)
@@ -49,19 +62,31 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
   }, [carregar])
 
   const estabs = empresa.trib_estabelecimentos
-  const aliquotaInterna = useCallback(
+  const dadosEstab: DadosEstab = useCallback(
     (id: string | null) => {
       const e = estabs.find((x) => x.id === id) ?? estabs.find((x) => x.matriz) ?? estabs[0]
-      return e?.aliquota_icms ?? ICMS_INTERNO_UF[e?.uf ?? 'SP'] ?? 18
+      const uf = e?.uf ?? 'SP'
+      return { uf, aliquota: e?.aliquota_icms ?? ICMS_INTERNO_UF[uf] ?? 18 }
     },
     [estabs],
   )
+  // o tratamento por NCM vem da tabela trib_ncms
+  const params = useMemo(() => ({ ...paramsSalvos, ncms: configDosNcms(ncms) }), [paramsSalvos, ncms])
+
+  async function mudarNcm(ncm: string, campos: Pick<NcmRegistro, 'monofasico' | 'st' | 'reducao'>) {
+    setNcms((l) => (l.some((n) => n.ncm === ncm) ? l.map((n) => (n.ncm === ncm ? { ...n, ...campos } : n)) : [...l, { empresa_id: empresa.id, ncm, descricao: null, ...campos }]))
+    try {
+      await salvarNcm(empresa.id, ncm, campos)
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
 
   // Apuração sempre consolidada (matriz + filiais); o filtro de estabelecimento vale só para a visão de movimento
-  const bases = useMemo(() => montarBases(linhas, params, aliquotaInterna), [linhas, params, aliquotaInterna])
+  const bases = useMemo(() => montarBases(linhas, params, dadosEstab), [linhas, params, dadosEstab])
   const basesFiltradas = useMemo(
-    () => (estabFiltro ? montarBases(linhas.filter((l) => l.estabelecimento_id === estabFiltro), params, aliquotaInterna) : bases),
-    [estabFiltro, linhas, params, aliquotaInterna, bases],
+    () => (estabFiltro ? montarBases(linhas.filter((l) => l.estabelecimento_id === estabFiltro), params, dadosEstab) : bases),
+    [estabFiltro, linhas, params, dadosEstab, bases],
   )
   const mix = useMemo(() => estimarMix(linhas, params), [linhas, params])
   const ctx: Contexto = useMemo(() => {
@@ -94,6 +119,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     { id: 'apuracao', label: 'Apuração atual', icone: <Calculator className="h-4 w-4" /> },
     { id: 'comparativo', label: 'Comparativo', icone: <Scale className="h-4 w-4" /> },
     { id: 'reforma', label: 'Reforma 2026–2033', icone: <CalendarRange className="h-4 w-4" /> },
+    { id: 'ncm', label: 'Produtos (NCM)', icone: <Barcode className="h-4 w-4" /> },
     { id: 'importar', label: 'Importar relatórios', icone: <Upload className="h-4 w-4" /> },
     { id: 'parametros', label: 'Parâmetros', icone: <Settings2 className="h-4 w-4" /> },
     { id: 'legislacao', label: 'Legislação', icone: <BookOpen className="h-4 w-4" /> },
@@ -159,7 +185,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
 
       {!carregando && !semDados && (
         <>
-          {aba === 'geral' && <VisaoGeral bases={bases} ctx={ctx} regimeAtual={regimeAtual} linhas={linhas} estabelecimentos={estabs} aliquotaInterna={aliquotaInterna} />}
+          {aba === 'geral' && <VisaoGeral bases={bases} ctx={ctx} regimeAtual={regimeAtual} linhas={linhas} estabelecimentos={estabs} dadosEstab={dadosEstab} />}
           {aba === 'movimento' && (
             <Movimento bases={basesFiltradas} linhas={estabFiltro ? linhas.filter((l) => l.estabelecimento_id === estabFiltro) : linhas} params={params} onParams={mudarParams} />
           )}
@@ -168,8 +194,9 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
           {aba === 'reforma' && <Reforma bases={bases} ctx={ctx} regimeAtual={regimeAtual} onParams={mudarParams} />}
         </>
       )}
+      {!carregando && aba === 'ncm' && <Produtos linhas={linhas} registros={ncms} params={params} onMudar={mudarNcm} />}
       {!carregando && aba === 'importar' && <Importar empresaId={empresa.id} estabelecimentos={estabs} importacoes={importacoes} onAlterado={carregar} />}
-      {aba === 'parametros' && <Parametros params={params} onParams={mudarParams} mixEstimado={estimarMix(linhas, { ...params, percentualMonofasico: null, percentualReducaoIbsCbs: null })} />}
+      {aba === 'parametros' && <Parametros params={params} onParams={mudarParams} mixEstimado={estimarMix(linhas, { ...params, percentualMonofasico: null, percentualReducaoIbsCbs: null, percentualSt: null, percentualB2B: null })} />}
       {aba === 'legislacao' && <Legislacao />}
     </div>
   )

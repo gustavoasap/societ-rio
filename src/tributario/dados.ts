@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase'
-import type { Estabelecimento, MovimentoLinha, Parametros, RegimeAtual, TipoMovimento } from './engine/tipos'
+import type { ConfigNcm, Estabelecimento, MovimentoLinha, Parametros, RegimeAtual, TipoMovimento } from './engine/tipos'
 import type { LinhaImportada, TipoRelatorio } from './importacao/relatorios'
 
 export interface Empresa {
@@ -87,7 +87,9 @@ export async function excluirEmpresa(id: string) {
 }
 
 export async function salvarParametros(empresaId: string, parametros: Parametros) {
-  const { error } = await supabase.from('trib_empresas').update({ parametros }).eq('id', empresaId)
+  // o tratamento por NCM fica na tabela trib_ncms
+  const { ncms: _ncms, ...resto } = parametros
+  const { error } = await supabase.from('trib_empresas').update({ parametros: resto }).eq('id', empresaId)
   erro(error)
 }
 
@@ -98,7 +100,7 @@ export async function listarImportacoes(empresaId: string): Promise<Importacao[]
 }
 
 const CAMPOS_MOV =
-  'estabelecimento_id, competencia, tipo, cfop, ncm, uf, cst, servico, itens, valor_contabil, bc_icms, icms, icms_st, ipi, pis, cofins, iss, difal, retencoes'
+  'estabelecimento_id, competencia, tipo, cfop, ncm, uf, cst, servico, destinatario, itens, valor_contabil, bc_icms, icms, icms_st, ipi, pis, cofins, iss, difal, retencoes'
 
 /** Carrega todo o movimento da empresa (paginado — o Supabase devolve no máximo 1.000 linhas por consulta). */
 export async function carregarMovimentos(empresaId: string): Promise<MovimentoLinha[]> {
@@ -154,6 +156,7 @@ export async function gravarImportacao(args: {
   linhas: LinhaImportada[]
   registros: number
   substituir: string[]
+  produtos?: Record<string, string>
 }) {
   const comps = args.linhas.map((l) => l.competencia).sort()
   if (!comps.length) throw new Error('Nenhuma linha para importar.')
@@ -189,9 +192,66 @@ export async function gravarImportacao(args: {
     await supabase.from('trib_importacoes').delete().eq('id', importacaoId)
     throw e
   }
+  if (args.produtos) await registrarNcms(args.empresaId, args.produtos)
+}
+
+// ---------------------------------------------------------------------------
+// NCM por empresa
+// ---------------------------------------------------------------------------
+
+export interface NcmRegistro {
+  empresa_id: string
+  ncm: string
+  descricao: string | null
+  monofasico: boolean | null
+  st: boolean | null
+  reducao: number | null
+}
+
+export async function listarNcms(empresaId: string): Promise<NcmRegistro[]> {
+  const { data, error } = await supabase.from('trib_ncms').select('*').eq('empresa_id', empresaId)
+  erro(error)
+  return ((data ?? []) as NcmRegistro[]).map((n) => ({ ...n, reducao: n.reducao === null ? null : Number(n.reducao) }))
+}
+
+/** Registra os NCMs novos encontrados na importação (os já existentes mantêm o tratamento definido). */
+export async function registrarNcms(empresaId: string, produtos: Record<string, string>) {
+  const linhas = Object.entries(produtos).map(([ncm, descricao]) => ({ empresa_id: empresaId, ncm, descricao: descricao || null }))
+  for (let i = 0; i < linhas.length; i += 500) {
+    const { error } = await supabase.from('trib_ncms').upsert(linhas.slice(i, i + 500), { onConflict: 'empresa_id,ncm', ignoreDuplicates: true })
+    erro(error)
+  }
+}
+
+export async function salvarNcm(empresaId: string, ncm: string, campos: Pick<NcmRegistro, 'monofasico' | 'st' | 'reducao'>) {
+  const { error } = await supabase.from('trib_ncms').upsert({ empresa_id: empresaId, ncm, ...campos, updated_at: new Date().toISOString() }, { onConflict: 'empresa_id,ncm' })
+  erro(error)
+}
+
+export function configDosNcms(registros: NcmRegistro[]): Record<string, ConfigNcm> {
+  const r: Record<string, ConfigNcm> = {}
+  for (const n of registros) {
+    const c: ConfigNcm = {}
+    if (n.monofasico !== null) c.monofasico = n.monofasico
+    if (n.st !== null) c.st = n.st
+    if (n.reducao !== null) c.reducao = n.reducao
+    if (Object.keys(c).length) r[n.ncm] = c
+  }
+  return r
 }
 
 export async function excluirImportacao(id: string) {
   const { error } = await supabase.from('trib_importacoes').delete().eq('id', id)
   erro(error)
+}
+
+export async function adicionarEstabelecimento(empresaId: string, e: Omit<Estabelecimento, 'id'>): Promise<string> {
+  const { data, error } = await supabase
+    .from('trib_estabelecimentos')
+    .insert({ ...e, empresa_id: empresaId })
+    .select('id')
+    .single()
+  if (error?.message.includes('trib_estabelecimentos_cnpj_unico')) throw new Error(`O CNPJ ${e.cnpj} já está cadastrado em outra empresa.`)
+  erro(error)
+  return data!.id as string
 }

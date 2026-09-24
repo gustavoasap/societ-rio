@@ -4,12 +4,13 @@ import { calcularRbt12, estimarMix, montarBases } from './base'
 import { classificarCfop, fornecedorDoSimples } from './cfop'
 import { ncmMonofasico, reducaoIbsCbs } from './ncm'
 import { montarAnoBase, projetar } from './projecao'
-import { ANEXOS_SIMPLES, regrasDoAno } from './tabelas'
+import { ANEXOS_SIMPLES, aliquotaInterestadual, regrasDoAno } from './tabelas'
+import { tipoDestinatario } from '../importacao/relatorios'
 import { BASE_VAZIA, PARAMETROS_PADRAO, type BaseMensal, type MovimentoLinha, type Parametros } from './tipos'
 
 const ctx = (p: Partial<Parametros> = {}, extra: Partial<Contexto> = {}): Contexto => ({
   params: { ...PARAMETROS_PADRAO, ...p },
-  mix: { monofasico: 0, reducaoIbsCbs: 0, fornecedoresSimples: 0 },
+  mix: { monofasico: 0, st: 0, reducaoIbsCbs: 0, b2b: 0, fornecedoresSimples: 0 },
   receitaHistorica: () => undefined,
   ...extra,
 })
@@ -126,7 +127,7 @@ describe('Simples Nacional', () => {
     const r = apurar('simples', [base], ctx({}, { receitaHistorica: hist }))
     const f = faixaSimples('I', 1_200_000)
     expect(r.das).toBeCloseTo(100_000 * f.efetiva, 6)
-    const mono = apurar('simples', [base], { ...ctx({}, { receitaHistorica: hist }), mix: { monofasico: 0.5, reducaoIbsCbs: 0, fornecedoresSimples: 0 } })
+    const mono = apurar('simples', [base], { ...ctx({}, { receitaHistorica: hist }), mix: { monofasico: 0.5, st: 0, reducaoIbsCbs: 0, b2b: 0, fornecedoresSimples: 0 } })
     const pisCofins = 100_000 * f.efetiva * (0.1274 + 0.0276)
     expect(mono.das).toBeCloseTo(r.das - pisCofins * 0.5, 6)
   })
@@ -209,6 +210,7 @@ describe('agregação e projeção', () => {
     uf: '',
     cst: '',
     servico: '',
+    destinatario: '',
     itens: 1,
     valor_contabil: 0,
     bc_icms: 0,
@@ -234,7 +236,7 @@ describe('agregação e projeção', () => {
       linha({ tipo: 'servico_tomado', servico: '11.04.01', valor_contabil: 100 }),
       linha({ tipo: 'servico_tomado', servico: '10.05.01', valor_contabil: 30 }),
     ]
-    const [b] = montarBases(linhas, PARAMETROS_PADRAO, () => 18)
+    const [b] = montarBases(linhas, PARAMETROS_PADRAO, () => ({ uf: 'SP', aliquota: 18 }))
     expect(b.vendas).toBe(1500)
     expect(b.vendasInternas).toBe(1000)
     expect(b.icmsVendasInternas).toBe(180)
@@ -246,7 +248,7 @@ describe('agregação e projeção', () => {
     expect(b.servicosTomadosCreditaveis).toBe(100)
     const mix = estimarMix(linhas, PARAMETROS_PADRAO)
     expect(mix.monofasico).toBeCloseTo(400 / (400 + 7777), 10)
-    const ajustado = montarBases(linhas, { ...PARAMETROS_PADRAO, cfopNatureza: { '6905': 'venda' } }, () => 18)[0]
+    const ajustado = montarBases(linhas, { ...PARAMETROS_PADRAO, cfopNatureza: { '6905': 'venda' } }, () => ({ uf: 'SP', aliquota: 18 }))[0]
     expect(ajustado.vendas).toBe(1500 + 9999)
   })
 
@@ -262,5 +264,62 @@ describe('agregação e projeção', () => {
     expect(proj[1].resultados.simples_hibrido).toBeDefined()
     // Simples tradicional sem monofásico: carga constante ao longo da transição
     expect(proj[7].resultados.simples!.total).toBeCloseTo(proj[0].resultados.simples!.total, 4)
+  })
+})
+
+describe('saídas detalhadas: destinatário, UF e NCM', () => {
+  const l = (x: Partial<MovimentoLinha>): MovimentoLinha => ({
+    estabelecimento_id: null, competencia: '2026-06', tipo: 'saida', cfop: '6106', ncm: '', uf: '', cst: '', servico: '', destinatario: '',
+    itens: 1, valor_contabil: 0, bc_icms: 0, icms: 0, icms_st: 0, ipi: 0, pis: 0, cofins: 0, iss: 0, difal: 0, retencoes: 0, ...x,
+  })
+  const estab = () => ({ uf: 'SP', aliquota: 18 })
+
+  it('alíquota interestadual pela origem e pelas UFs (Res. SF 22/1989 e 13/2012)', () => {
+    expect(aliquotaInterestadual('1', 'SP', 'MG')).toBe(4)
+    expect(aliquotaInterestadual('0', 'SP', 'BA')).toBe(7)
+    expect(aliquotaInterestadual('0', 'SP', 'ES')).toBe(7)
+    expect(aliquotaInterestadual('0', 'SP', 'RJ')).toBe(12)
+    expect(aliquotaInterestadual('0', 'BA', 'SP')).toBe(12)
+  })
+
+  it('calcula ICMS interestadual e DIFAL nota a nota', () => {
+    const [b] = montarBases(
+      [
+        l({ uf: 'BA', cst: '0102', destinatario: 'PF', valor_contabil: 1000 }), // 7% + DIFAL até 20,5%
+        l({ uf: 'MG', cst: '1102', destinatario: 'PJ_C', valor_contabil: 1000 }), // importado 4%, contribuinte sem DIFAL
+      ],
+      PARAMETROS_PADRAO,
+      estab,
+    )
+    expect(b.icmsInterCalc).toBeCloseTo(70 + 40, 6)
+    expect(b.difalCalc).toBeCloseTo(1000 * (0.205 - 0.07), 6)
+    expect(b.vendasB2B).toBe(1000)
+    expect(b.vendasPF).toBe(1000)
+  })
+
+  it('usa o tratamento de NCM definido pelo contador', () => {
+    const linhas = [l({ ncm: '48189090', valor_contabil: 800, uf: 'SP', cfop: '5106' }), l({ ncm: '33049990', valor_contabil: 200, uf: 'SP', cfop: '5106' })]
+    const padrao = montarBases(linhas, PARAMETROS_PADRAO, estab)[0]
+    expect(padrao.vendasMonofasico).toBe(200)
+    const cfg = { ...PARAMETROS_PADRAO, ncms: { '48189090': { st: true, reducao: 60 }, '33049990': { monofasico: false } } }
+    const b = montarBases(linhas, cfg, estab)[0]
+    expect(b.vendasMonofasico).toBe(0)
+    expect(b.vendasSt).toBe(800)
+    expect(b.vendasReducao).toBeCloseTo(480, 6)
+  })
+
+  it('aplica as alíquotas de CBS/IBS informadas para o ano', () => {
+    const r = regrasDoAno(2030, 8.8, 17.7, { cbs: 9.5, ibs: 4 })
+    expect(r.cbs).toBeCloseTo(0.095)
+    expect(r.ibs).toBeCloseTo(0.04)
+    expect(r.icmsIssFator).toBeCloseTo(0.8)
+    expect(regrasDoAno(2026, 8.8, 17.7, { cbs: 5 }).pisCofins).toBe(true)
+  })
+
+  it('identifica pessoa física e PJ contribuinte pelo documento e IE', () => {
+    expect(tipoDestinatario('00024015318668', 'ISENTO')).toBe('PF')
+    expect(tipoDestinatario('11222333000181', '123456789')).toBe('PJ_C')
+    expect(tipoDestinatario('11222333000181', 'ISENTO')).toBe('PJ_N')
+    expect(tipoDestinatario('', '')).toBe('')
   })
 })

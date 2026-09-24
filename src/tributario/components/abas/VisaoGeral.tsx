@@ -3,7 +3,7 @@ import { Award, Building2, Coins, LineChart, Receipt, TrendingUp } from 'lucide-
 import { mascaraCnpj } from '../../../lib/format'
 import { Section } from '../../../components/ui'
 import { apurar, type Contexto } from '../../engine/apuracao'
-import { montarBases, nomeMes } from '../../engine/base'
+import { montarBases, nomeMes, type DadosEstab } from '../../engine/base'
 import { projetar } from '../../engine/projecao'
 import { REGIMES, receitaBruta, type BaseMensal, type Estabelecimento, type MovimentoLinha, type RegimeId } from '../../engine/tipos'
 import { COR_REGIME, moeda, moedaCurta, nomeRegime, pct, recomendacao } from '../../formatacao'
@@ -16,14 +16,14 @@ export function VisaoGeral({
   regimeAtual,
   linhas,
   estabelecimentos,
-  aliquotaInterna,
+  dadosEstab,
 }: {
   bases: BaseMensal[]
   ctx: Contexto
   regimeAtual: RegimeId
   linhas: MovimentoLinha[]
   estabelecimentos: Estabelecimento[]
-  aliquotaInterna: (id: string | null) => number
+  dadosEstab: DadosEstab
 }) {
   const ultimoAno = bases[bases.length - 1]?.competencia.slice(0, 4)
   const mesesAno = useMemo(() => bases.filter((b) => b.competencia.startsWith(ultimoAno ?? '')), [bases, ultimoAno])
@@ -35,11 +35,11 @@ export function VisaoGeral({
         const b = montarBases(
           linhas.filter((l) => l.estabelecimento_id === e.id),
           ctx.params,
-          aliquotaInterna,
+          dadosEstab,
         )
         return { e, receita: b.reduce((s, x) => s + receitaBruta(x), 0), compras: b.reduce((s, x) => s + x.compras - x.devolucoesCompra, 0) }
       }),
-    [estabelecimentos, linhas, ctx.params, aliquotaInterna],
+    [estabelecimentos, linhas, ctx.params, dadosEstab],
   )
 
   const atual = hoje.find((r) => r.regime === regimeAtual)!

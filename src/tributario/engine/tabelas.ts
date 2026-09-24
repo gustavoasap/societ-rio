@@ -147,7 +147,14 @@ export interface RegrasAno {
   ibsFator: number
 }
 
-export function regrasDoAno(ano: number, cbsRef: number, ibsRef: number): RegrasAno {
+/** Regras do ano, com as expectativas de alíquota informadas pelo contador (em %) sobrepondo o cronograma legal. */
+export function regrasDoAno(ano: number, cbsRef: number, ibsRef: number, ajuste?: { cbs?: number; ibs?: number }): RegrasAno {
+  const r = regrasLegais(ano, cbsRef, ibsRef)
+  if (!ajuste || r.pisCofins) return r
+  return { ...r, cbs: ajuste.cbs !== undefined ? ajuste.cbs / 100 : r.cbs, ibs: ajuste.ibs !== undefined ? ajuste.ibs / 100 : r.ibs }
+}
+
+function regrasLegais(ano: number, cbsRef: number, ibsRef: number): RegrasAno {
   const cbs = cbsRef / 100
   const ibs = ibsRef / 100
   if (ano <= 2026) return { ano, pisCofins: true, ipi: true, teste: ano === 2026, cbs: ano === 2026 ? 0.009 : 0, ibs: ano === 2026 ? 0.001 : 0, icmsIssFator: 1, ibsFator: 0 }
@@ -170,3 +177,23 @@ export const PRESUNCAO = {
 /** LC 224/2025: percentuais de presunção acrescidos de 10% sobre a parcela da receita bruta anual que exceder R$ 5 milhões. */
 export const LC224_LIMITE_ANUAL = 5_000_000
 export const LC224_ACRESCIMO = 0.1
+
+/**
+ * Alíquota interestadual do ICMS (Resolução do Senado 22/1989 e 13/2012):
+ * 4% para mercadoria importada (origem 1, 2, 3 ou 8); 7% das regiões Sul/Sudeste (exceto ES) para Norte, Nordeste,
+ * Centro-Oeste e ES; 12% nos demais casos.
+ */
+const SUL_SUDESTE = ['SP', 'RJ', 'MG', 'PR', 'SC', 'RS']
+export function aliquotaInterestadual(origem: string, ufOrigem: string, ufDestino: string): number {
+  if (['1', '2', '3', '8'].includes(origem)) return 4
+  if (SUL_SUDESTE.includes(ufOrigem) && !SUL_SUDESTE.includes(ufDestino)) return 7
+  return 12
+}
+
+/** Dígito de origem da mercadoria (tabela A do CST), quando o CST/CSOSN vem com 4 dígitos (ex.: 1102, 5400) ou 3 (020). */
+export function origemDoCst(cst: string): string {
+  const c = cst.replace(/\D/g, '')
+  if (c.length === 4) return c[0]
+  if (c.length === 3 && ['00', '10', '20', '30', '40', '41', '50', '51', '60', '61', '70', '90'].includes(c.slice(1))) return c[0]
+  return '0'
+}

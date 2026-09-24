@@ -4,7 +4,7 @@
 // - Registro de Serviços — Detalhado (tomados ou prestados)
 // As linhas são agregadas por competência × CFOP × NCM × UF × CST × serviço, que é o que o motor precisa.
 import { somarMeses } from '../engine/base'
-import type { MovimentoLinha, TipoMovimento } from '../engine/tipos'
+import type { Destinatario, MovimentoLinha, TipoMovimento } from '../engine/tipos'
 import { lerXlsx, type Celula } from './xlsx'
 
 export type TipoRelatorio = 'entradas_detalhado' | 'saidas_detalhado' | 'entradas_resumo' | 'saidas_resumo' | 'servicos'
@@ -25,12 +25,16 @@ export interface RelatorioLido {
   titulo: string
   empresa: string
   cnpj: string
+  municipio: string
+  uf: string
   periodo: { inicio: string; fim: string } | null // AAAA-MM
   /** Tipo de serviço: definido pelo título quando possível; senão o usuário escolhe. */
   tipoServico: 'servico_tomado' | 'servico_prestado' | null
   linhas: LinhaImportada[]
   registros: number
   valorTotal: number
+  /** NCM -> nome de um produto (para a tabela de NCM da empresa) */
+  produtos: Record<string, string>
   /** Resumos que cobrem mais de um mês precisam de uma competência (ou rateio) escolhida pelo usuário. */
   exigeCompetencia: boolean
   avisos: string[]
@@ -71,6 +75,33 @@ export function competenciaDe(v: Celula | undefined): string | null {
   return null
 }
 
+const digitosValidos = (d: string, pesos: number[]) => {
+  let soma = 0
+  pesos.forEach((p, i) => (soma += Number(d[i]) * p))
+  const r = soma % 11
+  return r < 2 ? 0 : 11 - r
+}
+function cnpjValido(c: string) {
+  if (c.length !== 14 || /^(\d)\1+$/.test(c)) return false
+  const p1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+  return digitosValidos(c, p1) === Number(c[12]) && digitosValidos(c, [6, ...p1]) === Number(c[13])
+}
+function cpfValido(c: string) {
+  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false
+  const p = [10, 9, 8, 7, 6, 5, 4, 3, 2]
+  return digitosValidos(c, p) === Number(c[9]) && digitosValidos(c, [11, ...p]) === Number(c[10])
+}
+
+/** Tipo do destinatário/remetente pelo documento (CPF vem completado com zeros até 14 dígitos) e pela inscrição estadual. */
+export function tipoDestinatario(documento: Celula | undefined, ie: Celula | undefined): Destinatario {
+  const d = texto(documento).replace(/\D/g, '')
+  if (!d) return ''
+  const pf = d.length <= 11 ? cpfValido(d.padStart(11, '0')) : !cnpjValido(d) && cpfValido(d.slice(-11))
+  if (pf) return 'PF'
+  const inscricao = texto(ie).replace(/\W/g, '').toUpperCase()
+  return inscricao && inscricao !== 'ISENTO' && inscricao !== 'ISENTA' ? 'PJ_C' : 'PJ_N'
+}
+
 function cabecalhoDoArquivo(celulas: Celula[][]) {
   const topo = celulas
     .slice(0, 15)
@@ -81,7 +112,8 @@ function cabecalhoDoArquivo(celulas: Celula[][]) {
   const empresa = topo.match(/Empresa:\s*([^\n]+?)(?:\s*-\s*CNPJ|\s*\n|$)/i)?.[1]?.trim() ?? ''
   const per = topo.match(/Per[ií]odo:\s*(\d{2}\/\d{2}\/\d{4})\s*a\s*(\d{2}\/\d{2}\/\d{4})/i)
   const periodo = per ? { inicio: competenciaDe(per[1])!, fim: competenciaDe(per[2])! } : null
-  return { topo, cnpj, empresa, periodo }
+  const cidade = topo.match(/Cidade:\s*([^\n]+?)\s*-\s*([A-Z]{2})\b/)
+  return { topo, cnpj, empresa, periodo, municipio: cidade?.[1]?.trim() ?? '', uf: cidade?.[2] ?? '' }
 }
 
 function acharCabecalho(celulas: Celula[][], obrigatorios: string[]) {
@@ -113,7 +145,7 @@ class Agregador {
   valorTotal = 0
 
   somar(chave: Omit<LinhaImportada, 'itens' | 'valor_contabil' | 'bc_icms' | 'icms' | 'icms_st' | 'ipi' | 'pis' | 'cofins' | 'iss' | 'difal' | 'retencoes'>, v: Partial<LinhaImportada>) {
-    const k = [chave.competencia, chave.tipo, chave.cfop, chave.ncm, chave.uf, chave.cst, chave.servico].join('|')
+    const k = [chave.competencia, chave.tipo, chave.cfop, chave.ncm, chave.uf, chave.cst, chave.servico, chave.destinatario].join('|')
     const atual =
       this.mapa.get(k) ??
       ({ ...chave, itens: 0, valor_contabil: 0, bc_icms: 0, icms: 0, icms_st: 0, ipi: 0, pis: 0, cofins: 0, iss: 0, difal: 0, retencoes: 0 } as LinhaImportada)
@@ -142,7 +174,7 @@ class Agregador {
   }
 }
 
-function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]) {
+function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[], produtos: Record<string, string>) {
   const cab = acharCabecalho(celulas, ['cfop'])
   if (!cab) throw new Error('Cabeçalho com a coluna CFOP não encontrado.')
   const ix = cab.indice
@@ -166,6 +198,9 @@ function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]
     cofins: coluna(ix, 'Vr. COFINS'),
     difal: coluna(ix, 'DIFAL'),
     ret: ['PIS Retido', 'COFINS Retido', 'CSLL Retido', 'IRRF Retido', 'INSS Retido'].map((n) => coluna(ix, n)).filter((i) => i >= 0),
+    documento: coluna(ix, 'CNPJ/CPF Forn/Cliente', 'CNPJ/CPF', 'CNPJ', 'CPF/CNPJ'),
+    ie: coluna(ix, 'Inscrição Estadual', 'IE'),
+    produto: coluna(ix, 'Nome Produto', 'Descrição', 'Produto'),
   }
   if (c.data < 0) throw new Error('Coluna de data não encontrada no relatório detalhado.')
   if (c.total < 0 && c.contabil < 0) throw new Error('Coluna de valor não encontrada no relatório detalhado.')
@@ -185,8 +220,19 @@ function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]
     const ipi = v(c.ipi)
     const st = v(c.st)
     const valor = c.contabil >= 0 ? v(c.contabil) : v(c.total) - v(c.desconto) + v(c.frete) + v(c.seguro) + v(c.outras) + ipi + st
+    const ncm = texto(l[c.ncm]).replace(/\D/g, '')
+    if (ncm && !produtos[ncm] && c.produto >= 0) produtos[ncm] = texto(l[c.produto])
     ag.somar(
-      { competencia: comp, tipo, cfop, ncm: texto(l[c.ncm]).replace(/\D/g, ''), uf: texto(l[c.uf]).toUpperCase(), cst: texto(l[c.cst]).replace(/\D/g, ''), servico: '' },
+      {
+        competencia: comp,
+        tipo,
+        cfop,
+        ncm,
+        uf: texto(l[c.uf]).toUpperCase(),
+        cst: texto(l[c.cst]).replace(/\D/g, ''),
+        servico: '',
+        destinatario: c.documento >= 0 ? tipoDestinatario(l[c.documento], c.ie >= 0 ? l[c.ie] : null) : '',
+      },
       {
         valor_contabil: valor,
         bc_icms: v(c.bcIcms),
@@ -223,7 +269,7 @@ function lerResumoCfop(celulas: Celula[][], tipo: TipoMovimento, competencia: st
     if (cfop.length !== 4) continue
     const v = (j: number) => (j >= 0 ? numero(l[j]) : 0)
     ag.somar(
-      { competencia, tipo, cfop, ncm: '', uf: '', cst: '', servico: '' },
+      { competencia, tipo, cfop, ncm: '', uf: '', cst: '', servico: '', destinatario: '' },
       { valor_contabil: v(c.contabil), bc_icms: v(c.bcIcms), icms: v(c.icms), icms_st: v(c.st), ipi: v(c.ipi) },
     )
   }
@@ -244,6 +290,7 @@ function lerServicos(celulas: Celula[][], tipo: TipoMovimento, avisos: string[])
     pis: coluna(ix, 'Vr. PIS'),
     cofins: coluna(ix, 'Vr, Cofins', 'Vr. Cofins'),
     ret: ['INSS', 'IRRF', 'CSLL', 'Vr. PIS Retido', 'Vr. Cofins Retido'].map((n) => coluna(ix, n)).filter((i) => i >= 0),
+    documento: coluna(ix, 'CNPJ', 'CNPJ/CPF', 'CPF/CNPJ'),
   }
   const ag = new Agregador()
   let semData = 0
@@ -258,7 +305,16 @@ function lerServicos(celulas: Celula[][], tipo: TipoMovimento, avisos: string[])
     }
     if (!valor) continue
     ag.somar(
-      { competencia: comp, tipo, cfop: '', ncm: '', uf: texto(l[c.uf]).toUpperCase(), cst: '', servico: texto(l[c.atividade]).replace(/[^\d.]/g, '') },
+      {
+        competencia: comp,
+        tipo,
+        cfop: '',
+        ncm: '',
+        uf: texto(l[c.uf]).toUpperCase(),
+        cst: '',
+        servico: texto(l[c.atividade]).replace(/[^\d.]/g, ''),
+        destinatario: c.documento >= 0 ? tipoDestinatario(l[c.documento], null) : '',
+      },
       { valor_contabil: valor, iss: v(c.iss), pis: v(c.pis), cofins: v(c.cofins), retencoes: c.ret.reduce((s, j) => s + v(j), 0) },
     )
   }
@@ -273,6 +329,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
   const titulo = cab.topo.split('\n').find((t) => /registro|resumo/i.test(t))?.trim() ?? ''
   const tn = normalizar(titulo)
   const avisos: string[] = []
+  const produtos: Record<string, string> = {}
 
   let tipo: TipoRelatorio
   if (tn.includes('servico')) tipo = 'servicos'
@@ -299,7 +356,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
           : 'Período do resumo não identificado: escolha a competência.',
       )
   } else {
-    ag = lerDetalhado(celulas, tipo === 'saidas_detalhado' ? 'saida' : 'entrada', avisos)
+    ag = lerDetalhado(celulas, tipo === 'saidas_detalhado' ? 'saida' : 'entrada', avisos, produtos)
   }
 
   const linhas = ag.linhas()
@@ -311,11 +368,14 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
     titulo,
     empresa: cab.empresa,
     cnpj: cab.cnpj,
+    municipio: cab.municipio,
+    uf: cab.uf,
     periodo: comps.length ? { inicio: comps[0], fim: comps[comps.length - 1] } : cab.periodo,
     tipoServico: servico,
     linhas,
     registros: ag.registros,
     valorTotal: Math.round(ag.valorTotal * 100) / 100,
+    produtos,
     exigeCompetencia,
     avisos,
   }
