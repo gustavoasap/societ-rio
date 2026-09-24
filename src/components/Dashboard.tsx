@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { Link } from '../lib/rotas'
 import { REGEX_VIABILIDADE, formatarData, mascaraViabilidade } from '../lib/format'
 import {
   ACOMPANHAMENTO_POR_TIPO,
@@ -27,6 +28,7 @@ import {
   FilePenLine,
   FolderOpen,
   Handshake,
+  House,
   LogOut,
   Pencil,
   Plus,
@@ -171,7 +173,13 @@ export function Dashboard({ session }: { session: Session }) {
         <div className="pointer-events-none absolute top-20 -left-20 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
 
         <header className="relative mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6">
-          <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
+          <Link para="/" aria-label="Ir para a página inicial do portal">
+            <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
+          </Link>
+          <Link para="/" className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20">
+            <House className="h-4 w-4" />
+            <span className="hidden sm:inline">Página inicial</span>
+          </Link>
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden items-center gap-2.5 rounded-full bg-white/10 py-1 pr-4 pl-1 ring-1 ring-white/10 sm:flex">
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-cyan-400 text-sm font-bold text-asap-950">
@@ -192,7 +200,10 @@ export function Dashboard({ session }: { session: Session }) {
 
         <div className="relative mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-4 pt-6 sm:px-6">
           <div>
-            <p className="text-sm font-medium text-cyan-300 first-letter:uppercase">{hoje}</p>
+            <p className="text-sm font-medium text-cyan-300 first-letter:uppercase">
+              <Link para="/" className="hover:underline">Página inicial</Link> ›{' '}
+              <Link para="/d/societario" className="hover:underline">Societário</Link> · {hoje}
+            </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
               {saudacao()}, {nomeExibicao}!
             </h1>
