@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import type { ConfigProduto, ItemEstoque } from './engine/estoque'
 import type { ConfigNcm, Estabelecimento, MovimentoLinha, Parametros, RegimeAtual, RegimeFornecedor, TipoMovimento } from './engine/tipos'
 import type { LinhaImportada, Parceiro, TipoRelatorio } from './importacao/relatorios'
 
@@ -100,7 +101,7 @@ export async function listarImportacoes(empresaId: string): Promise<Importacao[]
 }
 
 const CAMPOS_MOV =
-  'estabelecimento_id, competencia, tipo, cfop, ncm, uf, cst, servico, destinatario, parceiro, itens, valor_contabil, bc_icms, icms, icms_st, ipi, pis, cofins, iss, difal, retencoes'
+  'estabelecimento_id, competencia, tipo, cfop, ncm, uf, cst, cst_pis, servico, destinatario, parceiro, itens, valor_contabil, bc_icms, icms, icms_st, ipi, pis, cofins, iss, difal, retencoes'
 
 /** Carrega todo o movimento da empresa (paginado — o Supabase devolve no máximo 1.000 linhas por consulta). */
 export async function carregarMovimentos(empresaId: string): Promise<MovimentoLinha[]> {
@@ -158,6 +159,7 @@ export async function gravarImportacao(args: {
   substituir: string[]
   produtos?: Record<string, string>
   parceiros?: Record<string, Parceiro>
+  itens?: ItemEstoque[]
 }) {
   const comps = args.linhas.map((l) => l.competencia).sort()
   if (!comps.length) throw new Error('Nenhuma linha para importar.')
@@ -186,6 +188,12 @@ export async function gravarImportacao(args: {
   try {
     for (let i = 0; i < linhas.length; i += 500) {
       const { error: e } = await supabase.from('trib_movimentos').insert(linhas.slice(i, i + 500))
+      erro(e)
+    }
+    // itens por produto (estoque e CMV) — só nos relatórios detalhados de mercadorias
+    const itens = (args.itens ?? []).map((i) => ({ ...i, importacao_id: importacaoId, empresa_id: args.empresaId, estabelecimento_id: args.estabelecimentoId }))
+    for (let i = 0; i < itens.length; i += 500) {
+      const { error: e } = await supabase.from('trib_estoque_movimentos').insert(itens.slice(i, i + 500))
       erro(e)
     }
   } catch (e) {
@@ -315,4 +323,57 @@ export async function registrarParceiros(empresaId: string, parceiros: Record<st
     const { error } = await supabase.from('trib_parceiros').upsert(linhas.slice(i, i + 500), { onConflict: 'empresa_id,documento', ignoreDuplicates: true })
     erro(error)
   }
+}
+
+// ---------------------------------------------------------------------------
+// Estoque (itens por produto) e configuração dos produtos
+// ---------------------------------------------------------------------------
+
+/** Itens por produto de todas as importações detalhadas (paginado). */
+export async function carregarEstoque(empresaId: string): Promise<ItemEstoque[]> {
+  const todas: ItemEstoque[] = []
+  const pagina = 1000
+  for (let de = 0; ; de += pagina) {
+    const { data, error } = await supabase
+      .from('trib_estoque_movimentos')
+      .select('estabelecimento_id, competencia, tipo, cfop, codigo, ean, descricao, ncm, unidade, quantidade, valor')
+      .eq('empresa_id', empresaId)
+      .order('id')
+      .range(de, de + pagina - 1)
+    // tabela ainda não criada (migration pendente): segue sem estoque
+    if (error && /trib_estoque_movimentos/.test(error.message)) return []
+    erro(error)
+    const linhas = (data ?? []) as ItemEstoque[]
+    todas.push(...linhas.map((l) => ({ ...l, quantidade: Number(l.quantidade) || 0, valor: Number(l.valor) || 0 })))
+    if (linhas.length < pagina) break
+  }
+  return todas
+}
+
+export async function listarProdutosEstoque(empresaId: string): Promise<Record<string, ConfigProduto>> {
+  const { data, error } = await supabase.from('trib_estoque_produtos').select('*').eq('empresa_id', empresaId)
+  if (error && /trib_estoque_produtos/.test(error.message)) return {}
+  erro(error)
+  const r: Record<string, ConfigProduto> = {}
+  for (const p of (data ?? []) as { chave: string; qtd_inicial: number | null; valor_inicial: number | null; componentes: ConfigProduto['componentes'] }[])
+    r[p.chave] = {
+      chave: p.chave,
+      qtdInicial: p.qtd_inicial === null ? null : Number(p.qtd_inicial),
+      valorInicial: p.valor_inicial === null ? null : Number(p.valor_inicial),
+      componentes: p.componentes,
+    }
+  return r
+}
+
+export async function salvarProdutoEstoque(empresaId: string, c: ConfigProduto) {
+  const vazio = c.qtdInicial === null && c.valorInicial === null && !c.componentes?.length
+  const { error } = vazio
+    ? await supabase.from('trib_estoque_produtos').delete().eq('empresa_id', empresaId).eq('chave', c.chave)
+    : await supabase
+        .from('trib_estoque_produtos')
+        .upsert(
+          { empresa_id: empresaId, chave: c.chave, qtd_inicial: c.qtdInicial, valor_inicial: c.valorInicial, componentes: c.componentes?.length ? c.componentes : null, updated_at: new Date().toISOString() },
+          { onConflict: 'empresa_id,chave' },
+        )
+  erro(error)
 }

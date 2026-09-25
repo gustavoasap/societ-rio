@@ -179,3 +179,15 @@ export function fornecedorDoSimples(cst: string): boolean | null {
   if (c.length <= 2) return csts.includes(c.padStart(2, '0')) ? false : null
   return null
 }
+
+/**
+ * Situação tributária do ICMS no relatório: 3 dígitos = origem + CST (regime normal); 4 dígitos = origem + CSOSN (Simples).
+ * Indica se há ST na operação (retida agora ou cobrada anteriormente) — Convênio SINIEF s/nº de 1970, Anexo (tabelas B e CSOSN).
+ */
+export function cstComSt(cst: string): boolean | null {
+  const c = cst.replace(/\D/g, '')
+  if (c.length === 4) return ['201', '202', '203', '500'].includes(c.slice(1))
+  if (c.length === 3) return ['10', '30', '60', '70'].includes(c.slice(1))
+  if (c.length === 2) return ['10', '30', '60', '70'].includes(c)
+  return null
+}

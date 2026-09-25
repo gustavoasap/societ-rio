@@ -102,8 +102,18 @@ export function Icms({ d }: { d: DadosAnalise }) {
                 <span>
                   {e.nome} ({e.uf})
                 </span>
-                <strong>{p2(e.aliquota_icms ?? ICMS_INTERNO_UF[e.uf] ?? 18)}</strong>
+                <strong>{p2(e.beneficio_icms?.ativo && e.beneficio_icms.cargaInterna !== null ? e.beneficio_icms.cargaInterna : (e.aliquota_icms ?? ICMS_INTERNO_UF[e.uf] ?? 18))}</strong>
               </div>
+            ))}
+            {d.estabs
+              .filter((e) => e.beneficio_icms?.ativo)
+              .map((e) => (
+                <p key={`b-${e.id}`} className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                  <strong>{e.nome}</strong>: regime especial{e.beneficio_icms!.descricao ? ` (${e.beneficio_icms!.descricao})` : ''} — internas{' '}
+                  {e.beneficio_icms!.cargaInterna !== null ? p2(e.beneficio_icms!.cargaInterna) : 'normal'}, interestaduais{' '}
+                  {e.beneficio_icms!.cargaInterestadual !== null ? p2(e.beneficio_icms!.cargaInterestadual) : '4/7/12%'},{' '}
+                  {e.beneficio_icms!.aproveitaCreditos ? 'com' : 'sem'} créditos das entradas.
+                </p>
             ))}
             <p className="mt-2 text-xs text-slate-500">
               Alíquota modal da UF (editável no cadastro do estabelecimento): vale para os produtos sem alíquota própria. Mercadoria com ST não tem débito na venda interna.

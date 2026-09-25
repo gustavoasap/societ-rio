@@ -1,8 +1,8 @@
-import { classificarCfop, destinoCfop, fornecedorDoSimples, type Natureza } from './cfop'
+import { classificarCfop, cstComSt, destinoCfop, fornecedorDoSimples, type Natureza } from './cfop'
 import { icmsDaEntrada, icmsDaVenda, naoContribuinte } from './icms'
 import { stSubstituido, tratamentoNcm } from './ncm'
 import { ICMS_INTERNO_UF } from './tabelas'
-import { BASE_VAZIA, receitaBruta, type BaseMensal, type MixProdutos, type MovimentoLinha, type Parametros, type RegimeFornecedor } from './tipos'
+import { BASE_VAZIA, receitaBruta, type BaseMensal, type MixProdutos, type MovimentoLinha, type Parametros, type RegimeFornecedor, type BeneficioIcms } from './tipos'
 
 export function naturezaDe(l: MovimentoLinha, ajustes: Record<string, Natureza>): Natureza {
   if (l.tipo === 'servico_tomado') return ajustes[`SERV-T:${l.servico}`] ?? 'servico_tomado'
@@ -48,7 +48,7 @@ export function linhaConsiderada(l: MovimentoLinha, params: Parametros) {
 }
 
 /** UF e alíquota interna de ICMS (%) do estabelecimento que emitiu a nota. */
-export type DadosEstab = (estabelecimentoId: string | null) => { uf: string; aliquota: number }
+export type DadosEstab = (estabelecimentoId: string | null) => { uf: string; aliquota: number; beneficio?: BeneficioIcms | null }
 
 /** Consolida as linhas de movimento em bases mensais. */
 export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab: DadosEstab): BaseMensal[] {
@@ -68,7 +68,9 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
         b.vendas += v
         b.icmsSaidas += l.icms
         const e = estab(l.estabelecimento_id)
-        const icms = icmsDaVenda(l, params, { uf: e.uf, aliquotaInterna: e.aliquota }, 'cfop')
+        // regime especial do estabelecimento (ex.: filial com saída a 2% e crédito presumido): carga efetiva no lugar da alíquota
+        const benef = e.beneficio?.ativo ? e.beneficio : null
+        const icms = icmsDaVenda(l, params, { uf: e.uf, aliquotaInterna: e.aliquota, cargaInterna: benef?.cargaInterna, cargaInterestadual: benef?.cargaInterestadual }, 'cfop')
         if (destinoCfop(l.cfop) === 'interestadual') {
           b.vendasInterestaduais += v
           if (icms) {
@@ -94,6 +96,9 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
             b.cenDifal += c.difal
           }
         }
+        // o que a própria nota declara: ST pela CST/CSOSN, monofásico pela CST de PIS 04 (base da segregação no PGDAS)
+        if (cstComSt(l.cst)) b.vendasStNotas += v
+        if (l.cst_pis === '04') b.vendasMonofasicoNotas += v
         if (l.ncm) {
           const t = tratamentoNcm(l.ncm, params.ncms)
           b.vendasComNcm += v
@@ -125,8 +130,12 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
       case 'compra_insumo':
         b.compras += v
         // mercadoria com ST para revenda (substituída): o ICMS próprio do fornecedor não gera crédito — fica no custo
-        if (stSubstituido(l.ncm, params)) b.icmsComprasSemCredito += l.icms
-        else b.icmsCompras += l.icms
+        // e o estabelecimento com regime especial sem manutenção de créditos (crédito presumido) também não credita
+        {
+          const be = estab(l.estabelecimento_id).beneficio
+          if (stSubstituido(l.ncm, params) || (be?.ativo && !be.aproveitaCreditos)) b.icmsComprasSemCredito += l.icms
+          else b.icmsCompras += l.icms
+        }
         b.ipiCompras += l.ipi
         b.stCompras += l.icms_st
         {
@@ -188,6 +197,15 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
         b.neutras += v
     }
   }
+  // CMV pelo custo médio ponderado (estoque), quando calculado a partir dos itens dos relatórios detalhados
+  if (params.metodoCmv === 'estoque' && params.cmvEstoque)
+    for (const b of meses.values()) {
+      const cmv = params.cmvEstoque[b.competencia]
+      if (cmv !== undefined) {
+        b.cmvEstoque = cmv
+        b.temCmvEstoque = 1
+      }
+    }
   return [...meses.values()].sort((a, b) => a.competencia.localeCompare(b.competencia))
 }
 
@@ -240,6 +258,20 @@ export function fracoesDoMes(b: BaseMensal, params: Parametros, mix: MixProdutos
     b2b: fr(params.percentualB2B, b.vendasB2B, b.vendasComDestinatario, mix.b2b),
     pisCofinsZero: fr(null, b.vendasPisCofinsZero, b.vendasComNcm, mix.pisCofinsZero ?? 0),
   }
+}
+
+/**
+ * Receita segregada no PGDAS-D (LC 123, art. 18, §4º-A): monofásico (PIS/COFINS) e ST (ICMS), conforme a fonte escolhida
+ * nos parâmetros — NCM (tabelas oficiais / marcação do contador), o que as notas de venda declaram, ou sem segregação.
+ */
+export function segregacaoPgdas(b: BaseMensal, params: Parametros, mix: MixProdutos) {
+  const fr = fracoesDoMes(b, params, mix)
+  const vendas = Math.max(0, b.vendas)
+  const pelasNotas = (v: number) => (vendas ? Math.min(1, v / vendas) : 0)
+  const monofasico =
+    params.percentualMonofasico !== null || params.pgdasMonofasico === 'ncm' ? fr.monofasico : params.pgdasMonofasico === 'notas' ? pelasNotas(b.vendasMonofasicoNotas) : 0
+  const st = params.percentualSt !== null || params.pgdasSt === 'ncm' ? fr.st : params.pgdasSt === 'notas' ? pelasNotas(b.vendasStNotas) : 0
+  return { monofasico, st }
 }
 
 export function somarBases(bases: BaseMensal[], competencia = 'total'): BaseMensal {

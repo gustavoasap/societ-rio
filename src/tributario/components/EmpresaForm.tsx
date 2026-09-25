@@ -3,7 +3,7 @@ import { AlertTriangle, Building2, CheckCircle2, Landmark, Loader2, Plus, Search
 import { Field, Modal, Select } from '../../components/ui'
 import { formatarData, mascaraCnpj } from '../../lib/format'
 import { ANEXOS_SIMPLES, ICMS_INTERNO_UF, UFS, type Anexo } from '../engine/tabelas'
-import { comPadrao, type Estabelecimento, type RegimeAtual } from '../engine/tipos'
+import { comPadrao, type BeneficioIcms, type Estabelecimento, type RegimeAtual } from '../engine/tipos'
 import { salvarEmpresa, type EmpresaComEstab } from '../dados'
 import { anexoSugerido, cnpjValido, consultarCnpj, regimeSugerido, type DadosCnpj } from '../receita'
 
@@ -13,7 +13,7 @@ type Consulta = { status: 'carregando' } | { status: 'ok'; dados: DadosCnpj } | 
 
 const NOME_REGIME: Record<RegimeAtual, string> = { simples: 'Simples Nacional', presumido: 'Lucro Presumido', real: 'Lucro Real' }
 
-const novoEstab = (matriz: boolean): EstabForm => ({ chave: crypto.randomUUID(), cnpj: '', nome: '', matriz, uf: 'SP', municipio: '', aliquota_icms: null })
+const novoEstab = (matriz: boolean): EstabForm => ({ chave: crypto.randomUUID(), cnpj: '', nome: '', matriz, uf: 'SP', municipio: '', aliquota_icms: null, beneficio_icms: null })
 
 export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaComEstab | null; onClose: () => void; onSalvo: (id: string) => void }) {
   const params = comPadrao(empresa?.parametros)
@@ -246,6 +246,7 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
                   />
                 </Field>
                 <StatusConsulta consulta={consultas[e.chave]} cnpj={e.cnpj} />
+                <RegimeEspecial valor={e.beneficio_icms ?? null} onChange={(b) => alterar(e.chave, { beneficio_icms: b })} />
               </div>
             ))}
           </div>
@@ -336,6 +337,44 @@ function DadosReceita({ d, razao, regime, novo, onUsarRazao }: { d: DadosCnpj; r
         {novo && sugerido && sugerido === regime && <p>Regime atual preenchido pelos dados da Receita ({NOME_REGIME[sugerido]}).</p>}
         {d.mei?.optante && <p className="font-semibold text-amber-700">Empresa enquadrada como MEI (SIMEI): o limite e o recolhimento são diferentes do Simples Nacional.</p>}
       </div>
+    </div>
+  )
+}
+
+/** Regime especial de ICMS do estabelecimento: carga efetiva nas saídas e (normalmente) sem créditos das entradas. */
+function RegimeEspecial({ valor, onChange }: { valor: BeneficioIcms | null; onChange: (b: BeneficioIcms | null) => void }) {
+  const b = valor ?? { ativo: false, descricao: '', cargaInterna: null, cargaInterestadual: null, aproveitaCreditos: false }
+  const mudar = (c: Partial<BeneficioIcms>) => onChange({ ...b, ...c })
+  const num = (v: string) => (v === '' ? null : Number(v))
+  return (
+    <div className="sm:col-span-12">
+      <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+        <input type="checkbox" checked={b.ativo} onChange={(ev) => mudar({ ativo: ev.target.checked })} />
+        Regime especial de ICMS (carga efetiva / crédito presumido)
+      </label>
+      {b.ativo && (
+        <div className="mt-2 grid gap-3 rounded-lg bg-white p-3 ring-1 ring-amber-200 sm:grid-cols-12">
+          <Field label="Descrição (ato concessivo)" className="sm:col-span-4">
+            <input className="input" value={b.descricao} onChange={(ev) => mudar({ descricao: ev.target.value })} placeholder="Ex.: TTD 409/SC — crédito presumido" />
+          </Field>
+          <Field label="Carga nas vendas internas %" className="sm:col-span-2">
+            <input className="input" type="number" step="0.01" value={b.cargaInterna ?? ''} placeholder="alíquota normal" onChange={(ev) => mudar({ cargaInterna: num(ev.target.value) })} />
+          </Field>
+          <Field label="Carga nas interestaduais %" className="sm:col-span-2">
+            <input className="input" type="number" step="0.01" value={b.cargaInterestadual ?? ''} placeholder="4/7/12%" onChange={(ev) => mudar({ cargaInterestadual: num(ev.target.value) })} />
+          </Field>
+          <label className="flex items-end gap-2 pb-2 text-sm text-slate-700 sm:col-span-4">
+            <input type="checkbox" checked={b.aproveitaCreditos} onChange={(ev) => mudar({ aproveitaCreditos: ev.target.checked })} />
+            <span>
+              Aproveita os créditos das entradas
+              <span className="block text-xs text-slate-500">Desmarcado: o crédito presumido substitui os créditos — o ICMS das compras vira custo.</span>
+            </span>
+          </label>
+          <p className="text-xs text-slate-500 sm:col-span-12">
+            Vale para Presumido e Real (e para o Simples acima do sublimite). O DIFAL das vendas a não contribuinte continua pela alíquota interestadual nominal.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

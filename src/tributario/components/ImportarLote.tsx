@@ -152,7 +152,7 @@ export function ImportarLote({ empresas, onClose, onConcluido }: { empresas: Emp
             registros: i.rel.registros,
             substituir: antigas.map((a) => a.id),
             produtos: i.rel.produtos,
-            parceiros: i.rel.parceiros,
+            parceiros: i.rel.parceiros, itens: i.rel.itens,
           })
           alterar(i.chave, { status: 'ok', mensagem: `${empresa.razao_social} · ${estab.nome}${antigas.length ? ' (substituiu importação anterior)' : ''}` })
         } catch (e) {

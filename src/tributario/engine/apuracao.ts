@@ -1,4 +1,4 @@
-import { calcularRbt12, fracoesDoMes } from './base'
+import { calcularRbt12, fracoesDoMes, segregacaoPgdas } from './base'
 import {
   ANEXOS_SIMPLES,
   LC224_ACRESCIMO,
@@ -162,7 +162,9 @@ function dreBase(b: BaseMensal, p: Parametros, cppFora: number): DreDados {
   const d = DRE_VAZIA()
   d.receitaBruta = b.vendas + b.servicos + b.exportacao
   d.devolucoes = b.devolucoesVenda
-  d.cmv = p.cmvPercentual !== null ? (receitaBruta(b) * p.cmvPercentual) / 100 : Math.max(0, b.compras - b.devolucoesCompra)
+  // CMV: % informado > custo médio ponderado do estoque > compras líquidas do mês (estoque constante)
+  d.cmv =
+    p.cmvPercentual !== null ? (receitaBruta(b) * p.cmvPercentual) / 100 : b.temCmvEstoque > 0 ? b.cmvEstoque : Math.max(0, b.compras - b.devolucoesCompra)
   d.servicosTomados = b.servicosTomados
   d.despesasOperacionais = b.fretes + b.energia + b.comunicacao + b.usoConsumo
   d.pessoal = p.folhaMensal * 1.08 + p.proLaboreMensal
@@ -170,6 +172,18 @@ function dreBase(b: BaseMensal, p: Parametros, cppFora: number): DreDados {
   d.despesasGerais = p.despesasMensais
   d.receitasFinanceiras = p.receitasFinanceirasMensais
   return d
+}
+
+/**
+ * Com o CMV pelo custo das vendas (estoque ou %), os créditos e o ICMS-ST/antecipação das compras entram na DRE na proporção
+ * do custo vendido — o restante fica no estoque (custo de aquisição líquido dos tributos recuperáveis — NBC TG 16, item 11).
+ */
+function ajustarDrePeloCmv(d: DreDados, b: BaseMensal, p: Parametros) {
+  if (p.cmvPercentual === null && !(b.temCmvEstoque > 0)) return
+  const compras = Math.max(0, b.compras - b.devolucoesCompra)
+  const f = compras > 0 ? Math.min(3, d.cmv / compras) : 0
+  d.creditosCompras *= f
+  d.icmsEntradas *= f
 }
 
 /** Lucro antes do IRPJ/CSLL a partir da DRE. */
@@ -389,7 +403,13 @@ function apurarSimples(bases: BaseMensal[], ctx: Contexto, hibrido: boolean): Re
     const regras = regrasPara(b, ctx)
     const hib = hibrido && !regras.pisCofins // o regime híbrido só existe a partir de 2027
     const rb = receitaBruta(b)
-    const r = ctx.rbt12Fixo !== undefined ? { rbt12: ctx.rbt12Fixo, proporcional: false, meses: 12 } : calcularRbt12(b.competencia, receitaDoMes, params.inicioAtividade)
+    const rbt12Declarado = ctx.rbt12Fixo === undefined ? params.pgdas?.[b.competencia]?.rbt12 : undefined
+    const r =
+      ctx.rbt12Fixo !== undefined
+        ? { rbt12: ctx.rbt12Fixo, proporcional: false, meses: 12 }
+        : rbt12Declarado !== undefined
+          ? { rbt12: rbt12Declarado, proporcional: false, meses: 12 }
+          : calcularRbt12(b.competencia, receitaDoMes, params.inicioAtividade)
     if (r.proporcional) alertas.add('RBT12 proporcionalizado por início de atividade/histórico incompleto (LC 123, art. 18, §2º). Informe as receitas anteriores nos parâmetros para maior precisão.')
     if (r.rbt12 > LIMITE_SIMPLES) {
       elegivel = false
@@ -401,7 +421,8 @@ function apurarSimples(bases: BaseMensal[], ctx: Contexto, hibrido: boolean): Re
     const merc = Math.max(0, b.vendas - b.devolucoesVenda)
     const serv = Math.max(0, b.servicos - Math.max(0, b.devolucoesVenda - b.vendas))
     const fr = fracoesDoMes(b, params, mix)
-    const seg = { monofasico: fr.monofasico, st: fr.st, exportacao: false }
+    const pg = segregacaoPgdas(b, params, mix)
+    const seg = { monofasico: pg.monofasico, st: pg.st, exportacao: false }
     const partes = [
       dasDaReceita(merc, params.anexo, r.rbt12, regras, seg, hib, foraSublimite),
       dasDaReceita(serv, params.anexoServicos, r.rbt12, regras, { ...seg, monofasico: 0, st: 0 }, hib, foraSublimite),
@@ -459,6 +480,7 @@ function apurarSimples(bases: BaseMensal[], ctx: Contexto, hibrido: boolean): Re
 
     const totalMes = somaValores(tMes)
     somaTributos(tot, tMes)
+    ajustarDrePeloCmv(d, b, params)
     somarDre(dre, d)
     somar(icmsTot, icmsMes)
     das += dasMes
@@ -469,19 +491,43 @@ function apurarSimples(bases: BaseMensal[], ctx: Contexto, hibrido: boolean): Re
       receita: rb,
       tributos: tMes,
       total: totalMes,
-      simples: { rbt12: r.rbt12, proporcional: r.proporcional, faixa: fx.faixa, aliquota: rb ? dasMes / rb : fx.efetiva, das: dasMes },
+      simples: {
+        rbt12: r.rbt12,
+        proporcional: r.proporcional,
+        rbt12Declarado: rbt12Declarado !== undefined,
+        faixa: fx.faixa,
+        efetiva: fx.efetiva,
+        aliquota: rb ? dasMes / rb : fx.efetiva,
+        receitaMonofasico: merc * pg.monofasico,
+        receitaSt: merc * pg.st,
+        das: dasMes,
+      },
     })
 
     if (bases.length <= 12) {
       memoria.push(
         { grupo: b.competencia, descricao: 'Receita bruta do mês', valor: rb, destaque: true },
-        { grupo: b.competencia, descricao: `RBT12${r.proporcional ? ' (proporcionalizado)' : ''}`, valor: r.rbt12 },
+        {
+          grupo: b.competencia,
+          descricao: `RBT12${rbt12Declarado !== undefined ? ' (informado do PGDAS)' : r.proporcional ? ` (proporcionalizado: média de ${r.meses} mês(es) × 12)` : ''}`,
+          valor: r.rbt12,
+          formula: r.proporcional ? 'LC 123, art. 18, §2º; Resolução CGSN 140/2018, art. 22' : undefined,
+        },
         {
           grupo: b.competencia,
           descricao: `Anexo ${params.anexo} — faixa ${fx.faixa}: nominal ${pct(fx.nominal)}, dedução ${moeda(fx.deduzir)}`,
           valor: fx.efetiva * 100,
           formula: `Alíquota efetiva = (RBT12 × ${pct(fx.nominal)} − ${moeda(fx.deduzir)}) ÷ RBT12 = ${pct(fx.efetiva, 4)}`,
         },
+        ...(pg.monofasico > 0
+          ? [{ grupo: b.competencia, descricao: `Receita com PIS/COFINS monofásico (segregada — ${params.pgdasMonofasico === 'notas' ? 'CST de PIS 04 nas notas' : 'pelo NCM'})`, valor: merc * pg.monofasico, formula: 'LC 123, art. 18, §4º-A, I' }]
+          : []),
+        ...(pg.st > 0
+          ? [{ grupo: b.competencia, descricao: `Receita com ICMS-ST (segregada — ${params.pgdasSt === 'notas' ? 'CSOSN/CST das notas' : 'pelo NCM'})`, valor: merc * pg.st, formula: 'LC 123, art. 18, §4º-A, I' }]
+          : []),
+        ...(['IRPJ', 'CSLL', 'COFINS', 'PIS', 'CPP', 'ICMS', 'IPI', 'ISS', 'CBS', 'IBS'] as const)
+          .filter((t) => partes.some((p) => p.tributos[t] > 0.005))
+          .map((t) => ({ grupo: b.competencia, descricao: `DAS — ${t}`, valor: partes.reduce((s, p) => s + p.tributos[t], 0) })),
         { grupo: b.competencia, descricao: hib ? 'DAS (sem CBS/IBS)' : 'DAS', valor: dasMes, destaque: true },
       )
       if (icmsMes.st + icmsMes.antecipacao > 0)
@@ -699,6 +745,7 @@ function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): Apuraca
   cred.ibsCbsPerdidoSimples = ibsCbs.perdidoSimples
   memoria.push(...ibsCbs.memoria)
   const icmsResumo: IcmsResumo = { proprio: icms.proprio, difal: icms.difal, credito: icms.credito, st: icms.st, antecipacao: 0, noDas: 0 }
+  ajustarDrePeloCmv(d, b, p)
   return {
     b,
     regras,

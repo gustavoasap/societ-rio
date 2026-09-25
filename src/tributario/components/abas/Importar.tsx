@@ -99,7 +99,7 @@ export function Importar({
         registros: p.rel.registros,
         substituir: antigas.map((a) => a.id),
         produtos: p.rel.produtos,
-        parceiros: p.rel.parceiros,
+        parceiros: p.rel.parceiros, itens: p.rel.itens,
       })
       alterar(p.chave, { status: 'ok' })
       onAlterado()
