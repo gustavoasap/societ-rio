@@ -24,6 +24,7 @@ import {
 import { mascaraCnpj } from '../../lib/format'
 import { apurar, type Contexto } from '../engine/apuracao'
 import { estimarMix, linhaConsiderada, montarBases, naturezaDe, receitaDaBase, type DadosEstab } from '../engine/base'
+import { mesclarPerfilIcms, perfilIcmsPorNcm } from '../engine/perfilNcm'
 import { projetar } from '../engine/projecao'
 import { ICMS_INTERNO_UF } from '../engine/tabelas'
 import { comPadrao, type Parametros as P, type MovimentoLinha, type RegimeFornecedor, type RegimeId } from '../engine/tipos'
@@ -141,7 +142,16 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     [estabs],
   )
   // o tratamento por NCM vem da tabela trib_ncms
-  const params = useMemo(() => ({ ...paramsSalvos, ncms: configDosNcms(ncms), regimeFornecedores: regimesDosParceiros(parceiros) }), [paramsSalvos, ncms, parceiros])
+  // alíquota interna e ST de cada NCM: o que o contador informou; na falta, o que as notas da UF da matriz mostram
+  const ufMatriz = dadosEstab(null).uf
+  const perfilIcms = useMemo(
+    () => perfilIcmsPorNcm(linhas, (id) => dadosEstab(id).uf, ufMatriz, paramsSalvos.cfopNatureza),
+    [linhas, dadosEstab, ufMatriz, paramsSalvos.cfopNatureza],
+  )
+  const params = useMemo(
+    () => ({ ...paramsSalvos, ncms: mesclarPerfilIcms(configDosNcms(ncms), perfilIcms), ufAliquotasNcm: ufMatriz, regimeFornecedores: regimesDosParceiros(parceiros) }),
+    [paramsSalvos, ncms, perfilIcms, ufMatriz, parceiros],
+  )
 
   async function mudarRegimeFornecedor(documento: string, regime: RegimeFornecedor | null) {
     setParceiros((l) => l.map((p) => (p.documento === documento ? { ...p, regime } : p)))
@@ -293,7 +303,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
         </>
       )}
       {!carregando && aba === 'parceiros' && <Parceiros d={dados} onRegime={mudarRegimeFornecedor} />}
-      {!carregando && aba === 'ncm' && <Produtos linhas={linhas} registros={ncms} params={params} onMudar={mudarNcm} />}
+      {!carregando && aba === 'ncm' && <Produtos linhas={linhas} registros={ncms} params={params} perfil={perfilIcms} ufReferencia={ufMatriz} aliquotaModal={dadosEstab(null).aliquota} onMudar={mudarNcm} />}
       {!carregando && aba === 'importar' && <Importar empresaId={empresa.id} estabelecimentos={estabs} importacoes={importacoes} onAlterado={carregar} />}
       {aba === 'parametros' && (
         <Parametros params={params} onParams={mudarParams} mixEstimado={estimarMix(linhas, { ...params, percentualMonofasico: null, percentualReducaoIbsCbs: null, percentualSt: null, percentualB2B: null })} />

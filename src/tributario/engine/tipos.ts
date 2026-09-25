@@ -124,6 +124,8 @@ export interface Parametros {
   antecipacaoSimples: boolean
   /** Simulação de ICMS: benefício fiscal ou mudança de UF do estabelecimento */
   cenarioIcms: CenarioIcms
+  /** UF a que se referem as alíquotas internas por NCM (a da matriz); em outra UF (cenário ou filial) vale a modal. Calculado no painel. */
+  ufAliquotasNcm?: string
   /** Observações do contador impressas no relatório ao cliente */
   observacoesRelatorio: string
 }

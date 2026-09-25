@@ -3,7 +3,7 @@ import { ArrowRightLeft, Building2, FlaskConical, Landmark, MapPinned, PackageSe
 import { Section, Select } from '../../../components/ui'
 import { apurar } from '../../engine/apuracao'
 import { montarBases } from '../../engine/base'
-import { icmsEntradasPorNcm, icmsVendasPorUf } from '../../engine/icms'
+import { icmsEntradasPorNcm, icmsVendasInternasPorAliquota, icmsVendasPorUf } from '../../engine/icms'
 import { ICMS_INTERNO_UF, UFS, aliquotaInterestadual } from '../../engine/tabelas'
 import type { CenarioIcms, RegimeId } from '../../engine/tipos'
 import { moeda, moedaCurta, nomeRegime, pct } from '../../formatacao'
@@ -53,7 +53,11 @@ export function Icms({ d }: { d: DadosAnalise }) {
   const naoContrib = porUf.reduce((s, x) => s + x.naoContribuinte, 0)
   const stEnt = entradas.reduce((s, x) => s + x.st, 0)
   const antec = entradas.reduce((s, x) => s + x.antecipacao, 0)
-  const ncmsComAliquota = Object.entries(params.ncms).filter(([, c]) => c.aliquotaIcms !== undefined)
+  const faixas = useMemo(
+    () => icmsVendasInternasPorAliquota(d.linhas, semCenario, (id) => ({ uf: d.dadosEstab(id).uf, aliquotaInterna: d.dadosEstab(id).aliquota }), d.eVenda),
+    [d.linhas, semCenario, d.dadosEstab, d.eVenda],
+  )
+  const vendasInternas = faixas.reduce((s, x) => s + x.vendas, 0)
   const setCen = (c: Partial<CenarioIcms>) => d.onParams({ ...params, cenarioIcms: { ...cen, ...c } })
   const origemTab = origemTabela === 'cenario' ? cen.uf : ufEmpresa
   const ufsVendidas = new Set(porUf.map((x) => x.uf))
@@ -85,17 +89,29 @@ export function Icms({ d }: { d: DadosAnalise }) {
                 <strong>{p2(e.aliquota_icms ?? ICMS_INTERNO_UF[e.uf] ?? 18)}</strong>
               </div>
             ))}
-            <p className="mt-2 text-xs text-slate-500">Alíquota modal da UF (editável no cadastro do estabelecimento). Mercadoria com ST não tem débito na venda interna.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              Alíquota modal da UF (editável no cadastro do estabelecimento): vale para os produtos sem alíquota própria. Mercadoria com ST não tem débito na venda interna.
+            </p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
-            <div className="text-xs font-bold text-slate-500 uppercase">NCMs com alíquota própria</div>
-            {ncmsComAliquota.length === 0 && <p className="mt-1 text-slate-500">Nenhum — todos usam a alíquota modal. Defina na aba Produtos (NCM).</p>}
-            {ncmsComAliquota.slice(0, 6).map(([n, c]) => (
-              <div key={n} className="mt-1 flex justify-between">
-                <span>{n}</span>
-                <strong>{p2(c.aliquotaIcms!)}</strong>
+            <div className="text-xs font-bold text-slate-500 uppercase">Vendas internas por alíquota do produto</div>
+            {faixas.length === 0 && <p className="mt-1 text-slate-500">Sem vendas internas no período.</p>}
+            {faixas.map((f) => (
+              <div key={f.st ? 'st' : f.aliquota} className="mt-1 flex items-baseline justify-between gap-2" title={`NCMs: ${f.ncms.slice(0, 12).join(', ')}${f.ncms.length > 12 ? '...' : ''}`}>
+                <span>
+                  <strong>{f.st ? 'ST (sem débito)' : p2(f.aliquota)}</strong>{' '}
+                  <span className="text-xs text-slate-500">
+                    {f.ncms.length} NCM{f.ncms.length > 1 ? 's' : ''}
+                  </span>
+                </span>
+                <span className="text-right tabular-nums">
+                  {moedaCurta(f.vendas)} <span className="text-xs text-slate-500">({vendasInternas ? pct(f.vendas / vendasInternas, 0) : '—'})</span>
+                </span>
               </div>
             ))}
+            <p className="mt-2 text-xs text-slate-500">
+              Cada produto usa a alíquota da aba Produtos (NCM): a informada pelo contador ou a que as notas mostram; sem nenhuma, a modal da UF.
+            </p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
             <div className="text-xs font-bold text-slate-500 uppercase">Vendas interestaduais</div>

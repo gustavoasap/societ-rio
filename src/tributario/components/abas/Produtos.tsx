@@ -3,22 +3,28 @@ import { Barcode, Search } from 'lucide-react'
 import { Section } from '../../../components/ui'
 import { naturezaDe } from '../../engine/base'
 import { ncmMonofasico, reducaoIbsCbs, tratamentoNcm } from '../../engine/ncm'
+import type { FonteIcms, PerfilIcmsNcm } from '../../engine/perfilNcm'
 import type { MovimentoLinha, Parametros } from '../../engine/tipos'
 import type { CamposNcm, NcmRegistro } from '../../dados'
 import { moeda, pct } from '../../formatacao'
 
 type Campos = CamposNcm
 
+const NOME_FONTE: Record<FonteIcms, string> = { saidas: 'vendas internas da empresa', entradas: 'compras internas de fornecedores do regime normal' }
+const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
+
 const mascaraNcm = (n: string) => (n.length === 8 ? `${n.slice(0, 4)}.${n.slice(4, 6)}.${n.slice(6)}` : n)
 
-function SimNao({ valor, padrao, onChange }: { valor: boolean | null; padrao: boolean; onChange: (v: boolean | null) => void }) {
+function SimNao({ valor, padrao, origem, onChange }: { valor: boolean | null; padrao: boolean; origem?: string; onChange: (v: boolean | null) => void }) {
   return (
     <select
       className={`input w-36 py-1.5 ${valor === null ? 'text-slate-500' : valor ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-300'}`}
       value={valor === null ? '' : valor ? 's' : 'n'}
       onChange={(e) => onChange(e.target.value === '' ? null : e.target.value === 's')}
     >
-      <option value="">Padrão ({padrao ? 'sim' : 'não'})</option>
+      <option value="">
+        {origem ? `Notas: ${padrao ? 'sim' : 'não'}` : `Padrão (${padrao ? 'sim' : 'não'})`}
+      </option>
       <option value="s">Sim</option>
       <option value="n">Não</option>
     </select>
@@ -48,11 +54,17 @@ export function Produtos({
   linhas,
   registros,
   params,
+  perfil,
+  ufReferencia,
+  aliquotaModal,
   onMudar,
 }: {
   linhas: MovimentoLinha[]
   registros: NcmRegistro[]
   params: Parametros
+  perfil: Map<string, PerfilIcmsNcm>
+  ufReferencia: string
+  aliquotaModal: number
   onMudar: (ncm: string, campos: Campos) => void
 }) {
   const [busca, setBusca] = useState('')
@@ -71,9 +83,9 @@ export function Produtos({
     for (const r of registros) if (!m.has(r.ncm)) m.set(r.ncm, { ncm: r.ncm, vendas: 0, entradas: 0 })
     const porNcm = new Map(registros.map((r) => [r.ncm, r]))
     return [...m.values()]
-      .map((x) => ({ ...x, reg: porNcm.get(x.ncm), trat: tratamentoNcm(x.ncm, params.ncms) }))
+      .map((x) => ({ ...x, reg: porNcm.get(x.ncm), trat: tratamentoNcm(x.ncm, params.ncms), obs: perfil.get(x.ncm) }))
       .sort((a, b) => b.vendas - a.vendas || b.entradas - a.entradas)
-  }, [linhas, registros, params.cfopNatureza, params.ncms])
+  }, [linhas, registros, params.cfopNatureza, params.ncms, perfil])
 
   const totalVendas = lista.reduce((s, x) => s + x.vendas, 0)
   const resumo = {
@@ -121,7 +133,10 @@ export function Produtos({
         }
       >
         <p className="-mt-2 mb-4 text-sm text-slate-500">
-          Os NCMs chegam automaticamente de cada importação. Informe MVA (produtos com ST) e alíquota interna própria do NCM — usadas no ICMS das vendas internas, na ST e na antecipação das entradas. "Padrão" é a sugestão do sistema: monofásico pelas Leis 10.147/2000, 10.485/2002 e 13.097/2015; redução de IBS/CBS
+          Os NCMs chegam automaticamente de cada importação. A alíquota interna de ICMS e a ST de cada NCM ({ufReferencia}) vêm das próprias notas: primeiro das vendas internas da
+          empresa com ICMS destacado; na falta, das compras internas de fornecedores do regime normal (carga efetiva, já com redução de base). Sem nota com ICMS, vale a alíquota
+          modal de {num(aliquotaModal)}% — informe a do produto quando for diferente (ex.: 25% em perfumaria, 12% ou 7% em itens com carga reduzida). Os valores digitados
+          prevalecem sobre os das notas e são usados no ICMS das vendas internas, na ST e na antecipação das entradas. Informe também a MVA dos produtos com ST. "Padrão" é a sugestão do sistema: monofásico pelas Leis 10.147/2000, 10.485/2002 e 13.097/2015; redução de IBS/CBS
           pelo Anexo VIII (60%) e art. 147 (alíquota zero) da LC 214/2025. Ajuste o que for diferente para este cliente — vale na hora para todos os cálculos.
         </p>
         <div className="relative mb-3">
@@ -136,10 +151,10 @@ export function Produtos({
                 <th className="px-3 py-2.5">Produto (exemplo)</th>
                 <th className="px-3 py-2.5 text-right">Vendas</th>
                 <th className="px-3 py-2.5 text-right">Compras</th>
+                <th className="px-3 py-2.5">ICMS interno %</th>
                 <th className="px-3 py-2.5">PIS/COFINS monofásico</th>
                 <th className="px-3 py-2.5">ICMS-ST</th>
                 <th className="px-3 py-2.5">MVA %</th>
-                <th className="px-3 py-2.5">ICMS interno %</th>
                 <th className="px-3 py-2.5">Redução IBS/CBS</th>
               </tr>
             </thead>
@@ -156,16 +171,34 @@ export function Produtos({
                     <td className="px-3 py-2 text-right tabular-nums">{x.vendas ? moeda(x.vendas) : <span className="text-slate-300">—</span>}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-slate-500">{x.entradas ? moeda(x.entradas) : <span className="text-slate-300">—</span>}</td>
                     <td className="px-3 py-2">
+                      <NumeroNcm
+                        valor={c.aliquota_icms}
+                        placeholder={x.obs?.aliquota != null ? num(x.obs.aliquota) : num(aliquotaModal)}
+                        onChange={(v) => onMudar(x.ncm, { ...c, aliquota_icms: v })}
+                      />
+                      {c.aliquota_icms === null && x.obs?.aliquota != null && x.obs.fonteAliquota && (
+                        <div
+                          className="mt-0.5 w-28 text-[0.6875rem] leading-tight text-sky-700"
+                          title={`Carga efetiva nas ${NOME_FONTE[x.obs.fonteAliquota]} (${moeda(x.obs.valorAliquota)} em notas). Alíquota nominal ${num(x.obs.nominal ?? 0)}%.`}
+                        >
+                          pelas notas{x.obs.nominal !== null && Math.abs(x.obs.nominal - x.obs.aliquota) > 0.1 ? ` · ${num(x.obs.nominal)}% c/ base reduzida` : ''}
+                        </div>
+                      )}
+                      {c.aliquota_icms === null && x.obs?.aliquota == null && <div className="mt-0.5 text-[0.6875rem] text-slate-400">modal da UF</div>}
+                    </td>
+                    <td className="px-3 py-2">
                       <SimNao valor={c.monofasico} padrao={ncmMonofasico(x.ncm)} onChange={(v) => onMudar(x.ncm, { ...c, monofasico: v })} />
                     </td>
                     <td className="px-3 py-2">
-                      <SimNao valor={c.st} padrao={false} onChange={(v) => onMudar(x.ncm, { ...c, st: v })} />
+                      <SimNao
+                        valor={c.st}
+                        padrao={x.obs?.st ?? false}
+                        origem={x.obs?.fonteSt ? NOME_FONTE[x.obs.fonteSt] : undefined}
+                        onChange={(v) => onMudar(x.ncm, { ...c, st: v })}
+                      />
                     </td>
                     <td className="px-3 py-2">
                       <NumeroNcm valor={c.mva} placeholder={x.trat.st ? 'informar' : '—'} onChange={(v) => onMudar(x.ncm, { ...c, mva: v })} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <NumeroNcm valor={c.aliquota_icms} placeholder="modal" onChange={(v) => onMudar(x.ncm, { ...c, aliquota_icms: v })} />
                     </td>
                     <td className="px-3 py-2">
                       <select
