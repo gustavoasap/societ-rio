@@ -53,6 +53,7 @@ export type RegimeFornecedor = 'normal' | 'real' | 'presumido' | 'simples' | 'me
 /** Tratamento de um NCM definido pelo contador para a empresa (campos ausentes = padrão do sistema). */
 export interface ConfigNcm {
   monofasico?: boolean
+  pisCofinsZero?: boolean // PIS/COFINS com alíquota zero, isenção, suspensão ou sem incidência na venda (Presumido/Real)
   st?: boolean
   reducao?: number // % de redução das alíquotas de IBS/CBS (0, 30, 40, 60, 100)
   aliquotaIcms?: number // alíquota interna de ICMS do NCM na UF da empresa (%)
@@ -208,6 +209,7 @@ export interface BaseMensal {
   difalCalc: number // DIFAL calculado para não contribuintes (alíquota interna da UF de destino − interestadual)
   vendasComNcm: number // vendas com NCM informado (base das frações abaixo)
   vendasMonofasico: number
+  vendasPisCofinsZero: number // alíquota zero/isenção/suspensão de PIS/COFINS (não afeta o DAS)
   vendasSt: number
   vendasReducao: number // Σ valor × fração de redução de IBS/CBS
   vendasComDestinatario: number
@@ -230,6 +232,7 @@ export interface BaseMensal {
   comprasPF: number
   comprasPresumido: number
   comprasMonofasico: number
+  comprasPisCofinsZero: number
   icmsCompras: number // ICMS destacado nas compras que gera crédito
   icmsComprasSemCredito: number // ICMS próprio destacado nas compras de mercadoria com ST (substituída): custo, sem crédito
   ipiCompras: number
@@ -264,6 +267,7 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   difalCalc: 0,
   vendasComNcm: 0,
   vendasMonofasico: 0,
+  vendasPisCofinsZero: 0,
   vendasSt: 0,
   vendasReducao: 0,
   vendasComDestinatario: 0,
@@ -286,6 +290,7 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   comprasPF: 0,
   comprasPresumido: 0,
   comprasMonofasico: 0,
+  comprasPisCofinsZero: 0,
   icmsCompras: 0,
   icmsComprasSemCredito: 0,
   ipiCompras: 0,
@@ -317,6 +322,7 @@ export interface MixProdutos {
   reducaoIbsCbs: number // fração média de redução
   b2b: number // fração das vendas a PJ contribuinte
   fornecedoresSimples: number // fração das compras vindas de optantes do Simples
+  pisCofinsZero?: number // fração das vendas com PIS/COFINS a alíquota zero, isentas ou suspensas
 }
 
 export type Tributo = 'IRPJ' | 'CSLL' | 'PIS' | 'COFINS' | 'CPP' | 'ICMS' | 'IPI' | 'ISS' | 'CBS' | 'IBS'

@@ -117,3 +117,43 @@ describe('substituição tributária', () => {
     expect(tto.vendasSt).toBe(0)
   })
 })
+
+describe('PIS/COFINS pelas tabelas da EFD-Contribuições', () => {
+  it('monofásico pelas tabelas 4.3.10 a 4.3.12 vigentes, com as exceções da lei', async () => {
+    const { ncmMonofasico } = await import('./ncm')
+    expect(ncmMonofasico('33049990')).toBe(true) // maquiagem — 33.04
+    expect(ncmMonofasico('33059000')).toBe(true) // capilares — 33.05
+    expect(ncmMonofasico('33061000')).toBe(false) // dentifrícios: saíram do monofásico em 2013 (Lei 12.839)
+    expect(ncmMonofasico('30049099')).toBe(true)
+    expect(ncmMonofasico('30039056')).toBe(false) // exceção da Lei 10.147, art. 1º, I, "a"
+    expect(ncmMonofasico('22021000')).toBe(true) // refrigerantes — 4.3.11
+    expect(ncmMonofasico('22042100')).toBe(false) // vinho: não é monofásico
+    expect(ncmMonofasico('40111000')).toBe(true) // pneus
+    expect(ncmMonofasico('48189090')).toBe(false)
+  })
+
+  it('alíquota zero é aviso; marcada, tira a receita da base e o crédito da compra no regime regular', async () => {
+    const { beneficiosPisCofins } = await import('./pisCofinsNcm')
+    const { montarBases } = await import('./base')
+    const { apurar } = await import('./apuracao')
+    expect(beneficiosPisCofins('07019000').some((r) => r.tabela === '4.3.13')).toBe(true) // hortícolas (capítulo 7)
+    const linhas = [
+      linha({ ncm: '07019000', icms: 0, bc_icms: 0, cst: '040' }),
+      linha({ tipo: 'entrada', cfop: '1102', ncm: '07019000', icms: 0, bc_icms: 0, cst: '040', valor_contabil: 600 }),
+    ]
+    const estab = () => ({ uf: 'SP', aliquota: 18 })
+    const ctx = (p: typeof PARAMETROS_PADRAO) => ({ params: p, mix: { monofasico: 0, st: 0, reducaoIbsCbs: 0, b2b: 0, fornecedoresSimples: 0 }, receitaHistorica: () => undefined })
+    const sem = { ...PARAMETROS_PADRAO, excluirIcmsBasePisCofins: false }
+    const tributado = apurar('presumido', montarBases(linhas, sem, estab), ctx(sem))
+    expect(tributado.tributos.PIS + tributado.tributos.COFINS).toBeCloseTo(1000 * 0.0365, 6) // aviso não muda o cálculo
+    const zero = { ...sem, ncms: { '07019000': { pisCofinsZero: true } } }
+    const bases = montarBases(linhas, zero, estab)
+    expect(bases[0]).toMatchObject({ vendasPisCofinsZero: 1000, comprasPisCofinsZero: 600 })
+    const pres = apurar('presumido', bases, ctx(zero))
+    expect(pres.tributos.PIS + pres.tributos.COFINS).toBe(0)
+    const real = apurar('real', bases, ctx(zero))
+    expect(real.creditos.pisCofinsCompras).toBe(0)
+    const simples = apurar('simples', bases, { ...ctx(zero), rbt12Fixo: 360_000 })
+    expect(simples.tributos.PIS + simples.tributos.COFINS).toBeGreaterThan(0) // no Simples não reduz o DAS
+  })
+})

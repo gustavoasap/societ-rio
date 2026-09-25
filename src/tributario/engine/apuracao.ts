@@ -562,7 +562,8 @@ function pisCofinsNaoCumulativo(b: BaseMensal, p: Parametros, mono: number, icms
   // Crédito: bens para revenda (exceto monofásicos, Lei 10.833, art. 3º, I, "b"), sem o ICMS destacado (Lei 14.592/2023),
   // energia, fretes e armazenagem na venda (art. 3º, III e IX) e despesas creditáveis (aluguéis PJ etc.).
   // pessoa física não gera crédito (Lei 10.833, art. 3º, §3º, I); optante do Simples e MEI geram crédito integral
-  const comprasNaoMono = Math.max(0, b.compras - b.comprasMonofasico - b.devolucoesCompra - b.comprasPF)
+  // compras de monofásicos e de produtos com alíquota zero/isenção/suspensão não geram crédito (art. 3º, §2º, II)
+  const comprasNaoMono = Math.max(0, b.compras - b.comprasMonofasico - b.comprasPisCofinsZero - b.devolucoesCompra - b.comprasPF)
   const icmsProp = b.compras ? (b.icmsCompras + b.icmsComprasSemCredito) * (comprasNaoMono / b.compras) : 0
   const baseCreditoCompras = Math.max(0, comprasNaoMono - icmsProp)
   const baseCreditoDespesas = b.energia + b.fretes + b.servicosTomadosCreditaveis + p.despesasCreditaveisMensais
@@ -649,11 +650,13 @@ function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): Apuraca
     { grupo: 'ICMS', descricao: 'ICMS-ST nas entradas sem retenção (custo)', valor: icms.st },
     { grupo: 'ICMS', descricao: 'ICMS a recolher', valor: icms.devido, destaque: true },
   )
+  // vendas sem PIS/COFINS no regime regular: monofásicas (revenda) e com alíquota zero, isenção ou suspensão
+  const semPisCofins = Math.min(1, fr.monofasico + fr.pisCofinsZero)
   if (regras.pisCofins) {
     // ICMS "a ser excluído" é o destacado na nota (STF, Tema 69 — RE 574.706)
     // Lucro Real é não cumulativo, salvo receitas do art. 10 da Lei 10.833/2003 (opção nos parâmetros)
     if (real && !p.realPisCofinsCumulativo) {
-      const pc = pisCofinsNaoCumulativo(b, p, fr.monofasico, icms.proprio)
+      const pc = pisCofinsNaoCumulativo(b, p, semPisCofins, icms.proprio)
       t.PIS = pc.pis + (p.receitasFinanceirasMensais * 0.0065)
       t.COFINS = pc.cofins + p.receitasFinanceirasMensais * 0.04
       d.deducoes['PIS'] = (pc.debito * 1.65) / 9.25
@@ -670,7 +673,7 @@ function tributosIndiretos(b: BaseMensal, ctx: Contexto, real: boolean): Apuraca
         { grupo: 'PIS/COFINS', descricao: 'PIS + COFINS a recolher', valor: t.PIS + t.COFINS, destaque: true },
       )
     } else {
-      const pc = pisCofinsCumulativo(b, p, fr.monofasico, icms.proprio)
+      const pc = pisCofinsCumulativo(b, p, semPisCofins, icms.proprio)
       t.PIS = pc.pis
       t.COFINS = pc.cofins
       d.deducoes['PIS'] = pc.pis

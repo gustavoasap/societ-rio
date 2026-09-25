@@ -98,6 +98,7 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
           const t = tratamentoNcm(l.ncm, params.ncms)
           b.vendasComNcm += v
           if (t.monofasico) b.vendasMonofasico += v
+          else if (t.pisCofinsZero) b.vendasPisCofinsZero += v
           if (t.st && params.papelSt !== 'substituto') b.vendasSt += v
           b.vendasReducao += v * t.reducao
         }
@@ -135,7 +136,11 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
           else if (rf === 'pf') b.comprasPF += v
           else if (rf === 'presumido') b.comprasPresumido += v
         }
-        if (l.ncm && tratamentoNcm(l.ncm, params.ncms).monofasico) b.comprasMonofasico += v
+        if (l.ncm) {
+          const t = tratamentoNcm(l.ncm, params.ncms)
+          if (t.monofasico) b.comprasMonofasico += v
+          else if (t.pisCofinsZero) b.comprasPisCofinsZero += v
+        }
         {
           const e = estab(l.estabelecimento_id)
           const ent = icmsDaEntrada(l, params, e.uf, e.aliquota)
@@ -191,7 +196,7 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
  * Os percentuais informados nos parâmetros têm prioridade.
  */
 export function estimarMix(linhas: MovimentoLinha[], params: Parametros): MixProdutos {
-  const pesos = { total: 0, mono: 0, st: 0, reducao: 0, comDest: 0, b2b: 0, compras: 0, simples: 0 }
+  const pesos = { total: 0, mono: 0, zero: 0, st: 0, reducao: 0, comDest: 0, b2b: 0, compras: 0, simples: 0 }
   const excluidas: Natureza[] = ['uso_consumo', 'ativo', 'energia', 'frete', 'comunicacao', 'servico_tomado']
   const temSaidasComNcm = linhas.some((l) => l.tipo === 'saida' && l.ncm && naturezaDe(l, params.cfopNatureza) === 'venda')
   for (const l of linhas) {
@@ -210,6 +215,7 @@ export function estimarMix(linhas: MovimentoLinha[], params: Parametros): MixPro
     const t = tratamentoNcm(l.ncm, params.ncms)
     pesos.total += l.valor_contabil
     if (t.monofasico) pesos.mono += l.valor_contabil
+    else if (t.pisCofinsZero) pesos.zero += l.valor_contabil
     if (t.st && params.papelSt !== 'substituto') pesos.st += l.valor_contabil
     pesos.reducao += l.valor_contabil * t.reducao
   }
@@ -220,6 +226,7 @@ export function estimarMix(linhas: MovimentoLinha[], params: Parametros): MixPro
     reducaoIbsCbs: fr(params.percentualReducaoIbsCbs, pesos.reducao, pesos.total),
     b2b: fr(params.percentualB2B, pesos.b2b, pesos.comDest),
     fornecedoresSimples: pesos.compras ? pesos.simples / pesos.compras : 0,
+    pisCofinsZero: pesos.total ? pesos.zero / pesos.total : 0,
   }
 }
 
@@ -231,6 +238,7 @@ export function fracoesDoMes(b: BaseMensal, params: Parametros, mix: MixProdutos
     st: fr(params.percentualSt, b.vendasSt, b.vendasComNcm, mix.st),
     reducao: fr(params.percentualReducaoIbsCbs, b.vendasReducao, b.vendasComNcm, mix.reducaoIbsCbs),
     b2b: fr(params.percentualB2B, b.vendasB2B, b.vendasComDestinatario, mix.b2b),
+    pisCofinsZero: fr(null, b.vendasPisCofinsZero, b.vendasComNcm, mix.pisCofinsZero ?? 0),
   }
 }
 
