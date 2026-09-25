@@ -1,7 +1,8 @@
-// Perfil de ICMS de cada NCM observado nas próprias notas da empresa: alíquota interna praticada e substituição tributária.
+// Referência de ICMS de cada NCM nas próprias notas da empresa (alíquota interna praticada e ST).
+// Não entra no cálculo: a alíquota por NCM é informada pelo contador; isto só aparece como referência na aba Produtos.
 import { naturezaDe } from './base'
 import type { Natureza } from './cfop'
-import type { ConfigNcm, MovimentoLinha } from './tipos'
+import type { MovimentoLinha } from './tipos'
 
 export type FonteIcms = 'saidas' | 'entradas'
 
@@ -92,20 +93,6 @@ export function perfilIcmsPorNcm(
       st: s && s.total ? s.com / s.total >= 0.5 : null,
       fonteSt: fonteS,
     })
-  }
-  return r
-}
-
-/**
- * Tratamento de ICMS por NCM usado nos cálculos: o que o contador informou prevalece; na falta, o que as notas mostram.
- */
-export function mesclarPerfilIcms(config: Record<string, ConfigNcm>, perfil: Map<string, PerfilIcmsNcm>): Record<string, ConfigNcm> {
-  const r: Record<string, ConfigNcm> = { ...config }
-  for (const [ncm, p] of perfil) {
-    const c = { ...(r[ncm] ?? {}) }
-    if (c.aliquotaIcms === undefined && p.aliquota !== null) c.aliquotaIcms = p.aliquota
-    if (c.st === undefined && p.st !== null) c.st = p.st
-    if (Object.keys(c).length) r[ncm] = c
   }
   return r
 }

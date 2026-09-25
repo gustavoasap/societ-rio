@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { icmsDaVenda, icmsVendasInternasPorAliquota } from './icms'
-import { cstComSt, mesclarPerfilIcms, perfilIcmsPorNcm } from './perfilNcm'
+import { cstComSt, perfilIcmsPorNcm } from './perfilNcm'
 import { PARAMETROS_PADRAO, type MovimentoLinha } from './tipos'
 
 const linha = (l: Partial<MovimentoLinha>): MovimentoLinha => ({
@@ -75,13 +75,6 @@ describe('ICMS por produto (NCM) pelas notas', () => {
     )
     expect(p.get('22021000')?.st).toBe(true)
     expect(p.has('94049000')).toBe(false)
-  })
-
-  it('o que o contador informou prevalece sobre as notas', () => {
-    const perfil = perfilIcmsPorNcm([linha({}), linha({ ncm: '94049000', icms: 180 })], uf, 'SP')
-    const ncms = mesclarPerfilIcms({ '33030010': { aliquotaIcms: 27 } }, perfil)
-    expect(ncms['33030010'].aliquotaIcms).toBe(27)
-    expect(ncms['94049000'].aliquotaIcms).toBe(18)
   })
 
   it('a venda interna usa a alíquota do produto só na UF de referência', () => {

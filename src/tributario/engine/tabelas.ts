@@ -88,10 +88,13 @@ export const ANEXOS_SIMPLES: Record<Anexo, { nome: string; faixas: FaixaSimples[
 export const LIMITE_SIMPLES = 4_800_000
 export const SUBLIMITE_ICMS_ISS = 3_600_000
 
-/** Alíquota modal interna de ICMS por UF (referência 2026 — confira a legislação estadual; editável nos parâmetros). */
+/**
+ * Alíquota modal interna de ICMS por UF — tabela de referência da ASAP para o planejamento (RJ: 18% + 2% de FECP).
+ * Alíquotas específicas por produto são informadas por NCM na aba Produtos; a modal do estabelecimento é editável no cadastro.
+ */
 export const ICMS_INTERNO_UF: Record<string, number> = {
-  AC: 19, AL: 20.5, AM: 20, AP: 18, BA: 20.5, CE: 20, DF: 20, ES: 17, GO: 19, MA: 23, MG: 18, MS: 17, MT: 17, PA: 19,
-  PB: 20, PE: 20.5, PI: 22.5, PR: 19.5, RJ: 22, RN: 20, RO: 19.5, RR: 20, RS: 17, SC: 17, SE: 20, SP: 18, TO: 20,
+  AC: 19, AL: 19, AM: 20, AP: 18, BA: 20.5, CE: 20, DF: 20, ES: 17, GO: 19, MA: 22, MG: 18, MS: 17, MT: 17, PA: 19,
+  PB: 20, PE: 20.5, PI: 21, PR: 19.5, RJ: 20, RN: 18, RO: 19.5, RR: 20, RS: 17, SC: 17, SE: 19, SP: 18, TO: 20,
 }
 
 export const UFS = Object.keys(ICMS_INTERNO_UF).sort()

@@ -7,7 +7,7 @@ import { icmsEntradasPorNcm, icmsVendasInternasPorAliquota, icmsVendasPorUf } fr
 import { ICMS_INTERNO_UF, UFS, aliquotaInterestadual } from '../../engine/tabelas'
 import type { CenarioIcms, RegimeId } from '../../engine/tipos'
 import { moeda, moedaCurta, nomeRegime, pct } from '../../formatacao'
-import { Kpi } from '../comum'
+import { Kpi, Segmentado } from '../comum'
 import type { DadosAnalise } from '../contexto'
 
 const regimes: RegimeId[] = ['presumido', 'real']
@@ -20,6 +20,7 @@ export function Icms({ d }: { d: DadosAnalise }) {
   const ufEmpresa = matriz?.uf ?? 'SP'
   const cen = params.cenarioIcms
   const [origemTabela, setOrigemTabela] = useState<'empresa' | 'cenario'>('empresa')
+  const [visaoTabela, setVisaoTabela] = useState<'destino' | 'matriz'>('destino')
 
   // Situação atual (sem cenário) e cenário simulado — independentes do cenário estar aplicado nas demais telas
   const semCenario = useMemo(() => ({ ...params, cenarioIcms: { ...cen, ativo: false } }), [params, cen])
@@ -110,7 +111,7 @@ export function Icms({ d }: { d: DadosAnalise }) {
               </div>
             ))}
             <p className="mt-2 text-xs text-slate-500">
-              Cada produto usa a alíquota da aba Produtos (NCM): a informada pelo contador ou a que as notas mostram; sem nenhuma, a modal da UF.
+              Cada produto usa a alíquota interna informada na aba Produtos (NCM); sem ela, a modal da UF.
             </p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
@@ -142,13 +143,26 @@ export function Icms({ d }: { d: DadosAnalise }) {
         icone={ArrowRightLeft}
         cor="amber"
         actions={
-          <select className="input w-auto py-1.5" value={origemTabela} onChange={(e) => setOrigemTabela(e.target.value as 'empresa' | 'cenario')}>
-            <option value="empresa">Saindo de {ufEmpresa} (empresa)</option>
-            <option value="cenario">Saindo de {cen.uf} (cenário)</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmentado
+              valor={visaoTabela}
+              onChange={setVisaoTabela}
+              opcoes={[
+                { value: 'destino', label: 'Por destino' },
+                { value: 'matriz', label: 'Origem × destino' },
+              ]}
+            />
+            {visaoTabela === 'destino' && (
+              <select className="input w-auto py-1.5" value={origemTabela} onChange={(e) => setOrigemTabela(e.target.value as 'empresa' | 'cenario')}>
+                <option value="empresa">Saindo de {ufEmpresa} (empresa)</option>
+                <option value="cenario">Saindo de {cen.uf} (cenário)</option>
+              </select>
+            )}
+          </div>
         }
       >
-        <div className="max-h-96 overflow-auto">
+        {visaoTabela === 'matriz' && <MatrizInterestadual destaque={ufEmpresa} />}
+        <div className={`max-h-96 overflow-auto ${visaoTabela === 'matriz' ? 'hidden' : ''}`}>
           <table className="w-full min-w-[40rem] text-sm">
             <thead className="sticky top-0 bg-white">
               <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
@@ -182,7 +196,10 @@ export function Icms({ d }: { d: DadosAnalise }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-xs text-slate-500">Alíquotas modais internas de referência 2026 — confira a legislação de cada UF (alíquotas específicas por produto e FCP não estão incluídas).</p>
+        <p className="mt-2 text-xs text-slate-500">
+          Interestaduais: 7% das regiões Sul e Sudeste (exceto ES) para Norte, Nordeste, Centro-Oeste e ES; 12% nas demais (Res. SF 22/1989); 4% para importados — origem 1, 2, 3
+          ou 8 (Res. SF 13/2012). Internas: alíquota modal de cada UF (RJ 18% + 2% de FECP); alíquotas específicas por produto são informadas na aba Produtos (NCM).
+        </p>
       </Section>
 
       <Section title="ICMS nas entradas interestaduais: ST (MVA) e antecipação" icone={PackageSearch} cor="violet">
@@ -404,6 +421,48 @@ function TabelaUf({ linhas, total, destaque }: { linhas: ReturnType<typeof icmsV
             <td />
             <td className="px-3 py-2">{moeda(tot.difal)}</td>
           </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Tabela de alíquotas origem × destino: diagonal = alíquota interna; fora dela, a interestadual; IM = importados (4%). */
+function MatrizInterestadual({ destaque }: { destaque: string }) {
+  const linhas = [...UFS, 'IM']
+  const valor = (o: string, dest: string) => {
+    if (o === 'IM' || dest === 'IM') return 4
+    return o === dest ? ICMS_INTERNO_UF[o] : aliquotaInterestadual('0', o, dest)
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="mx-auto border-collapse text-center text-[0.6875rem] tabular-nums">
+        <thead>
+          <tr>
+            <th className="sticky left-0 bg-white px-1 py-1 text-[0.625rem] text-slate-400">orig. ↓ / dest. →</th>
+            {linhas.map((d) => (
+              <th key={d} className={`min-w-7 px-1 py-1 font-bold text-white ${d === destaque ? 'bg-brand-600' : 'bg-asap-900'}`}>
+                {d}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((o) => (
+            <tr key={o}>
+              <th className={`sticky left-0 px-1.5 py-0.5 font-bold text-white ${o === destaque ? 'bg-brand-600' : 'bg-asap-900'}`}>{o}</th>
+              {linhas.map((d) => {
+                const v = valor(o, d)
+                const interna = o === d && o !== 'IM'
+                const cor = interna ? 'bg-rose-600 font-bold text-white' : v === 7 ? 'bg-amber-50 text-amber-800' : v === 4 ? 'bg-sky-50 text-sky-800' : 'text-slate-700'
+                return (
+                  <td key={d} className={`border border-slate-200 px-1 py-0.5 ${cor} ${o === destaque && !interna ? 'ring-1 ring-brand-300 ring-inset' : ''}`}>
+                    {v.toLocaleString('pt-BR')}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

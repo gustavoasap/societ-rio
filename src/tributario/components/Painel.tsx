@@ -24,7 +24,7 @@ import {
 import { mascaraCnpj } from '../../lib/format'
 import { apurar, type Contexto } from '../engine/apuracao'
 import { estimarMix, linhaConsiderada, montarBases, naturezaDe, receitaDaBase, type DadosEstab } from '../engine/base'
-import { mesclarPerfilIcms, perfilIcmsPorNcm } from '../engine/perfilNcm'
+import { perfilIcmsPorNcm } from '../engine/perfilNcm'
 import { projetar } from '../engine/projecao'
 import { ICMS_INTERNO_UF } from '../engine/tabelas'
 import { comPadrao, type Parametros as P, type MovimentoLinha, type RegimeFornecedor, type RegimeId } from '../engine/tipos'
@@ -142,15 +142,15 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     [estabs],
   )
   // o tratamento por NCM vem da tabela trib_ncms
-  // alíquota interna e ST de cada NCM: o que o contador informou; na falta, o que as notas da UF da matriz mostram
+  // alíquota interna e ST de cada NCM são informadas pelo contador (aba Produtos); as notas servem só de referência
   const ufMatriz = dadosEstab(null).uf
   const perfilIcms = useMemo(
     () => perfilIcmsPorNcm(linhas, (id) => dadosEstab(id).uf, ufMatriz, paramsSalvos.cfopNatureza),
     [linhas, dadosEstab, ufMatriz, paramsSalvos.cfopNatureza],
   )
   const params = useMemo(
-    () => ({ ...paramsSalvos, ncms: mesclarPerfilIcms(configDosNcms(ncms), perfilIcms), ufAliquotasNcm: ufMatriz, regimeFornecedores: regimesDosParceiros(parceiros) }),
-    [paramsSalvos, ncms, perfilIcms, ufMatriz, parceiros],
+    () => ({ ...paramsSalvos, ncms: configDosNcms(ncms), ufAliquotasNcm: ufMatriz, regimeFornecedores: regimesDosParceiros(parceiros) }),
+    [paramsSalvos, ncms, ufMatriz, parceiros],
   )
 
   async function mudarRegimeFornecedor(documento: string, regime: RegimeFornecedor | null) {

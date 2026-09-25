@@ -15,16 +15,14 @@ const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 
 
 const mascaraNcm = (n: string) => (n.length === 8 ? `${n.slice(0, 4)}.${n.slice(4, 6)}.${n.slice(6)}` : n)
 
-function SimNao({ valor, padrao, origem, onChange }: { valor: boolean | null; padrao: boolean; origem?: string; onChange: (v: boolean | null) => void }) {
+function SimNao({ valor, padrao, onChange }: { valor: boolean | null; padrao: boolean; onChange: (v: boolean | null) => void }) {
   return (
     <select
       className={`input w-36 py-1.5 ${valor === null ? 'text-slate-500' : valor ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-300'}`}
       value={valor === null ? '' : valor ? 's' : 'n'}
       onChange={(e) => onChange(e.target.value === '' ? null : e.target.value === 's')}
     >
-      <option value="">
-        {origem ? `Notas: ${padrao ? 'sim' : 'não'}` : `Padrão (${padrao ? 'sim' : 'não'})`}
-      </option>
+      <option value="">Padrão ({padrao ? 'sim' : 'não'})</option>
       <option value="s">Sim</option>
       <option value="n">Não</option>
     </select>
@@ -133,10 +131,9 @@ export function Produtos({
         }
       >
         <p className="-mt-2 mb-4 text-sm text-slate-500">
-          Os NCMs chegam automaticamente de cada importação. A alíquota interna de ICMS e a ST de cada NCM ({ufReferencia}) vêm das próprias notas: primeiro das vendas internas da
-          empresa com ICMS destacado; na falta, das compras internas de fornecedores do regime normal (carga efetiva, já com redução de base). Sem nota com ICMS, vale a alíquota
-          modal de {num(aliquotaModal)}% — informe a do produto quando for diferente (ex.: 25% em perfumaria, 12% ou 7% em itens com carga reduzida). Os valores digitados
-          prevalecem sobre os das notas e são usados no ICMS das vendas internas, na ST e na antecipação das entradas. Informe também a MVA dos produtos com ST. "Padrão" é a sugestão do sistema: monofásico pelas Leis 10.147/2000, 10.485/2002 e 13.097/2015; redução de IBS/CBS
+          Os NCMs chegam automaticamente de cada importação. Informe a alíquota interna de ICMS de cada NCM em {ufReferencia} — em branco, vale a modal de {num(aliquotaModal)}%.
+          Ela é usada no ICMS das vendas internas, na ST e na antecipação das entradas. Como referência, aparece a alíquota destacada nas notas (vendas internas da empresa ou
+          compras internas de fornecedores do regime normal): clique em “usar” para adotá-la. Informe também ICMS-ST e MVA dos produtos com substituição tributária. "Padrão" é a sugestão do sistema: monofásico pelas Leis 10.147/2000, 10.485/2002 e 13.097/2015; redução de IBS/CBS
           pelo Anexo VIII (60%) e art. 147 (alíquota zero) da LC 214/2025. Ajuste o que for diferente para este cliente — vale na hora para todos os cálculos.
         </p>
         <div className="relative mb-3">
@@ -173,18 +170,20 @@ export function Produtos({
                     <td className="px-3 py-2">
                       <NumeroNcm
                         valor={c.aliquota_icms}
-                        placeholder={x.obs?.aliquota != null ? num(x.obs.aliquota) : num(aliquotaModal)}
+                        placeholder={num(aliquotaModal)}
                         onChange={(v) => onMudar(x.ncm, { ...c, aliquota_icms: v })}
                       />
-                      {c.aliquota_icms === null && x.obs?.aliquota != null && x.obs.fonteAliquota && (
-                        <div
-                          className="mt-0.5 w-28 text-[0.6875rem] leading-tight text-sky-700"
-                          title={`Carga efetiva nas ${NOME_FONTE[x.obs.fonteAliquota]} (${moeda(x.obs.valorAliquota)} em notas). Alíquota nominal ${num(x.obs.nominal ?? 0)}%.`}
+                      {c.aliquota_icms === null && <div className="mt-0.5 text-[0.6875rem] text-slate-400">modal da UF</div>}
+                      {x.obs?.nominal != null && x.obs.fonteAliquota && Math.abs(x.obs.nominal - (c.aliquota_icms ?? aliquotaModal)) > 0.01 && (
+                        <button
+                          type="button"
+                          className="mt-0.5 block w-28 cursor-pointer text-left text-[0.6875rem] leading-tight text-sky-700 hover:underline"
+                          title={`Referência: ${NOME_FONTE[x.obs.fonteAliquota]} (${moeda(x.obs.valorAliquota)} em notas), alíquota nominal ${num(x.obs.nominal)}%${x.obs.aliquota !== null && Math.abs(x.obs.aliquota - x.obs.nominal) > 0.1 ? `, carga efetiva ${num(x.obs.aliquota)}% (base reduzida)` : ''}. Clique para usar.`}
+                          onClick={() => onMudar(x.ncm, { ...c, aliquota_icms: x.obs!.nominal })}
                         >
-                          pelas notas{x.obs.nominal !== null && Math.abs(x.obs.nominal - x.obs.aliquota) > 0.1 ? ` · ${num(x.obs.nominal)}% c/ base reduzida` : ''}
-                        </div>
+                          nas notas: {num(x.obs.nominal)}% · usar
+                        </button>
                       )}
-                      {c.aliquota_icms === null && x.obs?.aliquota == null && <div className="mt-0.5 text-[0.6875rem] text-slate-400">modal da UF</div>}
                     </td>
                     <td className="px-3 py-2">
                       <SimNao valor={c.monofasico} padrao={ncmMonofasico(x.ncm)} onChange={(v) => onMudar(x.ncm, { ...c, monofasico: v })} />
@@ -192,10 +191,19 @@ export function Produtos({
                     <td className="px-3 py-2">
                       <SimNao
                         valor={c.st}
-                        padrao={x.obs?.st ?? false}
-                        origem={x.obs?.fonteSt ? NOME_FONTE[x.obs.fonteSt] : undefined}
+                        padrao={false}
                         onChange={(v) => onMudar(x.ncm, { ...c, st: v })}
                       />
+                      {x.obs?.st && c.st === null && x.obs.fonteSt && (
+                        <button
+                          type="button"
+                          className="mt-0.5 block cursor-pointer text-[0.6875rem] text-sky-700 hover:underline"
+                          title={`A maioria das ${NOME_FONTE[x.obs.fonteSt]} deste NCM veio com ST (CST 10/60/70 ou CSOSN 500). Clique para marcar.`}
+                          onClick={() => onMudar(x.ncm, { ...c, st: true })}
+                        >
+                          nas notas: com ST · usar
+                        </button>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <NumeroNcm valor={c.mva} placeholder={x.trat.st ? 'informar' : '—'} onChange={(v) => onMudar(x.ncm, { ...c, mva: v })} />
