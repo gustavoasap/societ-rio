@@ -5,6 +5,7 @@ import { mascaraCnpj } from '../../lib/format'
 import { nomeMes } from '../engine/base'
 import { ICMS_INTERNO_UF } from '../engine/tabelas'
 import type { RegimeAtual } from '../engine/tipos'
+import { anexoSugerido, consultarCnpj, regimeSugerido } from '../receita'
 import { adicionarEstabelecimento, gravarImportacao, importacoesSobrepostas, listarEmpresas, salvarEmpresa, type EmpresaComEstab } from '../dados'
 import { NOMES_MOV, prepararLinhas, tipoMovimentoDe, type TipoServico } from '../importacao/preparar'
 import { NOMES_RELATORIO, lerRelatorio, type RelatorioLido } from '../importacao/relatorios'
@@ -87,8 +88,18 @@ export function ImportarLote({ empresas, onClose, onConcluido }: { empresas: Emp
       for (const rels of raizes.values()) {
         const cnpjs = [...new Map(rels.map((r) => [r.cnpj, r])).values()]
         const matriz = cnpjs.find((r) => r.cnpj.slice(8, 12) === '0001') ?? cnpjs[0]
+        // dados públicos da Receita (razão social, regime, CNAE, início de atividade); sem consulta, fica o que veio do relatório
+        const receita = await consultarCnpj(matriz.cnpj).catch(() => null)
+        const anexo = receita ? anexoSugerido(receita.cnae) : null
         await salvarEmpresa(
-          { razao_social: matriz.empresa || `Empresa ${mascaraCnpj(matriz.cnpj)}`, cnpj: matriz.cnpj, regime_atual: regimeNovas, cnae: null, observacoes: null, parametros: {} },
+          {
+            razao_social: receita?.razaoSocial || matriz.empresa || `Empresa ${mascaraCnpj(matriz.cnpj)}`,
+            cnpj: matriz.cnpj,
+            regime_atual: (receita && regimeSugerido(receita)) || regimeNovas,
+            cnae: receita?.cnae || null,
+            observacoes: null,
+            parametros: { ...(anexo ? { anexo } : {}), ...(receita?.abertura ? { inicioAtividade: receita.abertura.slice(0, 7) } : {}) },
+          },
           cnpjs.map((r) => ({
             cnpj: r.cnpj,
             nome: r.cnpj === matriz.cnpj ? 'Matriz' : `Filial ${r.municipio || r.cnpj.slice(8, 12)}`,
@@ -208,7 +219,7 @@ export function ImportarLote({ empresas, onClose, onConcluido }: { empresas: Emp
         <>
           <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-slate-200/70">
             <label className="flex items-center gap-2">
-              Regime das empresas novas:
+              Regime das empresas novas (se a Receita não informar):
               <Select
                 className="input w-48 py-1.5"
                 value={regimeNovas}
