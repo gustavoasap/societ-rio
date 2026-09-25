@@ -1,12 +1,17 @@
-import { useState, type FormEvent } from 'react'
-import { Building2, Plus, Star, Trash2 } from 'lucide-react'
+import { useRef, useState, type FormEvent } from 'react'
+import { AlertTriangle, Building2, CheckCircle2, Landmark, Loader2, Plus, Search, Star, Trash2 } from 'lucide-react'
 import { Field, Modal, Select } from '../../components/ui'
-import { mascaraCnpj } from '../../lib/format'
+import { formatarData, mascaraCnpj } from '../../lib/format'
 import { ANEXOS_SIMPLES, ICMS_INTERNO_UF, UFS, type Anexo } from '../engine/tabelas'
 import { comPadrao, type Estabelecimento, type RegimeAtual } from '../engine/tipos'
 import { salvarEmpresa, type EmpresaComEstab } from '../dados'
+import { anexoSugerido, cnpjValido, consultarCnpj, regimeSugerido, type DadosCnpj } from '../receita'
 
 type EstabForm = Omit<Estabelecimento, 'id'> & { id?: string; chave: string }
+
+type Consulta = { status: 'carregando' } | { status: 'ok'; dados: DadosCnpj } | { status: 'erro'; mensagem: string }
+
+const NOME_REGIME: Record<RegimeAtual, string> = { simples: 'Simples Nacional', presumido: 'Lucro Presumido', real: 'Lucro Real' }
 
 const novoEstab = (matriz: boolean): EstabForm => ({ chave: crypto.randomUUID(), cnpj: '', nome: '', matriz, uf: 'SP', municipio: '', aliquota_icms: null })
 
@@ -28,7 +33,56 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
 
+  const [consultas, setConsultas] = useState<Record<string, Consulta>>({})
+  const consultados = useRef<Record<string, string>>({}) // chave do estabelecimento -> último CNPJ consultado
+
   const alterar = (chave: string, campos: Partial<EstabForm>) => setEstabs((l) => l.map((e) => (e.chave === chave ? { ...e, ...campos } : e)))
+
+  /** Busca o CNPJ na base pública da Receita e preenche o estabelecimento (e a empresa, quando é a matriz). */
+  async function buscarCnpj(chave: string, cnpj: string) {
+    const c = cnpj.replace(/\D/g, '')
+    consultados.current[chave] = c
+    setConsultas((x) => ({ ...x, [chave]: { status: 'carregando' } }))
+    try {
+      const d = await consultarCnpj(c)
+      if (consultados.current[chave] !== c) return // o CNPJ mudou durante a consulta
+      setConsultas((x) => ({ ...x, [chave]: { status: 'ok', dados: d } }))
+      setEstabs((l) =>
+        l.map((e) => {
+          if (e.chave === chave)
+            return {
+              ...e,
+              uf: d.uf || e.uf,
+              municipio: d.municipio || e.municipio,
+              nome: e.nome.trim() || d.nomeFantasia || (d.matriz ? 'Matriz' : `Filial ${d.municipio}`.trim()),
+              matriz: d.matriz ? true : e.matriz,
+            }
+          return d.matriz ? { ...e, matriz: false } : e
+        }),
+      )
+      if (d.matriz) {
+        setRazao((r) => r.trim() || d.razaoSocial)
+        setCnae((v) => v.trim() || d.cnae)
+        setInicio((v) => v || (d.abertura ? d.abertura.slice(0, 7) : ''))
+        // regime e anexo só são sugeridos no cadastro novo; na edição ficam como o contador definiu
+        if (!empresa) {
+          const r = regimeSugerido(d)
+          if (r) setRegime(r)
+          const a = anexoSugerido(d.cnae)
+          if (a) setAnexo(a)
+        }
+      }
+    } catch (e) {
+      if (consultados.current[chave] !== c) return
+      setConsultas((x) => ({ ...x, [chave]: { status: 'erro', mensagem: (e as Error).message } }))
+    }
+  }
+
+  function digitarCnpj(chave: string, valor: string) {
+    alterar(chave, { cnpj: valor })
+    const c = valor.replace(/\D/g, '')
+    if (c.length === 14 && cnpjValido(c) && consultados.current[chave] !== c) buscarCnpj(chave, c)
+  }
 
   async function salvar(e: FormEvent) {
     e.preventDefault()
@@ -65,7 +119,7 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
   return (
     <Modal
       title={empresa ? 'Editar empresa' : 'Nova empresa'}
-      subtitulo="Cadastre a matriz e todas as filiais — no Simples Nacional a apuração é única (mesmo PGDAS-D)."
+      subtitulo="Digite o CNPJ da matriz e das filiais: os dados vêm da Receita Federal. No Simples Nacional a apuração é única (mesmo PGDAS-D)."
       onClose={onClose}
       largura="max-w-4xl"
       footer={
@@ -82,7 +136,7 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
       <form id="form-empresa" onSubmit={salvar} className="space-y-4">
         <div className="grid gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70 sm:grid-cols-6">
           <Field label="Razão social" className="sm:col-span-4">
-            <input className="input" value={razao} onChange={(e) => setRazao(e.target.value)} required />
+            <input className="input" value={razao} onChange={(e) => setRazao(e.target.value)} placeholder="Preenchida ao digitar o CNPJ da matriz" required />
           </Field>
           <Field label="Regime tributário atual" className="sm:col-span-2">
             <Select
@@ -112,6 +166,12 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
           </Field>
         </div>
 
+        {(() => {
+          const m = estabs.find((x) => x.matriz)
+          const c = m ? consultas[m.chave] : undefined
+          return c?.status === 'ok' ? <DadosReceita d={c.dados} razao={razao} regime={regime} novo={!empresa} onUsarRazao={() => setRazao(c.dados.razaoSocial)} /> : null
+        })()}
+
         <div className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800">
@@ -126,28 +186,22 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
           <div className="space-y-3">
             {estabs.map((e) => (
               <div key={e.chave} className="grid items-end gap-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200/70 sm:grid-cols-12">
-                <Field label="CNPJ" className="sm:col-span-3">
-                  <input className="input" value={mascaraCnpj(e.cnpj)} onChange={(ev) => alterar(e.chave, { cnpj: ev.target.value })} placeholder="00.000.000/0000-00" required />
+                <Field label="CNPJ" className="sm:col-span-5">
+                  <div className="flex gap-1.5">
+                    <input className="input" value={mascaraCnpj(e.cnpj)} onChange={(ev) => digitarCnpj(e.chave, ev.target.value)} placeholder="00.000.000/0000-00" required />
+                    <button
+                      type="button"
+                      className="btn-secondary btn-sm shrink-0 px-2.5"
+                      title="Buscar dados na Receita Federal"
+                      disabled={consultas[e.chave]?.status === 'carregando' || e.cnpj.replace(/\D/g, '').length !== 14}
+                      onClick={() => buscarCnpj(e.chave, e.cnpj)}
+                    >
+                      {consultas[e.chave]?.status === 'carregando' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </Field>
-                <Field label="Nome / identificação" className="sm:col-span-3">
+                <Field label="Nome / identificação" className="sm:col-span-5">
                   <input className="input" value={e.nome} onChange={(ev) => alterar(e.chave, { nome: ev.target.value })} placeholder={e.matriz ? 'Matriz' : 'Filial'} />
-                </Field>
-                <Field label="UF" className="sm:col-span-1">
-                  <Select value={e.uf} onChange={(v) => alterar(e.chave, { uf: v })} opcoes={UFS} />
-                </Field>
-                <Field label="Município" className="sm:col-span-2">
-                  <input className="input" value={e.municipio ?? ''} onChange={(ev) => alterar(e.chave, { municipio: ev.target.value })} />
-                </Field>
-                <Field label="ICMS interno %" className="sm:col-span-1">
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.01"
-                    value={e.aliquota_icms ?? ''}
-                    placeholder={String(ICMS_INTERNO_UF[e.uf] ?? 18)}
-                    onChange={(ev) => alterar(e.chave, { aliquota_icms: ev.target.value === '' ? null : Number(ev.target.value) })}
-                    title="Alíquota modal da UF — deixe em branco para usar o padrão"
-                  />
                 </Field>
                 <div className="flex gap-1 sm:col-span-2 sm:justify-end">
                   <button
@@ -174,6 +228,24 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
                     </button>
                   )}
                 </div>
+                <Field label="UF" className="sm:col-span-2">
+                  <Select value={e.uf} onChange={(v) => alterar(e.chave, { uf: v })} opcoes={UFS} />
+                </Field>
+                <Field label="Município" className="sm:col-span-6">
+                  <input className="input" value={e.municipio ?? ''} onChange={(ev) => alterar(e.chave, { municipio: ev.target.value })} />
+                </Field>
+                <Field label="ICMS interno %" className="sm:col-span-4">
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    value={e.aliquota_icms ?? ''}
+                    placeholder={String(ICMS_INTERNO_UF[e.uf] ?? 18)}
+                    onChange={(ev) => alterar(e.chave, { aliquota_icms: ev.target.value === '' ? null : Number(ev.target.value) })}
+                    title="Alíquota modal da UF — deixe em branco para usar o padrão"
+                  />
+                </Field>
+                <StatusConsulta consulta={consultas[e.chave]} cnpj={e.cnpj} />
               </div>
             ))}
           </div>
@@ -181,5 +253,89 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
         {erro && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{erro}</div>}
       </form>
     </Modal>
+  )
+}
+
+function StatusConsulta({ consulta, cnpj }: { consulta: Consulta | undefined; cnpj: string }) {
+  const c = cnpj.replace(/\D/g, '')
+  if (!consulta) {
+    if (c.length === 14 && !cnpjValido(c)) return <p className="text-xs font-medium text-rose-600 sm:col-span-12">CNPJ inválido: confira os dígitos verificadores.</p>
+    return null
+  }
+  if (consulta.status === 'carregando') return <p className="text-xs text-slate-500 sm:col-span-12">Consultando a Receita Federal...</p>
+  if (consulta.status === 'erro') return <p className="text-xs font-medium text-rose-600 sm:col-span-12">{consulta.mensagem}</p>
+  const d = consulta.dados
+  const ativa = d.situacao === 'ATIVA'
+  return (
+    <p className={`flex flex-wrap items-center gap-x-2 text-xs sm:col-span-12 ${ativa ? 'text-emerald-700' : 'font-semibold text-rose-600'}`}>
+      {ativa ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+      <span>
+        {d.razaoSocial} · {d.matriz ? 'Matriz' : 'Filial'} · {d.municipio}/{d.uf} · Situação: {d.situacao || '—'}
+        {!ativa && ' — atenção: CNPJ não está ativo'}
+      </span>
+    </p>
+  )
+}
+
+function DadosReceita({ d, razao, regime, novo, onUsarRazao }: { d: DadosCnpj; razao: string; regime: RegimeAtual; novo: boolean; onUsarRazao: () => void }) {
+  const sugerido = regimeSugerido(d)
+  const linha = (rotulo: string, valor: string) => (
+    <div>
+      <dt className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">{rotulo}</dt>
+      <dd className="text-sm font-medium text-slate-800">{valor || '—'}</dd>
+    </div>
+  )
+  const simples = d.simples
+    ? d.simples.optante
+      ? `Optante desde ${formatarData(d.simples.desde)}`
+      : d.simples.excluidoEm
+        ? `Não optante (excluído em ${formatarData(d.simples.excluidoEm)})`
+        : 'Não optante'
+    : 'Sem informação'
+  return (
+    <div className="rounded-2xl bg-sky-50/70 p-5 ring-1 ring-sky-200">
+      <h3 className="mb-3 flex flex-wrap items-center gap-2 text-sm font-bold text-sky-900">
+        <Landmark className="h-4 w-4" />
+        Dados da Receita Federal
+        <span className="text-xs font-normal text-sky-700">— {d.fonte}</span>
+      </h3>
+      <dl className="grid gap-3 sm:grid-cols-4">
+        {linha('Razão social', d.razaoSocial)}
+        {linha('Nome fantasia', d.nomeFantasia)}
+        {linha('Situação cadastral', d.situacao)}
+        {linha('Início de atividade', formatarData(d.abertura))}
+        {linha('CNAE principal', d.cnae ? `${d.cnae} — ${d.cnaeDescricao}` : '')}
+        {linha('Natureza jurídica', d.naturezaJuridica)}
+        {linha('Porte', d.porte)}
+        {linha('Simples Nacional', simples)}
+        {d.mei?.optante && linha('MEI', `Optante desde ${formatarData(d.mei.desde)}`)}
+        {d.regimes.length > 0 &&
+          linha(
+            'Forma de tributação declarada',
+            d.regimes
+              .slice(-3)
+              .map((r) => `${r.ano}: ${r.forma.toLowerCase()}`)
+              .join(' · '),
+          )}
+      </dl>
+      <div className="mt-3 space-y-1 text-xs text-sky-900">
+        {razao.trim() && razao.trim().toUpperCase() !== d.razaoSocial.toUpperCase() && (
+          <p>
+            A razão social digitada é diferente da Receita.{' '}
+            <button type="button" className="cursor-pointer font-semibold underline" onClick={onUsarRazao}>
+              Usar “{d.razaoSocial}”
+            </button>
+          </p>
+        )}
+        {sugerido && sugerido !== regime && (
+          <p className="font-semibold text-amber-700">
+            Pelos dados públicos a empresa está no {NOME_REGIME[sugerido]}, mas o cadastro está como {NOME_REGIME[regime]}. Confira.
+          </p>
+        )}
+        {!sugerido && <p>Não é optante do Simples e a fonte não trouxe a forma de tributação declarada: escolha entre Lucro Presumido e Lucro Real.</p>}
+        {novo && sugerido && sugerido === regime && <p>Regime atual preenchido pelos dados da Receita ({NOME_REGIME[sugerido]}).</p>}
+        {d.mei?.optante && <p className="font-semibold text-amber-700">Empresa enquadrada como MEI (SIMEI): o limite e o recolhimento são diferentes do Simples Nacional.</p>}
+      </div>
+    </div>
   )
 }
