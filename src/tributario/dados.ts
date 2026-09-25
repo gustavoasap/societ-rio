@@ -206,6 +206,7 @@ export interface NcmRegistro {
   ncm: string
   descricao: string | null
   monofasico: boolean | null
+  pis_cofins_zero?: boolean | null // coluna da migration 20260929000000
   st: boolean | null
   reducao: number | null
   aliquota_icms: number | null
@@ -228,7 +229,7 @@ export async function registrarNcms(empresaId: string, produtos: Record<string, 
   }
 }
 
-export type CamposNcm = Pick<NcmRegistro, 'monofasico' | 'st' | 'reducao' | 'aliquota_icms' | 'mva'>
+export type CamposNcm = Pick<NcmRegistro, 'monofasico' | 'pis_cofins_zero' | 'st' | 'reducao' | 'aliquota_icms' | 'mva'>
 
 export async function salvarNcm(empresaId: string, ncm: string, campos: CamposNcm) {
   const { error } = await supabase.from('trib_ncms').upsert({ empresa_id: empresaId, ncm, ...campos, updated_at: new Date().toISOString() }, { onConflict: 'empresa_id,ncm' })
@@ -240,6 +241,7 @@ export function configDosNcms(registros: NcmRegistro[]): Record<string, ConfigNc
   for (const n of registros) {
     const c: ConfigNcm = {}
     if (n.monofasico !== null) c.monofasico = n.monofasico
+    if (n.pis_cofins_zero !== null && n.pis_cofins_zero !== undefined) c.pisCofinsZero = n.pis_cofins_zero
     if (n.st !== null) c.st = n.st
     if (n.reducao !== null) c.reducao = n.reducao
     if (n.aliquota_icms !== null) c.aliquotaIcms = n.aliquota_icms

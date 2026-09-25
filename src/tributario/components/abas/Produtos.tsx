@@ -4,6 +4,7 @@ import { Section } from '../../../components/ui'
 import { naturezaDe } from '../../engine/base'
 import { ncmMonofasico, reducaoIbsCbs, tratamentoNcm } from '../../engine/ncm'
 import { itensStDoNcm, type ItemListaSt } from '../../engine/listaSt'
+import { NOME_TABELA_PC, VERSAO_PC, beneficiosPisCofins, monofasicoPelaTabela } from '../../engine/pisCofinsNcm'
 import type { FonteIcms, PerfilIcmsNcm } from '../../engine/perfilNcm'
 import type { MovimentoLinha, Parametros } from '../../engine/tipos'
 import type { CamposNcm, NcmRegistro } from '../../dados'
@@ -83,7 +84,15 @@ export function Produtos({
     for (const r of registros) if (!m.has(r.ncm)) m.set(r.ncm, { ncm: r.ncm, vendas: 0, entradas: 0 })
     const porNcm = new Map(registros.map((r) => [r.ncm, r]))
     return [...m.values()]
-      .map((x) => ({ ...x, reg: porNcm.get(x.ncm), trat: tratamentoNcm(x.ncm, params.ncms), obs: perfil.get(x.ncm), listaSt: itensStDoNcm(x.ncm) }))
+      .map((x) => ({
+        ...x,
+        reg: porNcm.get(x.ncm),
+        trat: tratamentoNcm(x.ncm, params.ncms),
+        obs: perfil.get(x.ncm),
+        listaSt: itensStDoNcm(x.ncm),
+        // regras que só citam o capítulo no texto (ex.: "almofadas antiescaras ... Capítulos 39, 40, 63, 94") não localizam o produto
+        pc: { mono: monofasicoPelaTabela(x.ncm), beneficios: beneficiosPisCofins(x.ncm).filter((r) => !r.soDescricao) },
+      }))
       .sort((a, b) => b.vendas - a.vendas || b.entradas - a.entradas)
   }, [linhas, registros, params.cfopNatureza, params.ncms, perfil])
 
@@ -102,6 +111,7 @@ export function Produtos({
 
   const campos = (x: (typeof lista)[number]): Campos => ({
     monofasico: x.reg?.monofasico ?? null,
+    pis_cofins_zero: x.reg?.pis_cofins_zero ?? null,
     st: x.reg?.st ?? null,
     reducao: x.reg?.reducao ?? null,
     aliquota_icms: x.reg?.aliquota_icms ?? null,
@@ -149,8 +159,11 @@ export function Produtos({
           Ela é usada no ICMS das vendas internas, na ST e na antecipação das entradas. Como referência, aparece a alíquota destacada nas notas (vendas internas da empresa ou
           compras internas de fornecedores do regime normal): clique em “usar” para adotá-la. Informe também ICMS-ST e MVA dos produtos com substituição tributária. O aviso
           “Lista de ST” indica que o NCM consta no Convênio ICMS 142/2018 (lista nacional de mercadorias que podem estar sujeitas à ST, com o CEST); se a ST se aplica
-          depende da UF e, entre estados, de protocolo ou convênio — confira e marque. "Padrão" é a sugestão do sistema: monofásico pelas Leis 10.147/2000, 10.485/2002 e 13.097/2015; redução de IBS/CBS
-          pelo Anexo VIII (60%) e art. 147 (alíquota zero) da LC 214/2025. Ajuste o que for diferente para este cliente — vale na hora para todos os cálculos.
+          depende da UF e, entre estados, de protocolo ou convênio — confira e marque. PIS/COFINS monofásico: “Padrão” segue as tabelas 4.3.10, 4.3.11 e 4.3.12 da EFD-Contribuições vigentes (conferidas no portal SPED em{' '}
+          {VERSAO_PC.split('-').reverse().join('/')}); autopeças (Lei 10.485/2002, Anexos I e II) não têm NCM na tabela — marque manualmente. Alíquota zero, isenção, suspensão
+          ou não incidência (tabelas 4.3.13 a 4.3.16) aparecem como aviso, porque muitas dependem de condições: marque quando se aplicarem — valem no Presumido e no Real
+          (sem débito na venda e sem crédito na compra; no Simples não reduzem o DAS). Redução de IBS/CBS pelo Anexo VIII (60%) e art. 147 (alíquota zero) da LC
+          214/2025. Ajuste o que for diferente para este cliente — vale na hora para todos os cálculos.
         </p>
         <div className="relative mb-3">
           <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -165,7 +178,7 @@ export function Produtos({
                 <th className="px-3 py-2.5 text-right">Vendas</th>
                 <th className="px-3 py-2.5 text-right">Compras</th>
                 <th className="px-3 py-2.5">ICMS interno %</th>
-                <th className="px-3 py-2.5">PIS/COFINS monofásico</th>
+                <th className="px-3 py-2.5">PIS/COFINS (EFD-Contribuições)</th>
                 <th className="px-3 py-2.5">ICMS-ST</th>
                 <th className="px-3 py-2.5">MVA %</th>
                 <th className="px-3 py-2.5">Redução IBS/CBS</th>
@@ -202,7 +215,31 @@ export function Produtos({
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      <SimNao valor={c.monofasico} padrao={ncmMonofasico(x.ncm)} onChange={(v) => onMudar(x.ncm, { ...c, monofasico: v })} />
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[0.6875rem] font-semibold text-slate-500">Monofásico</label>
+                        <SimNao valor={c.monofasico} padrao={ncmMonofasico(x.ncm)} onChange={(v) => onMudar(x.ncm, { ...c, monofasico: v })} />
+                        {x.pc.mono && (
+                          <span className="w-36 text-[0.6875rem] leading-tight text-sky-700" title={`Tabela ${x.pc.mono.tabela} — ${x.pc.mono.descricao} (natureza ${x.pc.mono.natureza})`}>
+                            Tab. {x.pc.mono.tabela}: {x.pc.mono.descricao.length > 38 ? `${x.pc.mono.descricao.slice(0, 36)}…` : x.pc.mono.descricao}
+                          </span>
+                        )}
+                        <label className="mt-1 text-[0.6875rem] font-semibold text-slate-500">Alíq. zero / isenção / suspensão</label>
+                        <SimNao valor={c.pis_cofins_zero ?? null} padrao={false} onChange={(v) => onMudar(x.ncm, { ...c, pis_cofins_zero: v })} />
+                        {x.pc.beneficios.length > 0 && !x.trat.monofasico && (
+                          <span
+                            className="w-36 rounded-md bg-amber-50 px-1.5 py-1 text-[0.6875rem] leading-tight text-amber-800 ring-1 ring-amber-200"
+                            title={x.pc.beneficios.map((r) => `Tabela ${r.tabela} (${NOME_TABELA_PC[r.tabela]}, CST ${r.cst}, natureza ${r.natureza}): ${r.descricao}`).join('\n') + '\n\nMuitas regras têm condições (destinatário, uso, embalagem). Confira antes de marcar.'}
+                          >
+                            <span className="font-semibold">{NOME_TABELA_PC[x.pc.beneficios[0].tabela]}</span> (tab. {x.pc.beneficios[0].tabela}
+                            {x.pc.beneficios.length > 1 ? ` +${x.pc.beneficios.length - 1}` : ''})
+                            {c.pis_cofins_zero === null && (
+                              <button type="button" className="block cursor-pointer font-semibold underline" onClick={() => onMudar(x.ncm, { ...c, pis_cofins_zero: true })}>
+                                marcar
+                              </button>
+                            )}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <SimNao

@@ -1,30 +1,19 @@
 // Tratamentos tributários identificados pelo NCM do produto.
 // As listas abaixo cobrem os casos mais comuns; o contador pode ajustar o percentual nos parâmetros da empresa.
 
-import type { Parametros } from './tipos'
+import { monofasicoPelaTabela } from './pisCofinsNcm'
+import type { ConfigNcm, Parametros } from './tipos'
 
 const limpar = (ncm: string) => ncm.replace(/\D/g, '')
 
 /**
  * PIS/COFINS monofásico — a revenda tem alíquota zero (e no Simples os percentuais de PIS/COFINS são excluídos do DAS,
- * LC 123, art. 18, §4º-A, I).
- * - Lei 10.147/2000: farmacêuticos (3001, 3003, 3004, 3002.10, 3005, 3006.30...), perfumaria, higiene pessoal e cosméticos
- *   (3303 a 3307, 3401.11.90 ex, 3401.20.10, 9603.21.00).
- * - Lei 10.485/2002: pneus e câmaras de ar (4011, 4013) — autopeças constam de anexos próprios (verificar caso a caso).
- * - Lei 13.097/2015: bebidas frias (2106.90.10 ex 02, 2201, 2202, 2203, 2204...).
- * - Lei 9.718/1998 e 10.865/2004: combustíveis (2710, 2711, 2207.10, 2207.20).
+ * LC 123, art. 18, §4º-A, I). Pelas tabelas 4.3.10, 4.3.11 e 4.3.12 da EFD-Contribuições vigentes (Leis 10.147/2000,
+ * 10.485/2002, 13.097/2015, 9.718/1998 e 11.116/2005). Autopeças (Lei 10.485, Anexos I e II) não têm NCM na tabela:
+ * marque manualmente na aba Produtos.
  */
-const MONOFASICO: string[] = [
-  '3001', '3002', '3003', '3004', '3005', '3006',
-  '3303', '3304', '3305', '3306', '3307', '34011190', '34012010', '96032100',
-  '4011', '4013',
-  '2201', '2202', '2203', '2204', '2205', '2206', '2208',
-  '2710', '2711', '220710', '220720',
-]
-
 export function ncmMonofasico(ncm: string): boolean {
-  const n = limpar(ncm)
-  return n.length >= 4 && MONOFASICO.some((pref) => n.startsWith(pref))
+  return monofasicoPelaTabela(ncm) !== null
 }
 
 /**
@@ -47,11 +36,13 @@ export function reducaoIbsCbs(ncm: string): number {
 /** Tratamento efetivo do NCM na empresa: o que o contador definiu, senão o padrão do sistema. */
 export function tratamentoNcm(
   ncm: string,
-  config: Record<string, { monofasico?: boolean; st?: boolean; reducao?: number; aliquotaIcms?: number; mva?: number }>,
+  config: Record<string, ConfigNcm>,
 ) {
   const c = config[limpar(ncm)] ?? {}
   return {
     monofasico: c.monofasico ?? ncmMonofasico(ncm),
+    /** alíquota zero/isenção/suspensão de PIS/COFINS: só quando o contador marca (as tabelas 4.3.13 a 4.3.16 têm condições) */
+    pisCofinsZero: c.pisCofinsZero ?? false,
     st: c.st ?? false,
     reducao: c.reducao !== undefined ? c.reducao / 100 : reducaoIbsCbs(ncm),
     /** alíquota interna específica do NCM (%) — null = alíquota modal do estabelecimento */
