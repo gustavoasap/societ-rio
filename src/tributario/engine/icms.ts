@@ -43,7 +43,7 @@ export function icmsDaVenda(
   if (interna) {
     const aliquotaNcm = !params.ufAliquotasNcm || params.ufAliquotasNcm === origem.uf ? t?.aliquotaIcms : null
     // mercadoria sujeita a ST: o ICMS da cadeia já foi recolhido na entrada — sem débito na venda interna
-    const aliquota = t?.st ? 0 : (origem.cargaInterna ?? aliquotaNcm ?? origem.aliquotaInterna)
+    const aliquota = t?.st && params.papelSt !== 'substituto' ? 0 : (origem.cargaInterna ?? aliquotaNcm ?? origem.aliquotaInterna)
     return { destino, interna, aliquota, proprio: (v * aliquota) / 100, difal: 0, aliquotaDestino: aliquota }
   }
   const inter = aliquotaInterestadual(origemDoCst(l.cst), origem.uf, destino)

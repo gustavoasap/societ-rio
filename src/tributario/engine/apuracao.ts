@@ -288,7 +288,7 @@ export function ibsCbsRegular(b: BaseMensal, ctx: Contexto, regras: RegrasAno, i
   const fatorSemCredito = fr_(b.comprasMei + b.comprasPF)
   const fatorRegular = Math.max(0, 1 - fatorSimples - fatorSemCredito)
   const fatorPresumido = fr_(b.comprasPresumido)
-  const tributosCompra = b.icmsCompras + b.ipiCompras + b.stCompras // destacados pelos fornecedores do regime normal
+  const tributosCompra = b.icmsCompras + b.icmsComprasSemCredito + b.ipiCompras + b.stCompras // destacados pelos fornecedores do regime normal
   const comprasRegularBruto = Math.max(0, comprasLiquidas * fatorRegular - tributosCompra)
   // Repasse: o fornecedor do regime normal deixa de embutir PIS/COFINS — 3,65% (Presumido) ou o % dos parâmetros (Real/não informado)
   const pcNormal = p.pisCofinsFornecedores / 100
@@ -563,7 +563,7 @@ function pisCofinsNaoCumulativo(b: BaseMensal, p: Parametros, mono: number, icms
   // energia, fretes e armazenagem na venda (art. 3º, III e IX) e despesas creditáveis (aluguéis PJ etc.).
   // pessoa física não gera crédito (Lei 10.833, art. 3º, §3º, I); optante do Simples e MEI geram crédito integral
   const comprasNaoMono = Math.max(0, b.compras - b.comprasMonofasico - b.devolucoesCompra - b.comprasPF)
-  const icmsProp = b.compras ? b.icmsCompras * (comprasNaoMono / b.compras) : 0
+  const icmsProp = b.compras ? (b.icmsCompras + b.icmsComprasSemCredito) * (comprasNaoMono / b.compras) : 0
   const baseCreditoCompras = Math.max(0, comprasNaoMono - icmsProp)
   const baseCreditoDespesas = b.energia + b.fretes + b.servicosTomadosCreditaveis + p.despesasCreditaveisMensais
   const debito = base * 0.0925

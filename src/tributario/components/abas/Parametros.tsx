@@ -217,6 +217,20 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
               <span className="block text-xs text-slate-500">LC 123, art. 13, §1º, XIII, "a" e "g"; STF Tema 517 — conforme a legislação da UF.</span>
             </span>
           </label>
+          <Field label="Papel da empresa na ST">
+            <Select
+              value={params.papelSt}
+              onChange={(v) => set('papelSt', v as P['papelSt'])}
+              opcoes={[
+                { value: 'substituido', label: 'Substituída (revenda)' },
+                { value: 'substituto', label: 'Substituta (indústria/importador)' },
+              ]}
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              Substituída: produto com ST não tem débito na venda interna nem crédito do ICMS na compra (LC 123, art. 18, §4º-A, no Simples). Substituta: mantém o ICMS
+              próprio e retém a ST do cliente, cobrada por fora (LC 87/1996, arts. 6º e 8º).
+            </span>
+          </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Cenário de alíquotas">

@@ -3,6 +3,8 @@ import { ArrowRightLeft, Building2, FlaskConical, Landmark, MapPinned, PackageSe
 import { Section, Select } from '../../../components/ui'
 import { apurar } from '../../engine/apuracao'
 import { montarBases } from '../../engine/base'
+import { itensStDoNcm } from '../../engine/listaSt'
+import { tratamentoNcm } from '../../engine/ncm'
 import { icmsEntradasPorNcm, icmsVendasInternasPorAliquota, icmsVendasPorUf } from '../../engine/icms'
 import { ICMS_INTERNO_UF, UFS, aliquotaInterestadual } from '../../engine/tabelas'
 import type { CenarioIcms, RegimeId } from '../../engine/tipos'
@@ -59,6 +61,19 @@ export function Icms({ d }: { d: DadosAnalise }) {
     [d.linhas, semCenario, d.dadosEstab, d.eVenda],
   )
   const vendasInternas = faixas.reduce((s, x) => s + x.vendas, 0)
+  // NCMs movimentados que constam na lista nacional de ST (Conv. ICMS 142/2018) mas não estão marcados com ST
+  const listaSt = useMemo(() => {
+    const m = new Map<string, { ncm: string; valor: number; segmento: string; cest: string }>()
+    for (const l of d.linhas) {
+      if (!l.ncm || !(d.eVenda(l) || d.eCompra(l)) || tratamentoNcm(l.ncm, params.ncms).st) continue
+      const itens = itensStDoNcm(l.ncm)
+      if (!itens.length) continue
+      const x = m.get(l.ncm) ?? { ncm: l.ncm, valor: 0, segmento: itens[0].segmento, cest: itens[0].cest }
+      x.valor += l.valor_contabil
+      m.set(l.ncm, x)
+    }
+    return [...m.values()].sort((a, b) => b.valor - a.valor)
+  }, [d, params.ncms])
   const setCen = (c: Partial<CenarioIcms>) => d.onParams({ ...params, cenarioIcms: { ...cen, ...c } })
   const origemTab = origemTabela === 'cenario' ? cen.uf : ufEmpresa
   const ufsVendidas = new Set(porUf.map((x) => x.uf))
@@ -201,6 +216,27 @@ export function Icms({ d }: { d: DadosAnalise }) {
           ou 8 (Res. SF 13/2012). Internas: alíquota modal de cada UF (RJ 18% + 2% de FECP); alíquotas específicas por produto são informadas na aba Produtos (NCM).
         </p>
       </Section>
+
+      {listaSt.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            {listaSt.length} NCM{listaSt.length > 1 ? 's' : ''} da empresa consta{listaSt.length > 1 ? 'm' : ''} na lista nacional de ST (Convênio ICMS 142/2018) e não está
+            {listaSt.length > 1 ? 'ão' : ''} marcado{listaSt.length > 1 ? 's' : ''} com ST na aba Produtos (NCM):
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {listaSt.slice(0, 8).map((x) => (
+              <li key={x.ncm}>
+                <strong>{x.ncm}</strong> — {x.segmento} (CEST {x.cest}) · {moeda(x.valor)} movimentados
+              </li>
+            ))}
+            {listaSt.length > 8 && <li>e mais {listaSt.length - 8}.</li>}
+          </ul>
+          <p className="mt-1 text-xs">
+            Estar na lista não obriga a ST: confira se a UF da empresa adota o regime para o item e, nas compras e vendas interestaduais, se há protocolo ou convênio com a
+            outra UF. Marcando ST, a venda interna fica sem débito e a entrada interestadual sem retenção passa a calcular ICMS-ST com a MVA.
+          </p>
+        </div>
+      )}
 
       <Section title="ICMS nas entradas interestaduais: ST (MVA) e antecipação" icone={PackageSearch} cor="violet">
         <p className="-mt-2 mb-3 text-sm text-slate-500">

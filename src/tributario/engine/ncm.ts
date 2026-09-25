@@ -1,6 +1,8 @@
 // Tratamentos tributários identificados pelo NCM do produto.
 // As listas abaixo cobrem os casos mais comuns; o contador pode ajustar o percentual nos parâmetros da empresa.
 
+import type { Parametros } from './tipos'
+
 const limpar = (ncm: string) => ncm.replace(/\D/g, '')
 
 /**
@@ -58,3 +60,6 @@ export function tratamentoNcm(
     mva: c.mva ?? null,
   }
 }
+
+/** Mercadoria com ST em que a empresa é substituída: sem débito na venda interna, sem crédito do ICMS próprio na compra. */
+export const stSubstituido = (ncm: string, params: Pick<Parametros, 'ncms' | 'papelSt'>) => !!ncm && params.papelSt !== 'substituto' && tratamentoNcm(ncm, params.ncms).st

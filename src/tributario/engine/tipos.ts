@@ -124,6 +124,11 @@ export interface Parametros {
   antecipacaoSimples: boolean
   /** Simulação de ICMS: benefício fiscal ou mudança de UF do estabelecimento */
   cenarioIcms: CenarioIcms
+  /**
+   * Papel da empresa na ST: substituída (revenda — o ICMS da cadeia já foi retido: sem débito na venda interna e sem crédito do
+   * ICMS próprio da compra) ou substituta (indústria/importador — mantém o ICMS próprio e retém a ST do cliente, cobrada por fora).
+   */
+  papelSt: 'substituido' | 'substituto'
   /** UF a que se referem as alíquotas internas por NCM (a da matriz); em outra UF (cenário ou filial) vale a modal. Calculado no painel. */
   ufAliquotasNcm?: string
   /** Observações do contador impressas no relatório ao cliente */
@@ -185,6 +190,7 @@ export const PARAMETROS_PADRAO: Parametros = {
   antecipacaoSimples: true,
   cenarioIcms: { ativo: false, descricao: '', uf: 'SC', aliquotaInterna: null, cargaInterestadual: null, manterCreditos: true },
   observacoesRelatorio: '',
+  papelSt: 'substituido',
 }
 
 export const comPadrao = (p: Partial<Parametros> | null | undefined): Parametros => ({ ...PARAMETROS_PADRAO, ...(p ?? {}) })
@@ -224,7 +230,8 @@ export interface BaseMensal {
   comprasPF: number
   comprasPresumido: number
   comprasMonofasico: number
-  icmsCompras: number
+  icmsCompras: number // ICMS destacado nas compras que gera crédito
+  icmsComprasSemCredito: number // ICMS próprio destacado nas compras de mercadoria com ST (substituída): custo, sem crédito
   ipiCompras: number
   stCompras: number
   devolucoesCompra: number
@@ -280,6 +287,7 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   comprasPresumido: 0,
   comprasMonofasico: 0,
   icmsCompras: 0,
+  icmsComprasSemCredito: 0,
   ipiCompras: 0,
   stCompras: 0,
   devolucoesCompra: 0,

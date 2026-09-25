@@ -89,3 +89,31 @@ describe('ICMS por produto (NCM) pelas notas', () => {
     ])
   })
 })
+
+describe('substituição tributária', () => {
+  it('lista nacional de ST (Conv. ICMS 142/2018) por posição ou código do NCM', async () => {
+    const { itensStDoNcm } = await import('./listaSt')
+    const perfume = itensStDoNcm('33030010')
+    expect(perfume.map((i) => i.segmento)).toContain('Produtos de perfumaria, higiene pessoal e cosméticos')
+    expect(perfume).toContainEqual(expect.objectContaining({ cest: '28.001.00', segmento: 'Venda de mercadorias pelo sistema porta a porta' }))
+    expect(itensStDoNcm('39171010').some((i) => i.segmento === 'Autopeças')).toBe(true) // posição 3917
+    expect(itensStDoNcm('48189090')[0]).toMatchObject({ cest: '20.047.00' }) // papel toalha: lista pelo NCM
+    expect(itensStDoNcm('94049000')).toEqual([])
+  })
+
+  it('substituída: sem débito na venda interna e sem crédito do ICMS da compra; substituta mantém os dois', async () => {
+    const { montarBases } = await import('./base')
+    const estab = () => ({ uf: 'SP', aliquota: 18 })
+    const linhas = [linha({ ncm: '22021000', icms: 0, bc_icms: 0 }), linha({ tipo: 'entrada', cfop: '1403', ncm: '22021000', icms: 120, cst: '060', valor_contabil: 600 })]
+    const base = { ...PARAMETROS_PADRAO, ncms: { '22021000': { st: true } } }
+    const [sub] = montarBases(linhas, base, estab)
+    expect(sub.icmsVendasInternas).toBe(0)
+    expect(sub.icmsCompras).toBe(0)
+    expect(sub.icmsComprasSemCredito).toBe(120)
+    expect(sub.vendasSt).toBe(1000)
+    const [tto] = montarBases(linhas, { ...base, papelSt: 'substituto' }, estab)
+    expect(tto.icmsVendasInternas).toBe(180)
+    expect(tto.icmsCompras).toBe(120)
+    expect(tto.vendasSt).toBe(0)
+  })
+})
