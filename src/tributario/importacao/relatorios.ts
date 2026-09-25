@@ -3,6 +3,7 @@
 // - Resumo do Registro de Entradas/Saídas por CFOP
 // - Registro de Serviços — Detalhado (tomados ou prestados)
 // As linhas são agregadas por competência × CFOP × NCM × UF × CST × serviço, que é o que o motor precisa.
+import type { ItemEstoque } from '../engine/estoque'
 import { somarMeses } from '../engine/base'
 import type { Destinatario, MovimentoLinha, TipoMovimento } from '../engine/tipos'
 import { lerXlsx, type Celula } from './xlsx'
@@ -44,6 +45,8 @@ export interface RelatorioLido {
   produtos: Record<string, string>
   /** CNPJ -> dados do cliente/fornecedor (pessoas físicas ficam agrupadas) */
   parceiros: Record<string, Parceiro>
+  /** Itens por produto (relatórios detalhados de mercadorias): base do estoque e do CMV pelo custo médio */
+  itens: ItemEstoque[]
   /** Resumos que cobrem mais de um mês precisam de uma competência (ou rateio) escolhida pelo usuário. */
   exigeCompetencia: boolean
   avisos: string[]
@@ -142,6 +145,12 @@ function acharCabecalho(celulas: Celula[][], obrigatorios: string[]) {
   return null
 }
 
+/** CST de PIS com 2 dígitos ('' quando ausente). */
+const cstPis = (v: Celula | undefined) => {
+  const d = texto(v).replace(/\D/g, '')
+  return d ? d.padStart(2, '0').slice(-2) : ''
+}
+
 /** Busca a coluna pelo primeiro nome (normalizado) que existir. */
 const coluna = (indice: Map<string, number>, ...nomes: string[]) => {
   for (const n of nomes) {
@@ -157,7 +166,7 @@ class Agregador {
   valorTotal = 0
 
   somar(chave: Omit<LinhaImportada, 'itens' | 'valor_contabil' | 'bc_icms' | 'icms' | 'icms_st' | 'ipi' | 'pis' | 'cofins' | 'iss' | 'difal' | 'retencoes'>, v: Partial<LinhaImportada>) {
-    const k = [chave.competencia, chave.tipo, chave.cfop, chave.ncm, chave.uf, chave.cst, chave.servico, chave.destinatario, chave.parceiro].join('|')
+    const k = [chave.competencia, chave.tipo, chave.cfop, chave.ncm, chave.uf, chave.cst, chave.cst_pis ?? '', chave.servico, chave.destinatario, chave.parceiro].join('|')
     const atual =
       this.mapa.get(k) ??
       ({ ...chave, itens: 0, valor_contabil: 0, bc_icms: 0, icms: 0, icms_st: 0, ipi: 0, pis: 0, cofins: 0, iss: 0, difal: 0, retencoes: 0 } as LinhaImportada)
@@ -194,7 +203,14 @@ function registrarParceiro(parceiros: Record<string, Parceiro>, documento: Celul
   return d
 }
 
-function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[], produtos: Record<string, string>, parceiros: Record<string, Parceiro>) {
+function lerDetalhado(
+  celulas: Celula[][],
+  tipo: TipoMovimento,
+  avisos: string[],
+  produtos: Record<string, string>,
+  parceiros: Record<string, Parceiro>,
+  itens: Map<string, ItemEstoque>,
+) {
   const cab = acharCabecalho(celulas, ['cfop'])
   if (!cab) throw new Error('Cabeçalho com a coluna CFOP não encontrado.')
   const ix = cab.indice
@@ -203,6 +219,7 @@ function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]
     cfop: coluna(ix, 'CFOP'),
     ncm: coluna(ix, 'Código do NCM', 'NCM'),
     cst: coluna(ix, 'CST ICMS', 'CST', 'CSOSN'),
+    cstPis: coluna(ix, 'CST PIS'),
     uf: coluna(ix, 'Uf Forn/Cliente', 'UF', 'UF Destinatário', 'UF Cliente'),
     total: coluna(ix, 'Vr Total Item', 'Valor Total', 'Vr. Total'),
     contabil: coluna(ix, 'Vr. Contábil', 'Valor Contábil'),
@@ -223,6 +240,10 @@ function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]
     produto: coluna(ix, 'Nome Produto', 'Descrição', 'Produto'),
     nome: coluna(ix, 'Nome Forn/Cliente', 'Nome Fornecedor/Cliente', 'Cliente', 'Fornecedor'),
     municipio: coluna(ix, 'Municipio Forn/Cliente', 'Município Forn/Cliente', 'Município'),
+    codigo: coluna(ix, 'Código', 'Código Produto', 'Cód. Produto'),
+    ean: coluna(ix, 'Código EAN', 'EAN', 'GTIN'),
+    unidade: coluna(ix, 'Unid.', 'Unidade', 'Un'),
+    quantidade: coluna(ix, 'Quantidade', 'Qtde', 'Qtd'),
   }
   if (c.data < 0) throw new Error('Coluna de data não encontrada no relatório detalhado.')
   if (c.total < 0 && c.contabil < 0) throw new Error('Coluna de valor não encontrada no relatório detalhado.')
@@ -245,6 +266,30 @@ function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]
     const ncm = texto(l[c.ncm]).replace(/\D/g, '')
     if (ncm && !produtos[ncm] && c.produto >= 0) produtos[ncm] = texto(l[c.produto])
     const uf = texto(l[c.uf]).toUpperCase()
+    // item do produto para o estoque (quantidade e custo/valor), quando o relatório traz produto e quantidade
+    if (c.quantidade >= 0 && (tipo === 'entrada' || tipo === 'saida')) {
+      const codigo = c.codigo >= 0 ? texto(l[c.codigo]) : ''
+      const ean = c.ean >= 0 ? texto(l[c.ean]).replace(/\D/g, '') : ''
+      const qtd = v(c.quantidade)
+      if ((codigo || ean) && qtd) {
+        const k = [comp, tipo, cfop, codigo, ean].join('|')
+        const it = itens.get(k) ?? {
+          competencia: comp,
+          tipo,
+          cfop,
+          codigo,
+          ean,
+          descricao: c.produto >= 0 ? texto(l[c.produto]) : '',
+          ncm,
+          unidade: c.unidade >= 0 ? texto(l[c.unidade]) : '',
+          quantidade: 0,
+          valor: 0,
+        }
+        it.quantidade += qtd
+        it.valor += valor
+        itens.set(k, it)
+      }
+    }
     const destinatario = c.documento >= 0 ? tipoDestinatario(l[c.documento], c.ie >= 0 ? l[c.ie] : null) : ''
     ag.somar(
       {
@@ -254,6 +299,7 @@ function lerDetalhado(celulas: Celula[][], tipo: TipoMovimento, avisos: string[]
         ncm,
         uf,
         cst: texto(l[c.cst]).replace(/\D/g, ''),
+        cst_pis: cstPis(c.cstPis >= 0 ? l[c.cstPis] : undefined),
         servico: '',
         destinatario,
         parceiro: registrarParceiro(parceiros, l[c.documento], destinatario, l[c.nome], uf, l[c.municipio]),
@@ -361,6 +407,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
   const avisos: string[] = []
   const produtos: Record<string, string> = {}
   const parceiros: Record<string, Parceiro> = {}
+  const itens = new Map<string, ItemEstoque>()
 
   let tipo: TipoRelatorio
   if (tn.includes('servico')) tipo = 'servicos'
@@ -387,7 +434,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
           : 'Período do resumo não identificado: escolha a competência.',
       )
   } else {
-    ag = lerDetalhado(celulas, tipo === 'saidas_detalhado' ? 'saida' : 'entrada', avisos, produtos, parceiros)
+    ag = lerDetalhado(celulas, tipo === 'saidas_detalhado' ? 'saida' : 'entrada', avisos, produtos, parceiros, itens)
   }
 
   const linhas = ag.linhas()
@@ -408,6 +455,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
     valorTotal: Math.round(ag.valorTotal * 100) / 100,
     produtos,
     parceiros,
+    itens: [...itens.values()].map((i) => ({ ...i, quantidade: Math.round(i.quantidade * 10000) / 10000, valor: Math.round(i.valor * 100) / 100 })),
     exigeCompetencia,
     avisos,
   }

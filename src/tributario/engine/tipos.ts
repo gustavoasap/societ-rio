@@ -22,6 +22,7 @@ export interface MovimentoLinha {
   ncm: string
   uf: string
   cst: string
+  cst_pis?: string // CST de PIS da nota (04 = monofásico na revenda, 05 = ST, 06 = alíquota zero...) — importações novas
   servico: string // item da lista da LC 116 (serviços)
   destinatario: Destinatario // tipo do cliente/fornecedor da nota
   parceiro: string // CNPJ do cliente/fornecedor (vazio para pessoa física ou não informado)
@@ -60,6 +61,18 @@ export interface ConfigNcm {
   mva?: number // MVA original da substituição tributária (%)
 }
 
+/**
+ * Regime especial de ICMS do estabelecimento (TTD, crédito presumido, Compete etc.): carga efetiva nas saídas no lugar da
+ * alíquota e, em geral, sem aproveitamento dos créditos das entradas (crédito presumido substitui os créditos efetivos).
+ */
+export interface BeneficioIcms {
+  ativo: boolean
+  descricao: string // ex.: "TTD 409 — crédito presumido"
+  cargaInterna: number | null // % efetivo nas vendas internas (null = alíquota normal)
+  cargaInterestadual: number | null // % efetivo nas vendas interestaduais (null = 4/7/12%)
+  aproveitaCreditos: boolean // false = ICMS das compras vira custo (vedado o crédito efetivo)
+}
+
 export interface Estabelecimento {
   id: string
   cnpj: string
@@ -68,6 +81,7 @@ export interface Estabelecimento {
   uf: string
   municipio: string | null
   aliquota_icms: number | null
+  beneficio_icms?: BeneficioIcms | null
 }
 
 /** Parâmetros do planejamento, guardados por empresa. */
@@ -132,6 +146,18 @@ export interface Parametros {
   papelSt: 'substituido' | 'substituto'
   /** UF a que se referem as alíquotas internas por NCM (a da matriz); em outra UF (cenário ou filial) vale a modal. Calculado no painel. */
   ufAliquotasNcm?: string
+  /** PGDAS: de onde vem a receita segregada de monofásico (PIS/COFINS) — NCM (tabelas do SPED), CST de PIS da nota (04) ou sem segregação */
+  pgdasMonofasico: 'ncm' | 'notas' | 'nao'
+  /** PGDAS: de onde vem a receita segregada com ICMS-ST — CST/CSOSN das notas de venda, NCM marcado ou sem segregação */
+  pgdasSt: 'notas' | 'ncm' | 'nao'
+  /** Valores do PGDAS-D transmitido, por competência, para conferência; RBT12 informado substitui o calculado */
+  pgdas: Record<string, { receita?: number; rbt12?: number; das?: number }>
+  /** CMV: custo médio ponderado pelo estoque (itens dos relatórios detalhados) ou compras líquidas do período */
+  metodoCmv: 'estoque' | 'compras'
+  /** Tratamento de cada CFOP no estoque (sobrepõe a natureza): compra, venda, devoluções ou neutro */
+  cfopEstoque: Record<string, 'compra' | 'dev_compra' | 'venda' | 'dev_venda' | 'neutro'>
+  /** CMV mensal calculado pelo estoque (custo médio) — preenchido no painel, não é gravado */
+  cmvEstoque?: Record<string, number>
   /** Observações do contador impressas no relatório ao cliente */
   observacoesRelatorio: string
 }
@@ -192,6 +218,11 @@ export const PARAMETROS_PADRAO: Parametros = {
   cenarioIcms: { ativo: false, descricao: '', uf: 'SC', aliquotaInterna: null, cargaInterestadual: null, manterCreditos: true },
   observacoesRelatorio: '',
   papelSt: 'substituido',
+  pgdasMonofasico: 'ncm',
+  pgdasSt: 'notas',
+  pgdas: {},
+  metodoCmv: 'estoque',
+  cfopEstoque: {},
 }
 
 export const comPadrao = (p: Partial<Parametros> | null | undefined): Parametros => ({ ...PARAMETROS_PADRAO, ...(p ?? {}) })
@@ -209,8 +240,10 @@ export interface BaseMensal {
   difalCalc: number // DIFAL calculado para não contribuintes (alíquota interna da UF de destino − interestadual)
   vendasComNcm: number // vendas com NCM informado (base das frações abaixo)
   vendasMonofasico: number
+  vendasMonofasicoNotas: number // vendas com CST de PIS 04 (monofásico, revenda a alíquota zero) na nota
   vendasPisCofinsZero: number // alíquota zero/isenção/suspensão de PIS/COFINS (não afeta o DAS)
   vendasSt: number
+  vendasStNotas: number // vendas com ST pela CST/CSOSN da própria nota (CSOSN 201/202/203/500; CST 10/30/60/70)
   vendasReducao: number // Σ valor × fração de redução de IBS/CBS
   vendasComDestinatario: number
   vendasB2B: number // vendas a PJ contribuinte (aproveitam crédito)
@@ -227,6 +260,8 @@ export interface BaseMensal {
   outrasReceitas: number
   icmsSaidas: number // ICMS efetivamente destacado nas saídas (informativo)
   compras: number // revenda + insumos (valor contábil)
+  cmvEstoque: number // CMV do mês pelo custo médio ponderado (estoque)
+  temCmvEstoque: number // 1 quando o CMV do mês vem do estoque (somado/escalado junto com os demais campos)
   comprasFornecedorSimples: number
   comprasMei: number
   comprasPF: number
@@ -267,8 +302,10 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   difalCalc: 0,
   vendasComNcm: 0,
   vendasMonofasico: 0,
+  vendasMonofasicoNotas: 0,
   vendasPisCofinsZero: 0,
   vendasSt: 0,
+  vendasStNotas: 0,
   vendasReducao: 0,
   vendasComDestinatario: 0,
   vendasB2B: 0,
@@ -285,6 +322,8 @@ export const BASE_VAZIA = (competencia: string): BaseMensal => ({
   outrasReceitas: 0,
   icmsSaidas: 0,
   compras: 0,
+  cmvEstoque: 0,
+  temCmvEstoque: 0,
   comprasFornecedorSimples: 0,
   comprasMei: 0,
   comprasPF: 0,
@@ -345,7 +384,17 @@ export interface ResultadoMes {
   tributos: Tributos
   total: number
   /** Simples: dados do PGDAS do mês */
-  simples?: { rbt12: number; proporcional: boolean; faixa: number; aliquota: number; das: number }
+  simples?: {
+    rbt12: number
+    proporcional: boolean
+    rbt12Declarado?: boolean // RBT12 informado do PGDAS transmitido
+    faixa: number
+    efetiva: number // alíquota efetiva da tabela: (RBT12 × nominal − dedução) ÷ RBT12
+    aliquota: number // DAS ÷ receita (depois das segregações)
+    receitaMonofasico: number
+    receitaSt: number
+    das: number
+  }
 }
 
 /** Valores para montar a DRE de cada regime (tudo em R$ no período). */

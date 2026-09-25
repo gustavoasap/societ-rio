@@ -1,7 +1,7 @@
 // Referência de ICMS de cada NCM nas próprias notas da empresa (alíquota interna praticada e ST).
 // Não entra no cálculo: a alíquota por NCM é informada pelo contador; isto só aparece como referência na aba Produtos.
 import { naturezaDe } from './base'
-import type { Natureza } from './cfop'
+import { cstComSt, type Natureza } from './cfop'
 import type { MovimentoLinha } from './tipos'
 
 export type FonteIcms = 'saidas' | 'entradas'
@@ -18,17 +18,7 @@ export interface PerfilIcmsNcm {
   fonteSt: FonteIcms | null
 }
 
-/**
- * Situação tributária do ICMS no relatório: 3 dígitos = origem + CST (regime normal); 4 dígitos = origem + CSOSN (Simples).
- * Indica se há ST na operação (retida agora ou cobrada anteriormente) — Convênio SINIEF s/nº de 1970, Anexo (tabelas B e CSOSN).
- */
-export function cstComSt(cst: string): boolean | null {
-  const c = cst.replace(/\D/g, '')
-  if (c.length === 4) return ['201', '202', '203', '500'].includes(c.slice(1))
-  if (c.length === 3) return ['10', '30', '60', '70'].includes(c.slice(1))
-  if (c.length === 2) return ['10', '30', '60', '70'].includes(c)
-  return null
-}
+export { cstComSt } from './cfop'
 
 /** Nota emitida por contribuinte do regime normal (CST, não CSOSN) — só ela traz o ICMS destacado pela alíquota interna. */
 const regimeNormal = (cst: string) => {

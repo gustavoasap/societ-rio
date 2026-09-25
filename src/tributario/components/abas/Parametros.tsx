@@ -69,6 +69,30 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
             onChange={(v) => set('percentualSt', v)}
             ajuda="Pelo NCM (aba Produtos). Excluído da parcela de ICMS do DAS e do débito de ICMS."
           />
+          <Field label="PGDAS — segregar monofásico (PIS/COFINS)">
+            <Select
+              value={params.pgdasMonofasico}
+              onChange={(v) => set('pgdasMonofasico', v as P['pgdasMonofasico'])}
+              opcoes={[
+                { value: 'ncm', label: 'Pelo NCM (tabelas do SPED)' },
+                { value: 'notas', label: 'Pelas notas (CST de PIS 04)' },
+                { value: 'nao', label: 'Não segregar' },
+              ]}
+            />
+            <span className="mt-1 block text-xs text-slate-500">Como foi (ou deveria ser) declarado no PGDAS-D — LC 123, art. 18, §4º-A, I.</span>
+          </Field>
+          <Field label="PGDAS — segregar ICMS-ST">
+            <Select
+              value={params.pgdasSt}
+              onChange={(v) => set('pgdasSt', v as P['pgdasSt'])}
+              opcoes={[
+                { value: 'notas', label: 'Pelas notas (CSOSN 201-203/500, CST 10/30/60/70)' },
+                { value: 'ncm', label: 'Pelo NCM marcado com ST' },
+                { value: 'nao', label: 'Não segregar' },
+              ]}
+            />
+            <span className="mt-1 block text-xs text-slate-500">Receita com ST sai da parcela de ICMS do DAS.</span>
+          </Field>
         </div>
         <div className="mt-5">
           <div className="mb-2 text-xs font-semibold text-slate-600">Receitas anteriores ao período importado (para o RBT12)</div>

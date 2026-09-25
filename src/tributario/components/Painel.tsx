@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   ArrowLeft,
   Barcode,
+  Boxes,
   BookOpen,
   Calculator,
   CalendarRange,
@@ -25,11 +26,15 @@ import { mascaraCnpj } from '../../lib/format'
 import { apurar, type Contexto } from '../engine/apuracao'
 import { estimarMix, linhaConsiderada, montarBases, naturezaDe, receitaDaBase, type DadosEstab } from '../engine/base'
 import { perfilIcmsPorNcm } from '../engine/perfilNcm'
+import { calcularEstoque, type ConfigProduto, type ItemEstoque } from '../engine/estoque'
 import { projetar } from '../engine/projecao'
 import { ICMS_INTERNO_UF } from '../engine/tabelas'
 import { comPadrao, type Parametros as P, type MovimentoLinha, type RegimeFornecedor, type RegimeId } from '../engine/tipos'
 import {
+  carregarEstoque,
   carregarMovimentos,
+  listarProdutosEstoque,
+  salvarProdutoEstoque,
   configDosNcms,
   listarImportacoes,
   listarNcms,
@@ -51,6 +56,7 @@ import { Apuracao } from './abas/Apuracao'
 import { Comparativo } from './abas/Comparativo'
 import { Creditos } from './abas/Creditos'
 import { Dre } from './abas/Dre'
+import { Estoque } from './abas/Estoque'
 import { Icms } from './abas/Icms'
 import { Importar } from './abas/Importar'
 import { Legislacao } from './abas/Legislacao'
@@ -77,6 +83,7 @@ type Aba =
   | 'relatorio'
   | 'reforma'
   | 'ncm'
+  | 'estoque'
   | 'importar'
   | 'parametros'
   | 'legislacao'
@@ -92,12 +99,23 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
   const [aba, setAba] = useState<Aba>('geral')
   const [paramsSalvos, setParams] = useState<P>(() => comPadrao(empresa.parametros))
   const [ncms, setNcms] = useState<NcmRegistro[]>([])
+  const [itensEstoque, setItensEstoque] = useState<ItemEstoque[]>([])
+  const [produtosEstoque, setProdutosEstoque] = useState<Record<string, ConfigProduto>>({})
   const [gravacao, setGravacao] = useState<'salvo' | 'pendente' | 'salvando'>('salvo')
   const [estabFiltro, setEstabFiltro] = useState('')
 
   const carregar = useCallback(async () => {
     try {
-      const [movs, imps, regs, parcs] = await Promise.all([carregarMovimentos(empresa.id), listarImportacoes(empresa.id), listarNcms(empresa.id), listarParceiros(empresa.id)])
+      const [movs, imps, regs, parcs, est, prods] = await Promise.all([
+        carregarMovimentos(empresa.id),
+        listarImportacoes(empresa.id),
+        listarNcms(empresa.id),
+        listarParceiros(empresa.id),
+        carregarEstoque(empresa.id),
+        listarProdutosEstoque(empresa.id),
+      ])
+      setItensEstoque(est)
+      setProdutosEstoque(prods)
       setLinhas(movs)
       setImportacoes(imps)
       setNcms(regs)
@@ -137,7 +155,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     (id: string | null) => {
       const e = estabs.find((x) => x.id === id) ?? estabs.find((x) => x.matriz) ?? estabs[0]
       const uf = e?.uf ?? 'SP'
-      return { uf, aliquota: e?.aliquota_icms ?? ICMS_INTERNO_UF[uf] ?? 18 }
+      return { uf, aliquota: e?.aliquota_icms ?? ICMS_INTERNO_UF[uf] ?? 18, beneficio: e?.beneficio_icms ?? null }
     },
     [estabs],
   )
@@ -148,10 +166,25 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     () => perfilIcmsPorNcm(linhas, (id) => dadosEstab(id).uf, ufMatriz, paramsSalvos.cfopNatureza),
     [linhas, dadosEstab, ufMatriz, paramsSalvos.cfopNatureza],
   )
-  const params = useMemo(
-    () => ({ ...paramsSalvos, ncms: configDosNcms(ncms), ufAliquotasNcm: ufMatriz, regimeFornecedores: regimesDosParceiros(parceiros) }),
-    [paramsSalvos, ncms, ufMatriz, parceiros],
+  // estoque e CMV pelo custo médio ponderado (itens dos relatórios detalhados + estoque inicial + DE.PARA)
+  const estoque = useMemo(
+    () => (itensEstoque.length ? calcularEstoque(itensEstoque, produtosEstoque, paramsSalvos.cfopNatureza, paramsSalvos.cfopEstoque) : null),
+    [itensEstoque, produtosEstoque, paramsSalvos.cfopNatureza, paramsSalvos.cfopEstoque],
   )
+  const cmvEstoque = useMemo(() => (estoque ? Object.fromEntries(estoque.meses.map((m) => [m, estoque.porMes[m].cmvEstimado])) : undefined), [estoque])
+  const params = useMemo(
+    () => ({ ...paramsSalvos, ncms: configDosNcms(ncms), ufAliquotasNcm: ufMatriz, regimeFornecedores: regimesDosParceiros(parceiros), cmvEstoque }),
+    [paramsSalvos, ncms, ufMatriz, parceiros, cmvEstoque],
+  )
+
+  async function mudarProdutoEstoque(c: ConfigProduto) {
+    setProdutosEstoque((x) => ({ ...x, [c.chave]: c }))
+    try {
+      await salvarProdutoEstoque(empresa.id, c)
+    } catch (e) {
+      setErro((e as Error).message)
+    }
+  }
 
   async function mudarRegimeFornecedor(documento: string, regime: RegimeFornecedor | null) {
     setParceiros((l) => l.map((p) => (p.documento === documento ? { ...p, regime } : p)))
@@ -217,11 +250,12 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     { id: 'movimento', label: 'Movimento e CFOP', icone: <Table2 className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'parceiros', label: 'Clientes e fornecedores', icone: <Users className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'ncm', label: 'Produtos (NCM)', icone: <Barcode className="h-4 w-4" />, grupo: 'Dados' },
+    { id: 'estoque', label: 'Estoque e CMV', icone: <Boxes className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'importar', label: 'Importar', icone: <Upload className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'parametros', label: 'Parâmetros', icone: <Settings2 className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'legislacao', label: 'Legislação', icone: <BookOpen className="h-4 w-4" />, grupo: 'Dados' },
   ]
-  const precisaDados = !['ncm', 'importar', 'parametros', 'legislacao', 'parceiros'].includes(aba)
+  const precisaDados = !['ncm', 'estoque', 'importar', 'parametros', 'legislacao', 'parceiros'].includes(aba)
 
   return (
     <div className="space-y-5">
@@ -294,7 +328,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
           {aba === 'icms' && <Icms d={dados} />}
           {aba === 'creditos' && <Creditos d={dados} />}
           {aba === 'aliquotas' && <Aliquotas d={dados} />}
-          {aba === 'apuracao' && <Apuracao bases={bases} ctx={ctx} regime={regimeAtual} />}
+          {aba === 'apuracao' && <Apuracao bases={bases} ctx={ctx} regime={regimeAtual} onParams={mudarParams} />}
           {aba === 'preco' && <Preco d={dados} />}
           {aba === 'relatorio' && <Relatorio d={dados} empresa={empresa} />}
           {aba === 'movimento' && (
@@ -304,6 +338,9 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
       )}
       {!carregando && aba === 'parceiros' && <Parceiros d={dados} onRegime={mudarRegimeFornecedor} />}
       {!carregando && aba === 'ncm' && <Produtos linhas={linhas} registros={ncms} params={params} perfil={perfilIcms} ufReferencia={ufMatriz} aliquotaModal={dadosEstab(null).aliquota} onMudar={mudarNcm} />}
+      {!carregando && aba === 'estoque' && (
+        <Estoque estoque={estoque} itens={itensEstoque} produtos={produtosEstoque} params={params} onParams={mudarParams} onProduto={mudarProdutoEstoque} />
+      )}
       {!carregando && aba === 'importar' && <Importar empresaId={empresa.id} estabelecimentos={estabs} importacoes={importacoes} onAlterado={carregar} />}
       {aba === 'parametros' && (
         <Parametros params={params} onParams={mudarParams} mixEstimado={estimarMix(linhas, { ...params, percentualMonofasico: null, percentualReducaoIbsCbs: null, percentualSt: null, percentualB2B: null })} />
