@@ -23,13 +23,20 @@ alter table public.soc_processos
 alter table public.soc_objetos_sociais enable row level security;
 alter table public.soc_blocos_cnae enable row level security;
 
+-- Mesma regra do restante do Societário: só quem tem acesso ao departamento no portal
 drop policy if exists "equipe acessa objetos sociais" on public.soc_objetos_sociais;
-create policy "equipe acessa objetos sociais" on public.soc_objetos_sociais
-  for all to authenticated using (true) with check (true);
+drop policy if exists "societário acessa objetos sociais" on public.soc_objetos_sociais;
+create policy "societário acessa objetos sociais" on public.soc_objetos_sociais
+  for all to authenticated
+  using (public.portal_tem_acesso_slug('societario'))
+  with check (public.portal_tem_acesso_slug('societario'));
 
 drop policy if exists "equipe acessa blocos cnae" on public.soc_blocos_cnae;
-create policy "equipe acessa blocos cnae" on public.soc_blocos_cnae
-  for all to authenticated using (true) with check (true);
+drop policy if exists "societário acessa blocos cnae" on public.soc_blocos_cnae;
+create policy "societário acessa blocos cnae" on public.soc_blocos_cnae
+  for all to authenticated
+  using (public.portal_tem_acesso_slug('societario'))
+  with check (public.portal_tem_acesso_slug('societario'));
 
 -- Modelo inicial: CNAEs WAY
 with objeto as (
