@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Building2, ClipboardList, ListChecks, Plus, Save } from 'lucide-react'
+import { Building2, ClipboardList, Layers, ListChecks, Plus, Save, Settings2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { REGEX_VIABILIDADE, buscarCep, mascaraCep, mascaraCnpj, mascaraViabilidade } from '../lib/format'
+import { REGEX_CNAE, REGEX_VIABILIDADE, buscarCep, listaCnaes, mascaraCep, mascaraCnae, mascaraCnpj, mascaraViabilidade } from '../lib/format'
+import { CnaesInput } from './CnaesInput'
 import {
   ACOMPANHAMENTO_POR_TIPO,
   ENQUADRAMENTOS,
@@ -10,6 +11,8 @@ import {
   SOCIO_VAZIO,
   STATUS_PROCESSO,
   TIPOS,
+  type BlocoCnae,
+  type ObjetoSocial,
   type Parceiro,
   type Processo,
   type Socio,
@@ -44,6 +47,8 @@ function novoRascunho(tipo: TipoProcesso): Rascunho {
     enquadramento: '',
     cnae_principal: '',
     cnaes_secundarios: '',
+    objeto_social: '',
+    bloco_cnae_id: null,
     tipo_unidade: 'produtiva',
     nome_fantasia: '',
     cep: '',
@@ -95,12 +100,18 @@ export function ProcessoForm({
   onClose,
   onSaved,
   onGerenciarParceiros,
+  blocos,
+  objetos,
+  onGerenciarModelos,
 }: {
   processo: Processo | null
   parceiros: Parceiro[]
   onClose: () => void
   onSaved: () => void
   onGerenciarParceiros: () => void
+  blocos: BlocoCnae[]
+  objetos: ObjetoSocial[]
+  onGerenciarModelos: () => void
 }) {
   const [r, setR] = useState<Rascunho>(() => (processo ? paraRascunho(processo) : novoRascunho('abertura')))
   const [salvando, setSalvando] = useState(false)
@@ -111,6 +122,38 @@ export function ProcessoForm({
   const abertura = r.tipo === 'abertura'
   const baixa = r.tipo === 'baixa'
   const etapas = ACOMPANHAMENTO_POR_TIPO[r.tipo]
+  const blocoAtual = blocos.find((b) => b.id === r.bloco_cnae_id)
+  const secundarios = listaCnaes(r.cnaes_secundarios)
+  const setSecundarios = (lista: string[]) => set('cnaes_secundarios', lista.join('\n'))
+
+  function aplicarBloco(id: string) {
+    const novo = blocos.find((b) => b.id === id)
+    if (!novo) return set('bloco_cnae_id', null)
+    setR((prev) => {
+      const anterior = blocos.find((b) => b.id === prev.bloco_cnae_id)
+      // Mantém os CNAEs extras (que não vieram do bloco anterior) e troca os do bloco
+      const extras = listaCnaes(prev.cnaes_secundarios).filter((c) => !(anterior?.cnaes_secundarios ?? []).includes(c))
+      const lista = [...novo.cnaes_secundarios, ...extras.filter((c) => !novo.cnaes_secundarios.includes(c))]
+      const objetoDoBloco = objetos.find((o) => o.id === novo.objeto_social_id)?.texto
+      const objetoAnterior = objetos.find((o) => o.id === anterior?.objeto_social_id)?.texto
+      const podeTrocarObjeto = !prev.objeto_social || prev.objeto_social === objetoAnterior
+      return {
+        ...prev,
+        bloco_cnae_id: novo.id,
+        cnae_principal: novo.cnae_principal || prev.cnae_principal,
+        cnaes_secundarios: lista.join('\n'),
+        objeto_social: objetoDoBloco && podeTrocarObjeto ? objetoDoBloco : prev.objeto_social,
+      }
+    })
+  }
+
+  function usarObjeto(id: string) {
+    const modelo = objetos.find((o) => o.id === id)
+    if (!modelo) return
+    if (r.objeto_social && r.objeto_social !== modelo.texto && !confirm('Substituir o objeto social atual pelo modelo selecionado?')) return
+    set('objeto_social', modelo.texto)
+  }
+
   const viabilidadeInvalida = !baixa && Boolean(r.numero_viabilidade) && !REGEX_VIABILIDADE.test(r.numero_viabilidade ?? '')
 
   function mudarTipo(tipo: TipoProcesso) {
@@ -152,6 +195,10 @@ export function ProcessoForm({
     setErro(null)
     if (!r.razao_social?.trim()) {
       setErro('Informe a Razão Social.')
+      return
+    }
+    if (abertura && r.cnae_principal && !REGEX_CNAE.test(r.cnae_principal)) {
+      setErro('CNAE Principal deve ter 7 dígitos (ex.: 4713-0-02).')
       return
     }
     if (viabilidadeInvalida) {
@@ -276,10 +323,7 @@ export function ProcessoForm({
                 <Select value={r.enquadramento ?? ''} onChange={(v) => set('enquadramento', v)} opcoes={ENQUADRAMENTOS} vazio="Selecione" />
               </Field>
 
-              <Field label="CNAE Principal" className="sm:col-span-2">
-                <input className="input" value={r.cnae_principal ?? ''} onChange={(e) => set('cnae_principal', e.target.value)} placeholder="Ex.: 6920-6/01 - Atividades de contabilidade" />
-              </Field>
-              <Field label="Tipo de Unidade">
+              <Field label="Tipo de Unidade" className="sm:col-span-1 lg:col-span-2">
                 <Select
                   value={r.tipo_unidade ?? ''}
                   onChange={(v) => set('tipo_unidade', v)}
@@ -289,12 +333,8 @@ export function ProcessoForm({
                   ]}
                 />
               </Field>
-              <Field label="Capital Social (R$)">
+              <Field label="Capital Social (R$)" className="sm:col-span-1 lg:col-span-2">
                 <input className="input" inputMode="decimal" value={r.capital_social} onChange={(e) => set('capital_social', e.target.value)} placeholder="10.000,00" />
-              </Field>
-
-              <Field label="CNAEs Secundários (um por linha)" className="sm:col-span-2 lg:col-span-4">
-                <textarea className="input min-h-20" value={r.cnaes_secundarios ?? ''} onChange={(e) => set('cnaes_secundarios', e.target.value)} />
               </Field>
 
               <Field label={`CEP da empresa${buscandoCep ? ' (buscando...)' : ''}`}>
@@ -323,6 +363,66 @@ export function ProcessoForm({
           )}
         </div>
       </Section>
+
+      {abertura && (
+        <Section
+          icone={Layers}
+          cor="amber"
+          title="Atividades (CNAEs) e Objeto Social"
+          actions={
+            <button type="button" className="btn-ghost btn-sm" onClick={onGerenciarModelos}>
+              <Settings2 className="h-3.5 w-3.5" />
+              Gerenciar modelos
+            </button>
+          }
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Bloco de CNAEs pré-definido" className="sm:col-span-1 lg:col-span-2">
+              <Select
+                value={r.bloco_cnae_id ?? ''}
+                onChange={aplicarBloco}
+                opcoes={blocos.map((b) => ({ value: b.id, label: `${b.nome} (${b.cnaes_secundarios.length + (b.cnae_principal ? 1 : 0)} CNAEs)` }))}
+                vazio="Nenhum — informar manualmente"
+              />
+            </Field>
+            <Field label="CNAE Principal" className="sm:col-span-1 lg:col-span-2">
+              <input
+                className={`input font-mono ${r.cnae_principal && !REGEX_CNAE.test(r.cnae_principal) ? 'border-rose-300' : ''}`}
+                value={r.cnae_principal ?? ''}
+                onChange={(e) => set('cnae_principal', mascaraCnae(e.target.value))}
+                placeholder="4713-0-02"
+              />
+            </Field>
+            <Field label={`CNAEs Secundários${blocoAtual ? ` — bloco ${blocoAtual.nome} (em amarelo, os extras pedidos pelo cliente)` : ''}`} className="sm:col-span-2 lg:col-span-4">
+              <CnaesInput valores={secundarios} onChange={setSecundarios} doBloco={blocoAtual?.cnaes_secundarios} />
+            </Field>
+
+            <div className="sm:col-span-2 lg:col-span-4">
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-slate-600">Objeto Social</span>
+                {objetos.length > 0 && (
+                  <div className="w-64">
+                    <Select
+                      value=""
+                      onChange={usarObjeto}
+                      opcoes={objetos.map((o) => ({ value: o.id, label: o.nome }))}
+                      vazio="Usar um modelo pronto..."
+                      className="input py-1.5 text-xs"
+                    />
+                  </div>
+                )}
+              </div>
+              <textarea
+                className="input min-h-32 text-[13px] leading-relaxed"
+                value={r.objeto_social ?? ''}
+                onChange={(e) => set('objeto_social', e.target.value)}
+                placeholder="Escolha um modelo pronto acima ou escreva o objeto social da empresa."
+              />
+              <span className="mt-1 block text-right text-[11px] text-slate-400">{(r.objeto_social ?? '').length} caracteres</span>
+            </div>
+          </div>
+        </Section>
+      )}
 
       {abertura && r.socios.map((s, i) => <SocioForm key={i} indice={i} socio={s} onChange={(novo) => setSocio(i, novo)} />)}
 

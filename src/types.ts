@@ -60,6 +60,8 @@ export interface Processo {
   area_terreno: number | null
   capital_social: number | null
   socios: Socio[]
+  objeto_social: string | null
+  bloco_cnae_id: string | null
   numero_viabilidade: string | null
   numero_dbe: string | null
   status_viabilidade: string
@@ -75,6 +77,20 @@ export interface Processo {
   observacoes: string | null
   created_at?: string
   updated_at?: string
+}
+
+export interface ObjetoSocial {
+  id: string
+  nome: string
+  texto: string
+}
+
+export interface BlocoCnae {
+  id: string
+  nome: string
+  cnae_principal: string | null
+  cnaes_secundarios: string[]
+  objeto_social_id: string | null
 }
 
 export type Opcao = { value: string; label: string }
@@ -258,4 +274,9 @@ export const SOCIO_VAZIO: Socio = {
 
 export function labelDe(opcoes: Opcao[], value: string | null | undefined) {
   return opcoes.find((o) => o.value === value)?.label ?? value ?? '—'
+}
+
+/** O primeiro sócio é sempre o responsável legal. */
+export function rotuloSocio(indice: number) {
+  return indice === 0 ? 'Sócio 1 - Responsável Legal' : `Sócio ${indice + 1}`
 }

@@ -9,6 +9,8 @@ import {
   labelDe,
   numeroReferencia,
   type CampoAcompanhamento,
+  type BlocoCnae,
+  type ObjetoSocial,
   type Parceiro,
   type Processo,
   type StatusProcesso,
@@ -16,6 +18,7 @@ import {
 import { Parceiros } from './Parceiros'
 import { ProcessoDetalhes } from './ProcessoDetalhes'
 import { ProcessoForm } from './ProcessoForm'
+import { Modelos } from './Modelos'
 import { corEtapa } from './StatusBadge'
 import { Badge, Select } from './ui'
 import {
@@ -27,6 +30,7 @@ import {
   FilePenLine,
   FolderOpen,
   Handshake,
+  Layers,
   LogOut,
   Pencil,
   Plus,
@@ -67,6 +71,9 @@ function progresso(p: Processo) {
 export function Dashboard({ session }: { session: Session }) {
   const [processos, setProcessos] = useState<Processo[]>([])
   const [parceiros, setParceiros] = useState<Parceiro[]>([])
+  const [blocos, setBlocos] = useState<BlocoCnae[]>([])
+  const [objetos, setObjetos] = useState<ObjetoSocial[]>([])
+  const [mostrarModelos, setMostrarModelos] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -85,18 +92,22 @@ export function Dashboard({ session }: { session: Session }) {
       Promise.all([
         supabase.from('soc_processos').select('*').order('data_inicio', { ascending: false }).order('created_at', { ascending: false }),
         supabase.from('soc_parceiros').select('*').order('nome'),
+        supabase.from('soc_blocos_cnae').select('*').order('nome'),
+        supabase.from('soc_objetos_sociais').select('*').order('nome'),
       ])
-    let [proc, parc] = await buscar()
+    let [proc, parc, blc, obj] = await buscar()
     // Logo após o login, o token pode chegar com horário levemente à frente do servidor
     // de dados ("JWT issued at future"). Aguarda um pouco e tenta de novo.
-    for (let tentativa = 0; tentativa < 3 && /issued at future/i.test((proc.error ?? parc.error)?.message ?? ''); tentativa++) {
+    const primeiroErro = () => proc.error ?? parc.error ?? blc.error ?? obj.error
+    for (let tentativa = 0; tentativa < 3 && /issued at future/i.test(primeiroErro()?.message ?? ''); tentativa++) {
       await new Promise((r) => setTimeout(r, 1500))
-      ;[proc, parc] = await buscar()
+      ;[proc, parc, blc, obj] = await buscar()
     }
-    if (proc.error || parc.error) setErro((proc.error ?? parc.error)!.message)
-    else setErro(null)
+    setErro(primeiroErro()?.message ?? null)
     setProcessos((proc.data as Processo[]) ?? [])
     setParceiros((parc.data as Parceiro[]) ?? [])
+    setBlocos((blc.data as BlocoCnae[]) ?? [])
+    setObjetos((obj.data as ObjetoSocial[]) ?? [])
     setCarregando(false)
   }, [])
 
@@ -199,6 +210,10 @@ export function Dashboard({ session }: { session: Session }) {
             <p className="mt-1 text-sm text-white/60">Acompanhe as aberturas, alterações e baixas de CNPJ do escritório.</p>
           </div>
           <div className="flex gap-2">
+            <button className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setMostrarModelos(true)}>
+              <Layers className="h-4 w-4" />
+              Modelos
+            </button>
             <button className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setMostrarParceiros(true)}>
               <Handshake className="h-4 w-4" />
               Parceiros
@@ -489,6 +504,9 @@ export function Dashboard({ session }: { session: Session }) {
           parceiros={parceiros}
           onClose={() => setEditando(null)}
           onGerenciarParceiros={() => setMostrarParceiros(true)}
+          blocos={blocos}
+          objetos={objetos}
+          onGerenciarModelos={() => setMostrarModelos(true)}
           onSaved={() => {
             setEditando(null)
             carregar()
@@ -500,6 +518,7 @@ export function Dashboard({ session }: { session: Session }) {
         <ProcessoDetalhes
           processo={processos.find((x) => x.id === detalhes.id) ?? detalhes}
           parceiros={parceiros}
+          blocos={blocos}
           onClose={() => setDetalhes(null)}
           onEditar={() => {
             const atual = processos.find((x) => x.id === detalhes.id) ?? detalhes
@@ -507,6 +526,10 @@ export function Dashboard({ session }: { session: Session }) {
             setEditando(atual)
           }}
         />
+      )}
+
+      {mostrarModelos && (
+        <Modelos blocos={blocos} objetos={objetos} onClose={() => setMostrarModelos(false)} onChanged={carregar} />
       )}
 
       {mostrarParceiros && (

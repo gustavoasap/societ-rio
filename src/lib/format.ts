@@ -71,3 +71,28 @@ export function mascaraViabilidade(v: string) {
   }
   return letras + numeros
 }
+
+/** CNAE no formato 0000-0-00 (ex.: 4713-0-02). */
+export function mascaraCnae(v: string) {
+  return v
+    .replace(/\D/g, '')
+    .slice(0, 7)
+    .replace(/^(\d{4})(\d)/, '$1-$2')
+    .replace(/^(\d{4})-(\d)(\d)/, '$1-$2-$3')
+}
+
+export const REGEX_CNAE = /^\d{4}-\d-\d{2}$/
+
+/** Extrai todos os CNAEs (7 dígitos) de um texto colado, já formatados. */
+export function extrairCnaes(texto: string) {
+  const achados = texto.match(/\d{4}\D?\d\D?\d{2}/g) ?? []
+  return achados.map(mascaraCnae).filter((c) => REGEX_CNAE.test(c))
+}
+
+/** CNAEs secundários são guardados como texto, um por linha. */
+export function listaCnaes(texto: string | null | undefined) {
+  return (texto ?? '')
+    .split(/\n+/)
+    .map((c) => c.trim())
+    .filter(Boolean)
+}

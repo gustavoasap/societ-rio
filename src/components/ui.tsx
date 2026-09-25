@@ -1,4 +1,4 @@
-import { useEffect, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useRef, type ComponentType, type ReactNode } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import type { Opcao } from '../types'
 
@@ -105,18 +105,25 @@ export function Modal({
   footer?: ReactNode
   largura?: string
 }) {
+  const ref = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    // Com janelas empilhadas, o Esc fecha só a que está por cima
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const abertas = document.querySelectorAll('[data-modal]')
+      if (abertas[abertas.length - 1] === ref.current) onClose()
+    }
     window.addEventListener('keydown', esc)
     document.body.style.overflow = 'hidden'
     return () => {
       window.removeEventListener('keydown', esc)
-      document.body.style.overflow = ''
+      if (document.querySelectorAll('[data-modal]').length <= 1) document.body.style.overflow = ''
     }
   }, [onClose])
 
   return (
-    <div className="animar-fundo fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-asap-950/60 p-2 backdrop-blur-sm sm:p-6">
+    <div ref={ref} data-modal className="animar-fundo fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-asap-950/60 p-2 backdrop-blur-sm sm:p-6">
       <div className={`animar-modal relative w-full ${largura} overflow-hidden rounded-3xl bg-[#f5f7fc] shadow-2xl shadow-asap-950/40`}>
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-gradient-to-r from-asap-900 via-asap-800 to-asap-700 px-6 py-4 text-white">
           <div className="min-w-0">

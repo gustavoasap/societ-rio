@@ -1,22 +1,27 @@
-import { Building2, ClipboardList, ListChecks, Pencil, Printer, UserRound } from 'lucide-react'
-import { formatarData, formatarMoeda, formatarNumero } from '../lib/format'
-import { ACOMPANHAMENTO_POR_TIPO, STATUS_PROCESSO, TIPOS, labelDe, type Parceiro, type Processo } from '../types'
+import { Building2, ClipboardList, Layers, ListChecks, Pencil, Printer, UserRound } from 'lucide-react'
+import { formatarData, formatarMoeda, formatarNumero, listaCnaes } from '../lib/format'
+import { ACOMPANHAMENTO_POR_TIPO, STATUS_PROCESSO, TIPOS, labelDe, rotuloSocio, type BlocoCnae, type Parceiro, type Processo } from '../types'
 import { StatusBadge } from './StatusBadge'
 import { Badge, Info, Modal, Section } from './ui'
 
 export function ProcessoDetalhes({
   processo: p,
   parceiros,
+  blocos,
   onClose,
   onEditar,
 }: {
   processo: Processo
   parceiros: Parceiro[]
+  blocos: BlocoCnae[]
   onClose: () => void
   onEditar: () => void
 }) {
   const parceiro = parceiros.find((x) => x.id === p.parceiro_id)
   const abertura = p.tipo === 'abertura'
+  const bloco = blocos.find((b) => b.id === p.bloco_cnae_id)
+  const secundarios = listaCnaes(p.cnaes_secundarios)
+  const extras = bloco ? secundarios.filter((c) => !bloco.cnaes_secundarios.includes(c)) : []
 
   return (
     <Modal
@@ -67,10 +72,10 @@ export function ProcessoDetalhes({
               <Info label="Natureza Jurídica" value={p.natureza_juridica} />
               <Info label="Órgão de Registro" value={p.orgao_registro} />
               <Info label="Enquadramento" value={p.enquadramento} />
-              <Info label="CNAE Principal" value={p.cnae_principal} className="col-span-2" />
+
               <Info label="Tipo de Unidade" value={p.tipo_unidade === 'auxiliar' ? 'Auxiliar' : p.tipo_unidade === 'produtiva' ? 'Produtiva' : null} />
               <Info label="Capital Social" value={formatarMoeda(p.capital_social)} />
-              <Info label="CNAEs Secundários" value={p.cnaes_secundarios && <span className="whitespace-pre-line">{p.cnaes_secundarios}</span>} className="col-span-2 lg:col-span-4" />
+
               <Info label="CEP" value={p.cep} />
               <Info label="Endereço" value={p.endereco} className="col-span-2" />
               <Info label="Complemento" value={p.complemento} />
@@ -83,9 +88,50 @@ export function ProcessoDetalhes({
         </div>
       </Section>
 
+      {abertura && (
+        <Section icone={Layers} cor="amber" title="Atividades (CNAEs) e Objeto Social">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <Info label="CNAE Principal" value={p.cnae_principal && <span className="font-mono">{p.cnae_principal}</span>} />
+            <Info label="Bloco de CNAEs" value={bloco?.nome} />
+            <Info
+              label="Extras fora do bloco"
+              value={bloco ? (extras.length ? <span className="font-semibold text-amber-700">{extras.length} extra(s)</span> : 'Nenhum') : null}
+            />
+            <Info label="Qtd. de secundários" value={secundarios.length} />
+            <Info
+              label="CNAEs Secundários"
+              className="col-span-2 lg:col-span-4"
+              value={
+                secundarios.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {secundarios.map((c) => {
+                      const extra = extras.includes(c)
+                      return (
+                        <span
+                          key={c}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 font-mono text-xs font-semibold ring-1 ring-inset ${extra ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-brand-50 text-brand-700 ring-brand-200'}`}
+                        >
+                          {c}
+                          {extra && <span className="font-sans text-[9px] font-bold uppercase">extra</span>}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )
+              }
+            />
+            <Info
+              label="Objeto Social"
+              className="col-span-2 lg:col-span-4"
+              value={p.objeto_social && <p className="text-[13px] leading-relaxed whitespace-pre-line">{p.objeto_social}</p>}
+            />
+          </div>
+        </Section>
+      )}
+
       {abertura &&
         (p.socios ?? []).map((s, i) => (
-          <Section key={i} icone={UserRound} cor="violet" title={`Sócio ${i + 1}${s.nome ? ` — ${s.nome}` : ''}`}>
+          <Section key={i} icone={UserRound} cor="violet" title={`${rotuloSocio(i)}${s.nome ? ` — ${s.nome}` : ''}`}>
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Info label="CPF" value={s.cpf} />
               <Info label="Qualificação" value={s.qualificacao} />
