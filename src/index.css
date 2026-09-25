@@ -21,6 +21,18 @@
   --color-brand-700: #1c38d8;
 }
 
+/* A interface acompanha o tamanho da tela: tudo é medido em rem, e o rem cresce
+   em monitores grandes (limitado pela altura, para não estourar em telas ultrawide)
+   e diminui um pouco em notebooks. No celular fica no tamanho padrão. */
+html {
+  font-size: 16px;
+}
+@media screen and (min-width: 640px) {
+  html {
+    font-size: clamp(14px, min(100vw / 94, 100vh / 56), 28px);
+  }
+}
+
 body {
   @apply bg-[#f3f6fc] text-slate-800 antialiased;
 }
@@ -63,6 +75,12 @@ body {
 .animar-fundo { animation: fundo 0.15s ease-out; }
 
 @media print {
-  body { background: white; }
+  @page { size: A4; margin: 12mm; }
+  html { font-size: 16px; }
+  body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .no-print { display: none !important; }
+  .relatorio { font-size: 11px; }
+  .relatorio-bloco { break-inside: avoid; }
+  .relatorio-quebra { break-before: page; }
+  .relatorio tr { break-inside: avoid; }
 }

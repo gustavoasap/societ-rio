@@ -97,7 +97,7 @@ export function Modelos({
           >
             <a.icone className="h-4 w-4" />
             {a.label}
-            <span className={`rounded-md px-1.5 text-[11px] ${aba === a.id ? 'bg-white/20' : 'bg-slate-100'}`}>{a.qtd}</span>
+            <span className={`rounded-md px-1.5 text-[0.6875rem] ${aba === a.id ? 'bg-white/20' : 'bg-slate-100'}`}>{a.qtd}</span>
           </button>
         ))}
       </div>

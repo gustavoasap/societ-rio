@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { Link } from '../lib/rotas'
 import { REGEX_VIABILIDADE, formatarData, mascaraViabilidade } from '../lib/format'
 import {
   ACOMPANHAMENTO_POR_TIPO,
@@ -30,6 +31,7 @@ import {
   FilePenLine,
   FolderOpen,
   Handshake,
+  House,
   Layers,
   LogOut,
   Pencil,
@@ -182,7 +184,13 @@ export function Dashboard({ session }: { session: Session }) {
         <div className="pointer-events-none absolute top-20 -left-20 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
 
         <header className="relative mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6">
-          <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
+          <Link para="/" aria-label="Ir para a página inicial do portal">
+            <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
+          </Link>
+          <Link para="/" className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20">
+            <House className="h-4 w-4" />
+            <span className="hidden sm:inline">Página inicial</span>
+          </Link>
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden items-center gap-2.5 rounded-full bg-white/10 py-1 pr-4 pl-1 ring-1 ring-white/10 sm:flex">
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-cyan-400 text-sm font-bold text-asap-950">
@@ -203,7 +211,10 @@ export function Dashboard({ session }: { session: Session }) {
 
         <div className="relative mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-4 pt-6 sm:px-6">
           <div>
-            <p className="text-sm font-medium text-cyan-300 first-letter:uppercase">{hoje}</p>
+            <p className="text-sm font-medium text-cyan-300 first-letter:uppercase">
+              <Link para="/" className="hover:underline">Página inicial</Link> ›{' '}
+              <Link para="/d/societario" className="hover:underline">Societário</Link> · {hoje}
+            </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
               {saudacao()}, {nomeExibicao}!
             </h1>
@@ -240,7 +251,7 @@ export function Dashboard({ session }: { session: Session }) {
                   <span className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${gradiente} text-white shadow-lg ${sombra}`}>
                     <I className="h-5 w-5" />
                   </span>
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ativo ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${ativo ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}>
                     {ativo ? 'filtrando' : 'filtrar'}
                   </span>
                 </div>
@@ -287,7 +298,7 @@ export function Dashboard({ session }: { session: Session }) {
                     className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${ativo ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                   >
                     {t.label}
-                    <span className={`rounded-md px-1.5 text-[11px] ${ativo ? 'bg-brand-100 text-brand-700' : 'bg-slate-200 text-slate-500'}`}>{qtd}</span>
+                    <span className={`rounded-md px-1.5 text-[0.6875rem] ${ativo ? 'bg-brand-100 text-brand-700' : 'bg-slate-200 text-slate-500'}`}>{qtd}</span>
                   </button>
                 )
               })}
@@ -310,9 +321,9 @@ export function Dashboard({ session }: { session: Session }) {
 
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-sm">
+            <table className="w-full min-w-[57.5rem] text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                <tr className="border-b border-slate-100 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                   <th className="py-3.5 pr-4 pl-5">Empresa</th>
                   <th className="px-4 py-3.5">CNPJ</th>
                   <th className="px-4 py-3.5">Nº Viabilidade / DBE</th>
@@ -392,7 +403,7 @@ export function Dashboard({ session }: { session: Session }) {
                         <td className="px-4 py-3.5 font-mono text-xs whitespace-nowrap text-slate-600">{p.cnpj || <span className="text-slate-300">—</span>}</td>
                         <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">{numeroReferencia(p) ? (
                             <span className="font-mono text-xs">
-                              {p.tipo === 'baixa' && <span className="mr-1 font-sans text-[10px] font-bold text-rose-500">DBE</span>}
+                              {p.tipo === 'baixa' && <span className="mr-1 font-sans text-[0.625rem] font-bold text-rose-500">DBE</span>}
                               {numeroReferencia(p)}
                             </span>
                           ) : (
@@ -434,7 +445,7 @@ export function Dashboard({ session }: { session: Session }) {
                                     <div key={a.campo} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
                                       <div className="mb-2 flex items-center gap-2">
                                         <span
-                                          className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white ${cor === 'ok' ? 'bg-emerald-500' : cor === 'pendente' ? 'bg-amber-400' : 'bg-sky-500'}`}
+                                          className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.625rem] font-bold text-white ${cor === 'ok' ? 'bg-emerald-500' : cor === 'pendente' ? 'bg-amber-400' : 'bg-sky-500'}`}
                                         >
                                           {cor === 'ok' ? '✓' : i + 1}
                                         </span>
@@ -560,7 +571,7 @@ function NumeroReferencia({
   return (
     <div className={`rounded-xl border p-3 ${baixa ? 'border-rose-100 bg-rose-50/50' : 'border-brand-100 bg-brand-50/50'}`}>
       <div className="mb-2 flex items-center gap-2">
-        <span className={`flex h-5 items-center rounded-full px-1.5 text-[10px] font-bold text-white ${baixa ? 'bg-rose-500' : 'bg-brand-500'}`}>Nº</span>
+        <span className={`flex h-5 items-center rounded-full px-1.5 text-[0.625rem] font-bold text-white ${baixa ? 'bg-rose-500' : 'bg-brand-500'}`}>Nº</span>
         <span className="text-xs font-semibold text-slate-600">{baixa ? 'Número DBE' : 'Número da Viabilidade'}</span>
       </div>
       <input
@@ -572,7 +583,7 @@ function NumeroReferencia({
         onBlur={salvar}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
       />
-      {invalido && <span className="mt-1 block text-[11px] text-rose-600">3 letras + 10 números</span>}
+      {invalido && <span className="mt-1 block text-[0.6875rem] text-rose-600">3 letras + 10 números</span>}
     </div>
   )
 }

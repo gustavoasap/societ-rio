@@ -413,12 +413,12 @@ export function ProcessoForm({
                 )}
               </div>
               <textarea
-                className="input min-h-32 text-[13px] leading-relaxed"
+                className="input min-h-32 text-[0.8125rem] leading-relaxed"
                 value={r.objeto_social ?? ''}
                 onChange={(e) => set('objeto_social', e.target.value)}
                 placeholder="Escolha um modelo pronto acima ou escreva o objeto social da empresa."
               />
-              <span className="mt-1 block text-right text-[11px] text-slate-400">{(r.objeto_social ?? '').length} caracteres</span>
+              <span className="mt-1 block text-right text-[0.6875rem] text-slate-400">{(r.objeto_social ?? '').length} caracteres</span>
             </div>
           </div>
         </Section>
@@ -445,7 +445,7 @@ export function ProcessoForm({
                 placeholder="SPN2633893093"
                 maxLength={13}
               />
-              <span className={`mt-1 block text-[11px] ${viabilidadeInvalida ? 'text-rose-600' : 'text-slate-400'}`}>
+              <span className={`mt-1 block text-[0.6875rem] ${viabilidadeInvalida ? 'text-rose-600' : 'text-slate-400'}`}>
                 {viabilidadeInvalida ? `Faltam ${13 - (r.numero_viabilidade ?? '').length} caractere(s): 3 letras + 10 números` : '3 letras + 10 números'}
               </span>
             </Field>

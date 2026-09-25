@@ -1,0 +1,407 @@
+import { Fragment, useMemo, useState } from 'react'
+import { CalendarRange, Landmark, LineChart, Printer } from 'lucide-react'
+import { Section, Select } from '../../../components/ui'
+import type { Contexto } from '../../engine/apuracao'
+import { montarAnoBase, projetar } from '../../engine/projecao'
+import { ANOS_TRANSICAO, CENARIOS_ALIQUOTA, regrasDoAno } from '../../engine/tabelas'
+import { REGIMES, type BaseMensal, type Parametros, type RegimeId } from '../../engine/tipos'
+import { COR_REGIME, moeda, moedaCurta, nomeRegime, pct } from '../../formatacao'
+import { Alertas, Segmentado, TabelaTributos, PontoRegime } from '../comum'
+import { BarrasAgrupadas, Legenda } from '../graficos'
+
+export function Reforma({ bases, ctx, regimeAtual, onParams }: { bases: BaseMensal[]; ctx: Contexto; regimeAtual: RegimeId; onParams: (p: Parametros) => void }) {
+  const p = ctx.params
+  const anos = useMemo(() => projetar(bases, ctx), [bases, ctx])
+  const anoBase = useMemo(() => montarAnoBase(bases), [bases])
+  const [regime, setRegime] = useState<RegimeId>(regimeAtual)
+  const series = REGIMES.map((r) => ({ id: r.value, label: r.curto, cor: COR_REGIME[r.value] }))
+  const alertas = [...new Set(anos.flatMap((a) => Object.values(a.resultados).flatMap((r) => r.alertas)))]
+
+  if (!anos.length) return null
+  const primeiro = anos[0]
+  const ultimo = anos[anos.length - 1]
+  const atual0 = primeiro.resultados[regimeAtual]
+  const atualN = ultimo.resultados[regimeAtual]
+
+  return (
+    <div className="space-y-5">
+      <Section
+        title="Premissas da projeção"
+        icone={CalendarRange}
+        actions={
+          <button className="btn-secondary btn-sm no-print" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" /> Imprimir
+          </button>
+        }
+      >
+        <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <div className="text-xs font-semibold text-slate-500">Ano-base</div>
+            <div className="mt-1 font-semibold text-slate-800">
+              {anoBase.mesesReais} {anoBase.mesesReais === 1 ? 'mês importado' : 'meses importados'}
+              {anoBase.anualizado && ' (demais meses pela média)'}
+            </div>
+            <div className="text-slate-500">Receita anual: {moeda(primeiro.receita)}</div>
+          </div>
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-500">Alíquotas de referência IBS/CBS</span>
+            <div className="mt-1">
+              <Select
+                value={p.cenarioAliquotas}
+                onChange={(v) => {
+                  const c = CENARIOS_ALIQUOTA.find((x) => x.id === v)
+                  onParams(c ? { ...p, cenarioAliquotas: v, cbsReferencia: c.cbs, ibsReferencia: c.ibs } : { ...p, cenarioAliquotas: v })
+                }}
+                opcoes={[...CENARIOS_ALIQUOTA.map((c) => ({ value: c.id, label: c.nome })), { value: 'personalizado', label: 'Personalizado (Parâmetros)' }]}
+              />
+            </div>
+            <span className="mt-1 block text-xs text-slate-500">
+              CBS {p.cbsReferencia.toLocaleString('pt-BR')}% + IBS {p.ibsReferencia.toLocaleString('pt-BR')}%
+            </span>
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-500">Crescimento da receita ao ano (%)</span>
+            <input className="input mt-1" type="number" step="0.5" value={p.crescimentoAnual} onChange={(e) => onParams({ ...p, crescimentoAnual: Number(e.target.value) || 0 })} />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-500">Vendas para empresas (B2B) %</span>
+            <input
+              className="input mt-1"
+              type="number"
+              step="5"
+              min={0}
+              max={100}
+              value={p.percentualB2B ?? ''}
+              placeholder={`automático: ${pct(ctx.mix.b2b, 1)}`}
+              onChange={(e) => onParams({ ...p, percentualB2B: e.target.value === '' ? null : Number(e.target.value) })}
+            />
+            <span className="mt-1 block text-xs text-slate-500">Mede o crédito de IBS/CBS que seus clientes aproveitam</span>
+          </label>
+        </div>
+        <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-600">
+          Premissa de preço: {p.premissaPreco === 'preco_mantido' ? 'preço ao cliente mantido — a CBS/IBS é extraída do preço total, ocupando o espaço do PIS/COFINS extinto' : `repasse por fora — o preço perde o PIS/COFINS embutido hoje (${((ctx.pisCofinsEmbutido ?? 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% da receita) e a CBS/IBS é somada`}.
+          A base da CBS/IBS exclui ICMS, ISS, IPI, PIS e COFINS (LC 214/2025, art. 12, §2º) — tributos "por dentro" × "por fora": veja o exemplo na aba Alíquotas. As alíquotas de
+          referência definitivas serão fixadas pelo Senado — a da CBS de 2027 até 15/12/2026. {CENARIOS_ALIQUOTA.find((c) => c.id === p.cenarioAliquotas)?.fonte}
+        </p>
+      </Section>
+
+      {atual0 && atualN && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
+            <div className="text-xs font-semibold text-slate-500 uppercase">Regime atual em 2026</div>
+            <div className="mt-2 flex items-center gap-2 text-2xl font-extrabold text-slate-900 tabular-nums">{moedaCurta(atual0.total)}</div>
+            <div className="text-sm text-slate-500">
+              {nomeRegime(regimeAtual)} · {pct(atual0.carga)}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
+            <div className="text-xs font-semibold text-slate-500 uppercase">Regime atual em 2033 (reforma completa)</div>
+            <div className="mt-2 text-2xl font-extrabold text-slate-900 tabular-nums">{moedaCurta(atualN.total)}</div>
+            <div className={`text-sm font-semibold ${atualN.total > atual0.total ? 'text-rose-600' : 'text-emerald-600'}`}>
+              {atualN.total >= atual0.total ? '+' : ''}
+              {moedaCurta(atualN.total - atual0.total)} ({atual0.total ? pct(atualN.total / atual0.total - 1, 1) : '—'})
+            </div>
+          </div>
+          <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 text-white shadow-lg shadow-emerald-500/30">
+            <div className="text-xs font-semibold uppercase opacity-80">Melhor regime em 2033</div>
+            <div className="mt-2 text-2xl font-extrabold">{ultimo.melhor ? nomeRegime(ultimo.melhor) : '—'}</div>
+            <div className="text-sm opacity-90">
+              {ultimo.melhor && ultimo.resultados[ultimo.melhor] && `${moedaCurta(ultimo.resultados[ultimo.melhor]!.total)} · ${pct(ultimo.resultados[ultimo.melhor]!.carga)}`}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Section title="Carga tributária por regime, ano a ano" icone={LineChart} cor="emerald">
+        <div className="mb-3">
+          <Legenda series={series} />
+        </div>
+        <BarrasAgrupadas
+          grupos={anos.map((a) => ({
+            rotulo: String(a.ano),
+            valores: Object.fromEntries(REGIMES.map((r) => [r.value, a.resultados[r.value]?.total])),
+            extra: Object.fromEntries(REGIMES.map((r) => [r.value, a.resultados[r.value] ? `carga ${pct(a.resultados[r.value]!.carga)}${a.melhor === r.value ? ' · menor carga' : ''}` : ''])),
+          }))}
+          series={series}
+          formatar={moeda}
+          destaque={(gi, s) => anos[gi].melhor === s}
+          altura={300}
+        />
+        <p className="mt-1 text-xs text-slate-500">● marca o regime de menor carga em cada ano. O Simples híbrido (IBS/CBS por fora do DAS) só existe a partir de 2027.</p>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[47.5rem] text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
+                <th className="py-2.5 pr-3 text-left">Regime</th>
+                {anos.map((a) => (
+                  <th key={a.ano} className="px-2 py-2.5">
+                    {a.ano}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {REGIMES.map((r) => (
+                <Fragment key={r.value}>
+                  <tr className="border-b border-slate-100 text-right">
+                    <td className="py-2 pr-3 text-left font-semibold text-slate-700">
+                      <span className="flex items-center gap-2">
+                        <PontoRegime regime={r.value} />
+                        {r.curto}
+                      </span>
+                    </td>
+                    {anos.map((a) => {
+                      const x = a.resultados[r.value]
+                      const melhor = a.melhor === r.value
+                      return (
+                        <td key={a.ano} className={`px-2 py-2 ${melhor ? 'bg-emerald-50 font-bold text-emerald-800' : ''} ${x && !x.elegivel ? 'text-slate-300 line-through' : ''}`}>
+                          {x ? (
+                            <>
+                              {moedaCurta(x.total)}
+                              <div className="text-[0.6875rem] font-medium text-slate-500">{pct(x.carga)}</div>
+                            </>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                </Fragment>
+              ))}
+              <tr className="text-right text-xs text-slate-500">
+                <td className="py-2 pr-3 text-left">Crédito de IBS/CBS aos clientes B2B — {nomeRegime(regime)}</td>
+                {anos.map((a) => (
+                  <td key={a.ano} className="px-2 py-2">
+                    {a.resultados[regime] ? moedaCurta(a.resultados[regime]!.creditoTransferido) : '—'}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section
+        title={`Tributos ano a ano — ${nomeRegime(regime)}`}
+        icone={Landmark}
+        cor="violet"
+        actions={<Segmentado valor={regime} onChange={setRegime} opcoes={REGIMES.map((r) => ({ value: r.value, label: r.curto }))} />}
+      >
+        <TabelaTributos
+          receita
+          colunas={anos
+            .filter((a) => a.resultados[regime])
+            .map((a) => {
+              const x = a.resultados[regime]!
+              return { id: String(a.ano), titulo: String(a.ano), tributos: x.tributos, total: x.total, receita: x.receita }
+            })}
+        />
+        {(regime === 'simples_hibrido' || regime === 'presumido' || regime === 'real') && (
+          <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+            {anos
+              .filter((a) => a.resultados[regime] && a.ano >= 2027)
+              .map((a) => {
+                const x = a.resultados[regime]!
+                return (
+                  <div key={a.ano} className="rounded-lg bg-slate-50 px-3 py-2">
+                    <strong>{a.ano}:</strong> créditos de IBS/CBS aproveitados {moedaCurta(x.creditosIbsCbs)}
+                    {x.saldoCredor > 0 && <> · saldo credor a ressarcir {moedaCurta(x.saldoCredor)}</>}
+                  </div>
+                )
+              })}
+          </div>
+        )}
+      </Section>
+
+      <Sensibilidade bases={bases} ctx={ctx} />
+
+      <Section
+        title="Cronograma da transição e expectativas de alíquota"
+        icone={CalendarRange}
+        cor="amber"
+        actions={
+          Object.keys(p.aliquotasAno).length > 0 && (
+            <button className="btn-secondary btn-sm no-print" onClick={() => onParams({ ...p, aliquotasAno: {} })}>
+              Voltar ao cenário legal
+            </button>
+          )
+        }
+      >
+        <p className="-mt-2 mb-3 text-sm text-slate-500">
+          Digite a CBS e o IBS esperados para cada ano (em %) para simular expectativas — em branco, vale o cronograma legal com as alíquotas de referência do cenário. As
+          alterações recalculam toda a projeção na hora.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[40rem] text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
+                <th className="py-2.5 pr-3 text-left">Ano</th>
+                <th className="px-3 py-2.5">PIS/COFINS</th>
+                <th className="px-3 py-2.5">IPI</th>
+                <th className="px-3 py-2.5">CBS %</th>
+                <th className="px-3 py-2.5">IBS %</th>
+                <th className="px-3 py-2.5">ICMS/ISS</th>
+                <th className="px-3 py-2.5 text-left">Base legal</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {ANOS_TRANSICAO.map((ano) => {
+                const r = regrasDoAno(ano, p.cbsReferencia, p.ibsReferencia)
+                const aj = p.aliquotasAno[String(ano)] ?? {}
+                const ajustar = (c: 'cbs' | 'ibs', valor: string) => {
+                  const novo = { ...aj, [c]: valor === '' ? undefined : Number(valor) }
+                  const todos = { ...p.aliquotasAno, [String(ano)]: novo }
+                  if (novo.cbs === undefined && novo.ibs === undefined) delete todos[String(ano)]
+                  onParams({ ...p, aliquotasAno: todos })
+                }
+                const campo = (c: 'cbs' | 'ibs') => (
+                  <input
+                    className={`input ml-auto w-24 py-1 text-right ${aj[c] !== undefined ? 'border-amber-300 bg-amber-50 font-semibold' : ''}`}
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={aj[c] ?? ''}
+                    placeholder={(r[c] * 100).toLocaleString('pt-BR', { maximumFractionDigits: 3 })}
+                    onChange={(e) => ajustar(c, e.target.value)}
+                    title="Alíquota esperada em % (vazio = cronograma legal)"
+                  />
+                )
+                return (
+                  <tr key={ano} className="border-b border-slate-100 text-right">
+                    <td className="py-2 pr-3 text-left font-semibold">{ano}</td>
+                    <td className="px-3 py-2">{r.pisCofins ? 'Cobrados' : 'Extintos'}</td>
+                    <td className="px-3 py-2">{r.ipi ? 'Cobrado' : 'Zero (exceto ZFM)'}</td>
+                    <td className="px-3 py-2">{r.teste ? '0,9% (teste)' : campo('cbs')}</td>
+                    <td className="px-3 py-2">{r.teste ? '0,1% (teste)' : campo('ibs')}</td>
+                    <td className="px-3 py-2">{pct(r.icmsIssFator, 0)} da alíquota</td>
+                    <td className="px-3 py-2 text-left text-xs text-slate-500">
+                      {ano === 2026
+                        ? 'LC 214, arts. 343, 346 e 348'
+                        : ano <= 2028
+                          ? 'EC 132 (ADCT art. 126); LC 214, arts. 344 e 347'
+                          : ano < 2033
+                            ? 'EC 132 (ADCT arts. 128 e 130)'
+                            : 'EC 132 (ADCT art. 129) — ICMS e ISS extintos'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Alertas itens={alertas} />
+    </div>
+  )
+}
+
+/** Mesma empresa, vários cenários de alíquota de referência: carga de cada regime ano a ano (2027–2033). */
+function Sensibilidade({ bases, ctx }: { bases: BaseMensal[]; ctx: Contexto }) {
+  const [regime, setRegime] = useState<RegimeId | 'melhor'>('melhor')
+  const [custom, setCustom] = useState([
+    { nome: 'Pessimista', cbs: 9.5, ibs: 19 },
+    { nome: 'Otimista', cbs: 8.5, ibs: 17 },
+  ])
+  const projecoes = useMemo(() => {
+    const cenarios = [
+      { id: 'atual', nome: 'Parâmetros atuais', cbs: ctx.params.cbsReferencia, ibs: ctx.params.ibsReferencia, ajustes: ctx.params.aliquotasAno },
+      ...CENARIOS_ALIQUOTA.map((c) => ({ id: c.id, nome: c.nome, cbs: c.cbs, ibs: c.ibs, ajustes: {} })),
+      ...custom.map((c, i) => ({ id: `custom${i}`, nome: c.nome, cbs: c.cbs, ibs: c.ibs, ajustes: {} })),
+    ]
+    return cenarios.map((c) => ({ c, anos: projetar(bases, { ...ctx, params: { ...ctx.params, cbsReferencia: c.cbs, ibsReferencia: c.ibs, aliquotasAno: c.ajustes } }) }))
+  }, [bases, ctx, custom])
+  const anos = projecoes[0]?.anos.filter((a) => a.ano >= 2027) ?? []
+  return (
+    <Section
+      title="Cenários de alíquota — ano a ano"
+      icone={LineChart}
+      cor="sky"
+      actions={
+        <select className="input w-auto py-1.5" value={regime} onChange={(e) => setRegime(e.target.value as RegimeId | 'melhor')}>
+          <option value="melhor">Regime de menor carga</option>
+          {REGIMES.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.curto}
+            </option>
+          ))}
+        </select>
+      }
+    >
+      <p className="-mt-2 mb-3 text-sm text-slate-500">
+        Cada linha recalcula toda a transição com outra alíquota de referência (CBS 2027–2028 = referência − 0,1 p.p.; IBS de 0,1% em 2027–2028, 10% a 40% da referência de
+        2029 a 2032 e 100% em 2033). Edite os dois cenários personalizados para testar expectativas.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[60rem] text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
+              <th className="py-2 pr-3 text-left">Cenário</th>
+              <th className="px-2 py-2">CBS ref.</th>
+              <th className="px-2 py-2">IBS ref.</th>
+              {anos.map((a) => (
+                <th key={a.ano} className="px-2 py-2">
+                  {a.ano}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {projecoes.map(({ c, anos: proj }) => {
+              const k = custom.findIndex((_, i) => c.id === `custom${i}`)
+              return (
+                <tr key={c.id} className={`border-b border-slate-100 text-right ${c.id === 'atual' ? 'bg-brand-50/50 font-semibold' : ''}`}>
+                  <td className="py-2 pr-3 text-left">
+                    {k >= 0 ? (
+                      <input className="input w-32 py-1" value={custom[k].nome} onChange={(e) => setCustom((l) => l.map((x, i) => (i === k ? { ...x, nome: e.target.value } : x)))} />
+                    ) : (
+                      c.nome
+                    )}
+                  </td>
+                  {(['cbs', 'ibs'] as const).map((campo) => (
+                    <td key={campo} className="px-2 py-2">
+                      {k >= 0 ? (
+                        <input
+                          className="input w-20 py-1 text-right"
+                          type="number"
+                          step="0.1"
+                          value={custom[k][campo]}
+                          onChange={(e) => setCustom((l) => l.map((x, i) => (i === k ? { ...x, [campo]: Number(e.target.value) || 0 } : x)))}
+                        />
+                      ) : (
+                        `${c[campo].toLocaleString('pt-BR')}%`
+                      )}
+                    </td>
+                  ))}
+                  {proj
+                    .filter((a) => a.ano >= 2027)
+                    .map((a) => {
+                      const reg = regime === 'melhor' ? a.melhor : regime
+                      const r = reg ? a.resultados[reg] : undefined
+                      return (
+                        <td key={a.ano} className="px-2 py-2">
+                          {r ? (
+                            <>
+                              {moedaCurta(r.total)}
+                              <div className="text-[0.6875rem] font-medium text-slate-500">
+                                {pct(r.carga)}
+                                {regime === 'melhor' && ` · ${nomeRegime(r.regime)}`}
+                              </div>
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      )
+                    })}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  )
+}

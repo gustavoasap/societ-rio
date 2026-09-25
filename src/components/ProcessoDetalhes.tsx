@@ -112,7 +112,7 @@ export function ProcessoDetalhes({
                           className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 font-mono text-xs font-semibold ring-1 ring-inset ${extra ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-brand-50 text-brand-700 ring-brand-200'}`}
                         >
                           {c}
-                          {extra && <span className="font-sans text-[9px] font-bold uppercase">extra</span>}
+                          {extra && <span className="font-sans text-[0.5625rem] font-bold uppercase">extra</span>}
                         </span>
                       )
                     })}
@@ -123,7 +123,7 @@ export function ProcessoDetalhes({
             <Info
               label="Objeto Social"
               className="col-span-2 lg:col-span-4"
-              value={p.objeto_social && <p className="text-[13px] leading-relaxed whitespace-pre-line">{p.objeto_social}</p>}
+              value={p.objeto_social && <p className="text-[0.8125rem] leading-relaxed whitespace-pre-line">{p.objeto_social}</p>}
             />
           </div>
         </Section>

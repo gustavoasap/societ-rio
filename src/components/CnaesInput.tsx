@@ -78,7 +78,7 @@ export function CnaesInput({
                   className={`inline-flex items-center gap-1 rounded-lg py-1 pr-1 pl-2.5 font-mono text-xs font-semibold ring-1 ring-inset ${extra ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-brand-50 text-brand-700 ring-brand-200'}`}
                 >
                   {c}
-                  {extra && <span className="rounded bg-amber-200/70 px-1 font-sans text-[9px] font-bold uppercase">extra</span>}
+                  {extra && <span className="rounded bg-amber-200/70 px-1 font-sans text-[0.5625rem] font-bold uppercase">extra</span>}
                   <button
                     type="button"
                     className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100"
