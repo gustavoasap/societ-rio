@@ -3,11 +3,13 @@ import { ArrowRightLeft, Building2, FlaskConical, Landmark, MapPinned, PackageSe
 import { Section, Select } from '../../../components/ui'
 import { apurar } from '../../engine/apuracao'
 import { montarBases } from '../../engine/base'
-import { icmsEntradasPorNcm, icmsVendasPorUf } from '../../engine/icms'
+import { itensStDoNcm } from '../../engine/listaSt'
+import { tratamentoNcm } from '../../engine/ncm'
+import { icmsEntradasPorNcm, icmsVendasInternasPorAliquota, icmsVendasPorUf } from '../../engine/icms'
 import { ICMS_INTERNO_UF, UFS, aliquotaInterestadual } from '../../engine/tabelas'
 import type { CenarioIcms, RegimeId } from '../../engine/tipos'
 import { moeda, moedaCurta, nomeRegime, pct } from '../../formatacao'
-import { Kpi } from '../comum'
+import { Kpi, Segmentado } from '../comum'
 import type { DadosAnalise } from '../contexto'
 
 const regimes: RegimeId[] = ['presumido', 'real']
@@ -20,6 +22,7 @@ export function Icms({ d }: { d: DadosAnalise }) {
   const ufEmpresa = matriz?.uf ?? 'SP'
   const cen = params.cenarioIcms
   const [origemTabela, setOrigemTabela] = useState<'empresa' | 'cenario'>('empresa')
+  const [visaoTabela, setVisaoTabela] = useState<'destino' | 'matriz'>('destino')
 
   // Situação atual (sem cenário) e cenário simulado — independentes do cenário estar aplicado nas demais telas
   const semCenario = useMemo(() => ({ ...params, cenarioIcms: { ...cen, ativo: false } }), [params, cen])
@@ -53,7 +56,24 @@ export function Icms({ d }: { d: DadosAnalise }) {
   const naoContrib = porUf.reduce((s, x) => s + x.naoContribuinte, 0)
   const stEnt = entradas.reduce((s, x) => s + x.st, 0)
   const antec = entradas.reduce((s, x) => s + x.antecipacao, 0)
-  const ncmsComAliquota = Object.entries(params.ncms).filter(([, c]) => c.aliquotaIcms !== undefined)
+  const faixas = useMemo(
+    () => icmsVendasInternasPorAliquota(d.linhas, semCenario, (id) => ({ uf: d.dadosEstab(id).uf, aliquotaInterna: d.dadosEstab(id).aliquota }), d.eVenda),
+    [d.linhas, semCenario, d.dadosEstab, d.eVenda],
+  )
+  const vendasInternas = faixas.reduce((s, x) => s + x.vendas, 0)
+  // NCMs movimentados que constam na lista nacional de ST (Conv. ICMS 142/2018) mas não estão marcados com ST
+  const listaSt = useMemo(() => {
+    const m = new Map<string, { ncm: string; valor: number; segmento: string; cest: string }>()
+    for (const l of d.linhas) {
+      if (!l.ncm || !(d.eVenda(l) || d.eCompra(l)) || tratamentoNcm(l.ncm, params.ncms).st) continue
+      const itens = itensStDoNcm(l.ncm)
+      if (!itens.length) continue
+      const x = m.get(l.ncm) ?? { ncm: l.ncm, valor: 0, segmento: itens[0].segmento, cest: itens[0].cest }
+      x.valor += l.valor_contabil
+      m.set(l.ncm, x)
+    }
+    return [...m.values()].sort((a, b) => b.valor - a.valor)
+  }, [d, params.ncms])
   const setCen = (c: Partial<CenarioIcms>) => d.onParams({ ...params, cenarioIcms: { ...cen, ...c } })
   const origemTab = origemTabela === 'cenario' ? cen.uf : ufEmpresa
   const ufsVendidas = new Set(porUf.map((x) => x.uf))
@@ -85,17 +105,29 @@ export function Icms({ d }: { d: DadosAnalise }) {
                 <strong>{p2(e.aliquota_icms ?? ICMS_INTERNO_UF[e.uf] ?? 18)}</strong>
               </div>
             ))}
-            <p className="mt-2 text-xs text-slate-500">Alíquota modal da UF (editável no cadastro do estabelecimento). Mercadoria com ST não tem débito na venda interna.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              Alíquota modal da UF (editável no cadastro do estabelecimento): vale para os produtos sem alíquota própria. Mercadoria com ST não tem débito na venda interna.
+            </p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
-            <div className="text-xs font-bold text-slate-500 uppercase">NCMs com alíquota própria</div>
-            {ncmsComAliquota.length === 0 && <p className="mt-1 text-slate-500">Nenhum — todos usam a alíquota modal. Defina na aba Produtos (NCM).</p>}
-            {ncmsComAliquota.slice(0, 6).map(([n, c]) => (
-              <div key={n} className="mt-1 flex justify-between">
-                <span>{n}</span>
-                <strong>{p2(c.aliquotaIcms!)}</strong>
+            <div className="text-xs font-bold text-slate-500 uppercase">Vendas internas por alíquota do produto</div>
+            {faixas.length === 0 && <p className="mt-1 text-slate-500">Sem vendas internas no período.</p>}
+            {faixas.map((f) => (
+              <div key={f.st ? 'st' : f.aliquota} className="mt-1 flex items-baseline justify-between gap-2" title={`NCMs: ${f.ncms.slice(0, 12).join(', ')}${f.ncms.length > 12 ? '...' : ''}`}>
+                <span>
+                  <strong>{f.st ? 'ST (sem débito)' : p2(f.aliquota)}</strong>{' '}
+                  <span className="text-xs text-slate-500">
+                    {f.ncms.length} NCM{f.ncms.length > 1 ? 's' : ''}
+                  </span>
+                </span>
+                <span className="text-right tabular-nums">
+                  {moedaCurta(f.vendas)} <span className="text-xs text-slate-500">({vendasInternas ? pct(f.vendas / vendasInternas, 0) : '—'})</span>
+                </span>
               </div>
             ))}
+            <p className="mt-2 text-xs text-slate-500">
+              Cada produto usa a alíquota interna informada na aba Produtos (NCM); sem ela, a modal da UF.
+            </p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">
             <div className="text-xs font-bold text-slate-500 uppercase">Vendas interestaduais</div>
@@ -126,13 +158,26 @@ export function Icms({ d }: { d: DadosAnalise }) {
         icone={ArrowRightLeft}
         cor="amber"
         actions={
-          <select className="input w-auto py-1.5" value={origemTabela} onChange={(e) => setOrigemTabela(e.target.value as 'empresa' | 'cenario')}>
-            <option value="empresa">Saindo de {ufEmpresa} (empresa)</option>
-            <option value="cenario">Saindo de {cen.uf} (cenário)</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmentado
+              valor={visaoTabela}
+              onChange={setVisaoTabela}
+              opcoes={[
+                { value: 'destino', label: 'Por destino' },
+                { value: 'matriz', label: 'Origem × destino' },
+              ]}
+            />
+            {visaoTabela === 'destino' && (
+              <select className="input w-auto py-1.5" value={origemTabela} onChange={(e) => setOrigemTabela(e.target.value as 'empresa' | 'cenario')}>
+                <option value="empresa">Saindo de {ufEmpresa} (empresa)</option>
+                <option value="cenario">Saindo de {cen.uf} (cenário)</option>
+              </select>
+            )}
+          </div>
         }
       >
-        <div className="max-h-96 overflow-auto">
+        {visaoTabela === 'matriz' && <MatrizInterestadual destaque={ufEmpresa} />}
+        <div className={`max-h-96 overflow-auto ${visaoTabela === 'matriz' ? 'hidden' : ''}`}>
           <table className="w-full min-w-[40rem] text-sm">
             <thead className="sticky top-0 bg-white">
               <tr className="border-b border-slate-200 text-right text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
@@ -166,8 +211,32 @@ export function Icms({ d }: { d: DadosAnalise }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-xs text-slate-500">Alíquotas modais internas de referência 2026 — confira a legislação de cada UF (alíquotas específicas por produto e FCP não estão incluídas).</p>
+        <p className="mt-2 text-xs text-slate-500">
+          Interestaduais: 7% das regiões Sul e Sudeste (exceto ES) para Norte, Nordeste, Centro-Oeste e ES; 12% nas demais (Res. SF 22/1989); 4% para importados — origem 1, 2, 3
+          ou 8 (Res. SF 13/2012). Internas: alíquota modal de cada UF (RJ 18% + 2% de FECP); alíquotas específicas por produto são informadas na aba Produtos (NCM).
+        </p>
       </Section>
+
+      {listaSt.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            {listaSt.length} NCM{listaSt.length > 1 ? 's' : ''} da empresa consta{listaSt.length > 1 ? 'm' : ''} na lista nacional de ST (Convênio ICMS 142/2018) e não está
+            {listaSt.length > 1 ? 'ão' : ''} marcado{listaSt.length > 1 ? 's' : ''} com ST na aba Produtos (NCM):
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {listaSt.slice(0, 8).map((x) => (
+              <li key={x.ncm}>
+                <strong>{x.ncm}</strong> — {x.segmento} (CEST {x.cest}) · {moeda(x.valor)} movimentados
+              </li>
+            ))}
+            {listaSt.length > 8 && <li>e mais {listaSt.length - 8}.</li>}
+          </ul>
+          <p className="mt-1 text-xs">
+            Estar na lista não obriga a ST: confira se a UF da empresa adota o regime para o item e, nas compras e vendas interestaduais, se há protocolo ou convênio com a
+            outra UF. Marcando ST, a venda interna fica sem débito e a entrada interestadual sem retenção passa a calcular ICMS-ST com a MVA.
+          </p>
+        </div>
+      )}
 
       <Section title="ICMS nas entradas interestaduais: ST (MVA) e antecipação" icone={PackageSearch} cor="violet">
         <p className="-mt-2 mb-3 text-sm text-slate-500">
@@ -388,6 +457,48 @@ function TabelaUf({ linhas, total, destaque }: { linhas: ReturnType<typeof icmsV
             <td />
             <td className="px-3 py-2">{moeda(tot.difal)}</td>
           </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Tabela de alíquotas origem × destino: diagonal = alíquota interna; fora dela, a interestadual; IM = importados (4%). */
+function MatrizInterestadual({ destaque }: { destaque: string }) {
+  const linhas = [...UFS, 'IM']
+  const valor = (o: string, dest: string) => {
+    if (o === 'IM' || dest === 'IM') return 4
+    return o === dest ? ICMS_INTERNO_UF[o] : aliquotaInterestadual('0', o, dest)
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="mx-auto border-collapse text-center text-[0.6875rem] tabular-nums">
+        <thead>
+          <tr>
+            <th className="sticky left-0 bg-white px-1 py-1 text-[0.625rem] text-slate-400">orig. ↓ / dest. →</th>
+            {linhas.map((d) => (
+              <th key={d} className={`min-w-7 px-1 py-1 font-bold text-white ${d === destaque ? 'bg-brand-600' : 'bg-asap-900'}`}>
+                {d}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((o) => (
+            <tr key={o}>
+              <th className={`sticky left-0 px-1.5 py-0.5 font-bold text-white ${o === destaque ? 'bg-brand-600' : 'bg-asap-900'}`}>{o}</th>
+              {linhas.map((d) => {
+                const v = valor(o, d)
+                const interna = o === d && o !== 'IM'
+                const cor = interna ? 'bg-rose-600 font-bold text-white' : v === 7 ? 'bg-amber-50 text-amber-800' : v === 4 ? 'bg-sky-50 text-sky-800' : 'text-slate-700'
+                return (
+                  <td key={d} className={`border border-slate-200 px-1 py-0.5 ${cor} ${o === destaque && !interna ? 'ring-1 ring-brand-300 ring-inset' : ''}`}>
+                    {v.toLocaleString('pt-BR')}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

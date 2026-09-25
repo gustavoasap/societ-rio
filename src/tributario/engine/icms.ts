@@ -41,8 +41,9 @@ export function icmsDaVenda(
   }
   if (!destino) return null
   if (interna) {
+    const aliquotaNcm = !params.ufAliquotasNcm || params.ufAliquotasNcm === origem.uf ? t?.aliquotaIcms : null
     // mercadoria sujeita a ST: o ICMS da cadeia já foi recolhido na entrada — sem débito na venda interna
-    const aliquota = t?.st ? 0 : (origem.cargaInterna ?? t?.aliquotaIcms ?? origem.aliquotaInterna)
+    const aliquota = t?.st && params.papelSt !== 'substituto' ? 0 : (origem.cargaInterna ?? aliquotaNcm ?? origem.aliquotaInterna)
     return { destino, interna, aliquota, proprio: (v * aliquota) / 100, difal: 0, aliquotaDestino: aliquota }
   }
   const inter = aliquotaInterestadual(origemDoCst(l.cst), origem.uf, destino)
@@ -72,7 +73,7 @@ export function icmsDaEntrada(l: MovimentoLinha, params: Parametros, ufEstab: st
   if (!l.cfop.startsWith('2') || l.icms_st > 0) return null
   const v = l.valor_contabil
   const t = l.ncm ? tratamentoNcm(l.ncm, params.ncms) : null
-  const interna = t?.aliquotaIcms ?? aliquotaModal
+  const interna = (!params.ufAliquotasNcm || params.ufAliquotasNcm === ufEstab ? t?.aliquotaIcms : null) ?? aliquotaModal
   const inter = l.bc_icms > 0 && l.icms > 0 ? (l.icms / l.bc_icms) * 100 : aliquotaInterestadual(origemDoCst(l.cst), l.uf, ufEstab)
   const icmsProprio = l.icms > 0 ? l.icms : (v * inter) / 100
   if (t?.st) {
@@ -159,4 +160,38 @@ export function icmsEntradasPorNcm(
   return [...m.values()]
     .map(({ _ufs, ...r }) => ({ ...r, ufs: [..._ufs].sort().join(', '), aliquotaInterestadual: r.valor ? r.aliquotaInterestadual / r.valor : 0 }))
     .sort((a, b) => b.st + b.antecipacao - (a.st + a.antecipacao))
+}
+
+export interface FaixaAliquotaInterna {
+  aliquota: number // % aplicada (0 = mercadoria com ST, sem débito na venda)
+  st: boolean
+  vendas: number
+  icms: number
+  ncms: string[] // do maior para o menor valor vendido
+}
+
+/** Vendas internas agrupadas pela alíquota de ICMS aplicada a cada produto (NCM). */
+export function icmsVendasInternasPorAliquota(
+  linhas: MovimentoLinha[],
+  params: Parametros,
+  origem: (estabId: string | null) => { uf: string; aliquotaInterna: number },
+  eVenda: (l: MovimentoLinha) => boolean,
+): FaixaAliquotaInterna[] {
+  const m = new Map<string, FaixaAliquotaInterna & { _ncm: Map<string, number> }>()
+  for (const l of linhas) {
+    if (l.tipo !== 'saida' || !eVenda(l) || destinoCfop(l.cfop) === 'interestadual') continue
+    const x = icmsDaVenda(l, params, origem(l.estabelecimento_id), 'cfop')
+    if (!x) continue
+    const st = !!(l.ncm && tratamentoNcm(l.ncm, params.ncms).st)
+    const k = st ? 'st' : String(Math.round(x.aliquota * 100) / 100)
+    const r = m.get(k) ?? { aliquota: x.aliquota, st, vendas: 0, icms: 0, ncms: [], _ncm: new Map<string, number>() }
+    r.vendas += l.valor_contabil
+    r.icms += x.proprio
+    const n = l.ncm || '(sem NCM)'
+    r._ncm.set(n, (r._ncm.get(n) ?? 0) + l.valor_contabil)
+    m.set(k, r)
+  }
+  return [...m.values()]
+    .map(({ _ncm, ...r }) => ({ ...r, ncms: [..._ncm.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n) }))
+    .sort((a, b) => b.vendas - a.vendas)
 }

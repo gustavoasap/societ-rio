@@ -28,7 +28,7 @@ function contextoPreco(d: DadosAnalise, a: AnoProjetado): ContextoPreco {
 
 function padroes(d: DadosAnalise): EntradaPreco {
   const compras = d.bases.reduce((s, b) => s + b.compras, 0)
-  const icmsCompras = d.bases.reduce((s, b) => s + b.icmsCompras, 0)
+  const icmsCompras = d.bases.reduce((s, b) => s + b.icmsCompras + b.icmsComprasSemCredito, 0)
   const matriz = d.estabs.find((e) => e.matriz) ?? d.estabs[0]
   const modal = matriz?.aliquota_icms ?? ICMS_INTERNO_UF[matriz?.uf ?? 'SP'] ?? 18
   // despesas fixas em % da receita, pela DRE do Presumido no primeiro ano projetado

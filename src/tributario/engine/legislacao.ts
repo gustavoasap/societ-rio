@@ -128,7 +128,21 @@ export const LEGISLACAO: Norma[] = [
     sigla: 'LC 87/1996',
     titulo: 'Lei Kandir — ICMS',
     url: planalto('leis/lcp/lcp87.htm'),
-    uso: 'Não cumulatividade do ICMS (débito e crédito).',
+    uso: 'Não cumulatividade do ICMS (débito e crédito); substituição tributária — responsabilidade do substituto, base com MVA e protocolos/convênios entre UFs (arts. 6º a 10).',
+  },
+  {
+    grupo: 'ICMS/IPI/ISS',
+    sigla: 'Convênio ICMS 142/2018',
+    titulo: 'Regimes de substituição tributária e antecipação do ICMS; lista nacional de mercadorias (CEST × NCM)',
+    url: 'https://www.confaz.fazenda.gov.br/legislacao/convenios/2018/CV142_18',
+    uso: 'Anexos II a XXVI: mercadorias que podem estar sujeitas à ST, por segmento e CEST (aviso "Lista de ST" na aba Produtos); MVA ajustada nas operações interestaduais (cláusula nona).',
+  },
+  {
+    grupo: 'ICMS/IPI/ISS',
+    sigla: 'CONFAZ — protocolos',
+    titulo: 'Protocolos ICMS (ST entre estados, por segmento)',
+    url: 'https://www.confaz.fazenda.gov.br/legislacao/protocolos',
+    uso: 'Acordos entre UFs que atribuem a retenção da ST ao remetente nas operações interestaduais. Sem protocolo ou convênio, o destinatário recolhe a ST na entrada.',
   },
   {
     grupo: 'ICMS/IPI/ISS',

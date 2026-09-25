@@ -4,7 +4,7 @@ import { calcularRbt12, estimarMix, montarBases } from './base'
 import { classificarCfop, fornecedorDoSimples } from './cfop'
 import { ncmMonofasico, reducaoIbsCbs } from './ncm'
 import { montarAnoBase, projetar } from './projecao'
-import { ANEXOS_SIMPLES, aliquotaInterestadual, regrasDoAno } from './tabelas'
+import { ANEXOS_SIMPLES, ICMS_INTERNO_UF, aliquotaInterestadual, regrasDoAno } from './tabelas'
 import { tipoDestinatario } from '../importacao/relatorios'
 import { BASE_VAZIA, PARAMETROS_PADRAO, type BaseMensal, type MovimentoLinha, type Parametros } from './tipos'
 
@@ -520,4 +520,22 @@ describe('matriz ano a ano 2026-2033 (cada regime em cada ano)', () => {
       }
     })
   }
+})
+
+describe('tabela de ICMS (referência ASAP)', () => {
+  it('alíquotas internas por UF', () => {
+    expect(ICMS_INTERNO_UF).toEqual({
+      AC: 19, AL: 19, AM: 20, AP: 18, BA: 20.5, CE: 20, DF: 20, ES: 17, GO: 19, MA: 22, MG: 18, MS: 17, MT: 17, PA: 19,
+      PB: 20, PE: 20.5, PI: 21, PR: 19.5, RJ: 20, RN: 18, RO: 19.5, RR: 20, RS: 17, SC: 17, SE: 19, SP: 18, TO: 20,
+    })
+  })
+
+  it('interestaduais: 7% de S/SE (exceto ES) para N/NE/CO/ES, 12% nas demais, 4% importados', () => {
+    const casos: [string, string, number][] = [
+      ['MG', 'AC', 7], ['MG', 'SP', 12], ['PR', 'ES', 7], ['RS', 'GO', 7], ['SP', 'RJ', 12], ['RJ', 'BA', 7],
+      ['ES', 'MG', 12], ['ES', 'BA', 12], ['BA', 'SP', 12], ['GO', 'PR', 12], ['SC', 'PE', 7],
+    ]
+    for (const [o, d, v] of casos) expect(aliquotaInterestadual('0', o, d), `${o}→${d}`).toBe(v)
+    expect(aliquotaInterestadual('1', 'SP', 'BA')).toBe(4)
+  })
 })

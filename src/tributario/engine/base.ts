@@ -1,6 +1,6 @@
 import { classificarCfop, destinoCfop, fornecedorDoSimples, type Natureza } from './cfop'
 import { icmsDaEntrada, icmsDaVenda, naoContribuinte } from './icms'
-import { tratamentoNcm } from './ncm'
+import { stSubstituido, tratamentoNcm } from './ncm'
 import { ICMS_INTERNO_UF } from './tabelas'
 import { BASE_VAZIA, receitaBruta, type BaseMensal, type MixProdutos, type MovimentoLinha, type Parametros, type RegimeFornecedor } from './tipos'
 
@@ -98,7 +98,7 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
           const t = tratamentoNcm(l.ncm, params.ncms)
           b.vendasComNcm += v
           if (t.monofasico) b.vendasMonofasico += v
-          if (t.st) b.vendasSt += v
+          if (t.st && params.papelSt !== 'substituto') b.vendasSt += v
           b.vendasReducao += v * t.reducao
         }
         if (l.destinatario) {
@@ -123,7 +123,9 @@ export function montarBases(linhas: MovimentoLinha[], params: Parametros, estab:
       case 'compra_revenda':
       case 'compra_insumo':
         b.compras += v
-        b.icmsCompras += l.icms
+        // mercadoria com ST para revenda (substituída): o ICMS próprio do fornecedor não gera crédito — fica no custo
+        if (stSubstituido(l.ncm, params)) b.icmsComprasSemCredito += l.icms
+        else b.icmsCompras += l.icms
         b.ipiCompras += l.ipi
         b.stCompras += l.icms_st
         {
@@ -208,7 +210,7 @@ export function estimarMix(linhas: MovimentoLinha[], params: Parametros): MixPro
     const t = tratamentoNcm(l.ncm, params.ncms)
     pesos.total += l.valor_contabil
     if (t.monofasico) pesos.mono += l.valor_contabil
-    if (t.st) pesos.st += l.valor_contabil
+    if (t.st && params.papelSt !== 'substituto') pesos.st += l.valor_contabil
     pesos.reducao += l.valor_contabil * t.reducao
   }
   const fr = (manual: number | null, parte: number, total: number) => (manual !== null ? manual / 100 : total ? parte / total : 0)
