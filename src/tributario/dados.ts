@@ -336,7 +336,7 @@ export async function carregarEstoque(empresaId: string): Promise<ItemEstoque[]>
   for (let de = 0; ; de += pagina) {
     const { data, error } = await supabase
       .from('trib_estoque_movimentos')
-      .select('estabelecimento_id, competencia, tipo, cfop, codigo, ean, descricao, ncm, unidade, quantidade, valor')
+      .select('*')
       .eq('empresa_id', empresaId)
       .order('id')
       .range(de, de + pagina - 1)
@@ -344,7 +344,24 @@ export async function carregarEstoque(empresaId: string): Promise<ItemEstoque[]>
     if (error && /trib_estoque_movimentos/.test(error.message)) return []
     erro(error)
     const linhas = (data ?? []) as ItemEstoque[]
-    todas.push(...linhas.map((l) => ({ ...l, quantidade: Number(l.quantidade) || 0, valor: Number(l.valor) || 0 })))
+    todas.push(
+      ...linhas.map((l) => ({
+        estabelecimento_id: l.estabelecimento_id,
+        competencia: l.competencia,
+        tipo: l.tipo,
+        cfop: l.cfop,
+        codigo: l.codigo,
+        ean: l.ean,
+        descricao: l.descricao,
+        ncm: l.ncm,
+        unidade: l.unidade,
+        quantidade: Number(l.quantidade) || 0,
+        valor: Number(l.valor) || 0,
+        nota: l.nota ?? '',
+        parceiro: l.parceiro ?? '',
+        valor_produto: l.valor_produto === undefined || l.valor_produto === null ? undefined : Number(l.valor_produto),
+      })),
+    )
     if (linhas.length < pagina) break
   }
   return todas
@@ -355,24 +372,25 @@ export async function listarProdutosEstoque(empresaId: string): Promise<Record<s
   if (error && /trib_estoque_produtos/.test(error.message)) return {}
   erro(error)
   const r: Record<string, ConfigProduto> = {}
-  for (const p of (data ?? []) as { chave: string; qtd_inicial: number | null; valor_inicial: number | null; componentes: ConfigProduto['componentes'] }[])
+  for (const p of (data ?? []) as { chave: string; qtd_inicial: number | null; valor_inicial: number | null; componentes: ConfigProduto['componentes']; sem_estoque?: boolean }[])
     r[p.chave] = {
       chave: p.chave,
       qtdInicial: p.qtd_inicial === null ? null : Number(p.qtd_inicial),
       valorInicial: p.valor_inicial === null ? null : Number(p.valor_inicial),
       componentes: p.componentes,
+      semEstoque: !!p.sem_estoque,
     }
   return r
 }
 
 export async function salvarProdutoEstoque(empresaId: string, c: ConfigProduto) {
-  const vazio = c.qtdInicial === null && c.valorInicial === null && !c.componentes?.length
+  const vazio = c.qtdInicial === null && c.valorInicial === null && !c.componentes?.length && !c.semEstoque
   const { error } = vazio
     ? await supabase.from('trib_estoque_produtos').delete().eq('empresa_id', empresaId).eq('chave', c.chave)
     : await supabase
         .from('trib_estoque_produtos')
         .upsert(
-          { empresa_id: empresaId, chave: c.chave, qtd_inicial: c.qtdInicial, valor_inicial: c.valorInicial, componentes: c.componentes?.length ? c.componentes : null, updated_at: new Date().toISOString() },
+          { empresa_id: empresaId, chave: c.chave, qtd_inicial: c.qtdInicial, valor_inicial: c.valorInicial, componentes: c.componentes?.length ? c.componentes : null, sem_estoque: !!c.semEstoque, updated_at: new Date().toISOString() },
           { onConflict: 'empresa_id,chave' },
         )
   erro(error)

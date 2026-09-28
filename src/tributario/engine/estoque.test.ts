@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { apurar } from './apuracao'
 import { montarBases, segregacaoPgdas } from './base'
-import { calcularEstoque, chaveProduto, gtinValido, movimentoEstoque, type ItemEstoque } from './estoque'
+import { calcularEstoque, chaveNota, chaveProduto, gtinValido, guardaNota, movimentoEstoque, vincularProdutos, type ItemEstoque } from './estoque'
 import { PARAMETROS_PADRAO, type MovimentoLinha } from './tipos'
 
 const EAN_A = '7898975193260'
@@ -84,6 +84,86 @@ describe('estoque pelo custo médio ponderado', () => {
     expect(r.semCusto.map((s) => s.chave)).toEqual(['COD:777'])
     expect(r.porMes['2026-05'].cmv).toBeCloseTo(3 * 10 + 6 * 5, 2) // 60
     expect(r.porMes['2026-05'].cmvEstimado).toBeCloseTo(60 + 45 * (60 / 90), 2)
+  })
+})
+
+describe('vínculo e operações fora do estoque', () => {
+  const compra = (i: Partial<ItemEstoque>) => item({ nota: '100', parceiro: 'FORNECEDOR', ...i })
+
+  it('liga devolução sem EAN à compra pela descrição e pelo SKU', () => {
+    const { chaves, apelidos } = vincularProdutos([
+      compra({ codigo: '3116', descricao: 'Alfaparf Semi di Lino' }),
+      item({ tipo: 'saida', cfop: '5202', codigo: '2000000000001', ean: '', descricao: 'ALFAPARF SEMI DI LINO' }),
+      item({ tipo: 'saida', cfop: '6106', codigo: '3116', ean: 'SEM GTIN', descricao: 'Anúncio' }),
+    ])
+    expect(chaves).toEqual([EAN_A, EAN_A, EAN_A])
+    expect(apelidos['COD:2000000000001']).toBe(EAN_A)
+  })
+
+  it('compra devolvida no mesmo valor (5202 ou 6949 ao fornecedor) não compõe o estoque', () => {
+    for (const cfop of ['5202', '6949']) {
+      const r = calcularEstoque(
+        [
+          compra({ quantidade: 10, valor: 120, valor_produto: 100 }),
+          compra({ nota: '101', quantidade: 10, valor: 100 }),
+          item({ competencia: '2026-06', tipo: 'saida', cfop, nota: '9', parceiro: 'FORNECEDOR', ean: '', codigo: 'X', descricao: 'Produto A', quantidade: 10, valor: 100 }),
+        ],
+        {},
+      )
+      expect(r.pares).toHaveLength(1)
+      expect(r.pares[0].entrada.nota).toBe('100') // a de mesmo valor dos produtos, não a de mesmo custo
+      expect(r.porMes['2026-05'].compras).toBe(100)
+      expect(r.produtos[0].meses['2026-06']).toMatchObject({ finalQ: 10, finalV: 100 })
+    }
+  })
+
+  it('remessa de mesmo valor para outro parceiro (marketplace) não é pareada', () => {
+    const r = calcularEstoque([compra({ quantidade: 10, valor: 100 }), item({ tipo: 'saida', cfop: '5949', nota: '7', parceiro: 'AMAZON', quantidade: 10, valor: 100 })], {})
+    expect(r.pares).toHaveLength(0)
+    expect(r.porMes['2026-05'].compras).toBe(100)
+  })
+
+  it('venda à ordem: 6118 pareada com a entrada 2923 do mesmo fornecedor não é venda', () => {
+    const r = calcularEstoque(
+      [
+        compra({ quantidade: 10, valor: 100 }),
+        compra({ competencia: '2026-06', cfop: '2923', nota: '200', quantidade: 5, valor: 60 }),
+        item({ competencia: '2026-06', tipo: 'saida', cfop: '6118', nota: '300', parceiro: 'FORNECEDOR', quantidade: 5, valor: 60 }),
+      ],
+      {},
+      {},
+      { '2923': 'neutro' },
+    )
+    expect(r.pares.map((p) => [p.entrada.cfop, p.saida.cfop])).toEqual([['2923', '6118']])
+    expect(r.porMes['2026-06'].cmv).toBe(0)
+  })
+
+  it('devolução de parte da compra pelo mesmo preço é estornada da compra', () => {
+    const r = calcularEstoque([compra({ quantidade: 10, valor: 100 }), item({ competencia: '2026-06', tipo: 'saida', cfop: '5202', nota: '5', parceiro: 'FORNECEDOR', quantidade: 4, valor: 40 })], {})
+    expect(r.pares[0]).toMatchObject({ tipo: 'parcial', quantidade: 4 })
+    expect(r.porMes['2026-05'].compras).toBe(60)
+  })
+
+  it('nota fora do estoque e pareamento desligado', () => {
+    const itens = [compra({ quantidade: 10, valor: 100 }), compra({ nota: '101', quantidade: 5, valor: 60 })]
+    expect(calcularEstoque(itens, {}, {}, {}, { notasFora: [chaveNota(itens[1])] }).porMes['2026-05'].compras).toBe(100)
+    const dev = [...itens, item({ tipo: 'saida', cfop: '5202', nota: '5', parceiro: 'FORNECEDOR', quantidade: 5, valor: 60 })]
+    expect(calcularEstoque(dev, {}, {}, {}, { parear: false }).pares).toHaveLength(0)
+  })
+
+  it('produto sem estoque: venda vai para a receita sem CMV e sem pendência', () => {
+    const itens = [compra({ quantidade: 10, valor: 100 }), item({ tipo: 'saida', cfop: '6106', ean: EAN_KIT, codigo: '9', descricao: 'Kit', quantidade: 2, valor: 80 })]
+    const r = calcularEstoque(itens, { [EAN_KIT]: { chave: EAN_KIT, qtdInicial: null, valorInicial: null, componentes: null, semEstoque: true } })
+    expect(r.semCusto).toHaveLength(0)
+    expect(r.porMes['2026-05']).toMatchObject({ cmv: 0, cmvEstimado: 0, vendasSemEstoque: 80 })
+  })
+
+  it('guarda a nota nas compras e devoluções; vendas e remessas de depósito somam por mês', () => {
+    expect(guardaNota('entrada', '2102')).toBe(true)
+    expect(guardaNota('saida', '6949')).toBe(true)
+    expect(guardaNota('saida', '6106')).toBe(false)
+    expect(guardaNota('entrada', '1949')).toBe(false)
+    expect(guardaNota('saida', '6905')).toBe(false)
   })
 })
 

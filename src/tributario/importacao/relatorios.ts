@@ -3,7 +3,7 @@
 // - Resumo do Registro de Entradas/Saídas por CFOP
 // - Registro de Serviços — Detalhado (tomados ou prestados)
 // As linhas são agregadas por competência × CFOP × NCM × UF × CST × serviço, que é o que o motor precisa.
-import type { ItemEstoque } from '../engine/estoque'
+import { guardaNota, type ItemEstoque } from '../engine/estoque'
 import { somarMeses } from '../engine/base'
 import type { Destinatario, MovimentoLinha, TipoMovimento } from '../engine/tipos'
 import { lerXlsx, type Celula } from './xlsx'
@@ -244,6 +244,7 @@ function lerDetalhado(
     ean: coluna(ix, 'Código EAN', 'EAN', 'GTIN'),
     unidade: coluna(ix, 'Unid.', 'Unidade', 'Un'),
     quantidade: coluna(ix, 'Quantidade', 'Qtde', 'Qtd'),
+    nota: coluna(ix, 'N° NF', 'Nº NF', 'N NF', 'Número NF', 'Nota Fiscal', 'NF'),
   }
   if (c.data < 0) throw new Error('Coluna de data não encontrada no relatório detalhado.')
   if (c.total < 0 && c.contabil < 0) throw new Error('Coluna de valor não encontrada no relatório detalhado.')
@@ -272,7 +273,11 @@ function lerDetalhado(
       const ean = c.ean >= 0 ? texto(l[c.ean]).replace(/\D/g, '') : ''
       const qtd = v(c.quantidade)
       if ((codigo || ean) && qtd) {
-        const k = [comp, tipo, cfop, codigo, ean].join('|')
+        // compras, devoluções e demais operações ficam por nota (pareamento e exclusão por nota); vendas e remessas, por mês
+        const porNota = guardaNota(tipo, cfop)
+        const nota = porNota && c.nota >= 0 ? texto(l[c.nota]).replace(/\.0+$/, '') : ''
+        const parceiro = porNota && c.nome >= 0 ? texto(l[c.nome]) : ''
+        const k = [comp, tipo, cfop, codigo, ean, nota, parceiro].join('|')
         const it = itens.get(k) ?? {
           competencia: comp,
           tipo,
@@ -284,9 +289,13 @@ function lerDetalhado(
           unidade: c.unidade >= 0 ? texto(l[c.unidade]) : '',
           quantidade: 0,
           valor: 0,
+          nota,
+          parceiro,
+          valor_produto: 0,
         }
         it.quantidade += qtd
         it.valor += valor
+        it.valor_produto = (it.valor_produto ?? 0) + (c.total >= 0 ? v(c.total) - v(c.desconto) : valor)
         itens.set(k, it)
       }
     }

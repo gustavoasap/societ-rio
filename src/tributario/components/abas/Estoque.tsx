@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Boxes, Link2, Search, Settings2, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, Boxes, Link2, PackageX, Search, Settings2, Trash2 } from 'lucide-react'
 import { Section } from '../../../components/ui'
 import { nomeMes } from '../../engine/base'
-import { NOME_MOV_ESTOQUE, chaveProduto, movimentoEstoque, type ConfigProduto, type ItemEstoque, type MovEstoque, type ResultadoEstoque } from '../../engine/estoque'
+import { NOME_MOV_ESTOQUE, chaveNota, movimentoEstoque, type ConfigProduto, type ItemEstoque, type MovEstoque, type ResultadoEstoque } from '../../engine/estoque'
 import type { Parametros } from '../../engine/tipos'
 import { moeda, moedaCurta, pct } from '../../formatacao'
 import { Kpi, Segmentado } from '../comum'
@@ -28,6 +28,7 @@ export function Estoque({
   const [mes, setMes] = useState(meses[meses.length - 1] ?? '')
   const [busca, setBusca] = useState('')
   const [editando, setEditando] = useState<string | null>(null)
+  const [verNotas, setVerNotas] = useState(false)
 
   // CFOPs presentes nos itens, com o tratamento no estoque
   const cfops = useMemo(() => {
@@ -40,6 +41,22 @@ export function Estoque({
     }
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [itens])
+
+  // notas de compra (entradas que compõem o estoque), para tirar uma nota inteira do estoque
+  const notasCompra = useMemo(() => {
+    const m = new Map<string, { chave: string; competencia: string; nota: string; parceiro: string; cfops: Set<string>; qtd: number; valor: number; itens: number }>()
+    for (const i of itens) {
+      if (i.tipo !== 'entrada' || !i.nota || movimentoEstoque('entrada', i.cfop, params.cfopNatureza, params.cfopEstoque) !== 'compra') continue
+      const k = chaveNota(i)
+      const x = m.get(k) ?? { chave: k, competencia: i.competencia, nota: i.nota, parceiro: i.parceiro ?? '', cfops: new Set(), qtd: 0, valor: 0, itens: 0 }
+      x.cfops.add(i.cfop)
+      x.qtd += i.quantidade
+      x.valor += i.valor
+      x.itens++
+      m.set(k, x)
+    }
+    return [...m.values()].sort((a, b) => a.competencia.localeCompare(b.competencia) || a.nota.localeCompare(b.nota, 'pt-BR', { numeric: true }))
+  }, [itens, params.cfopNatureza, params.cfopEstoque])
 
   if (!estoque || !itens.length)
     return (
@@ -70,6 +87,12 @@ export function Estoque({
     },
     { ini: 0, comp: 0, cmv: 0, fim: 0 },
   )
+  const semEstoque = Object.values(produtos).filter((c) => c.semEstoque)
+  const totalSemEstoque = meses.reduce((s, m) => s + estoque.porMes[m].vendasSemEstoque, 0)
+  const fora = new Set(params.estoqueNotasFora)
+  const alternarNota = (k: string) =>
+    onParams({ ...params, estoqueNotasFora: fora.has(k) ? params.estoqueNotasFora.filter((x) => x !== k) : [...params.estoqueNotasFora, k] })
+  const paresNotas = new Set(estoque.pares.map((p) => `entrada|${p.entrada.nota}|${p.entrada.parceiro}`))
   const opcoesProduto = estoque.produtos.map((p) => ({ chave: p.chave, rotulo: `${p.descricao.slice(0, 60)} (${p.chave})` }))
 
   return (
@@ -80,7 +103,7 @@ export function Estoque({
         <Kpi
           titulo="Vendas sem custo"
           valor={moedaCurta(total.sem)}
-          detalhe={`${estoque.semCusto.length} produto(s) · ${total.sem + total.cobertas ? pct(total.sem / (total.sem + total.cobertas), 1) : '—'} das vendas — faça o DE.PARA`}
+          detalhe={`${estoque.semCusto.length} produto(s) · ${total.sem + total.cobertas ? pct(total.sem / (total.sem + total.cobertas), 1) : '—'} das vendas — DE.PARA ou “sem estoque”${totalSemEstoque ? ` · ${moedaCurta(totalSemEstoque)} em produtos sem estoque (só receita)` : ''}`}
           tom="amber"
           icone={<Link2 className="h-4 w-4" />}
         />
@@ -138,8 +161,9 @@ export function Estoque({
           {estoque.semCusto.length > 0 && (
             <>
               <p className="-mt-2 mb-2 text-sm text-slate-600">
-                <strong>Produtos vendidos sem compra nem estoque inicial</strong> — geralmente o código/EAN da venda difere do da compra (anúncio, kit). Faça o DE.PARA:
-                escolha o(s) produto(s) comprado(s) que saem do estoque a cada unidade vendida.
+                <strong>Produtos vendidos sem compra nem estoque inicial</strong>. O vínculo automático já usa o EAN, o SKU (código) e a descrição; o que sobrou tem
+                código/EAN diferente do da compra (anúncio, kit). Faça o <strong>DE.PARA</strong> (produto(s) comprado(s) que saem do estoque a cada unidade vendida) ou marque
+                <strong> sem estoque</strong> — a venda vai direto para a receita, sem CMV.
               </p>
               <div className="mb-4 space-y-1.5">
                 {estoque.semCusto.map((s) => (
@@ -150,9 +174,18 @@ export function Estoque({
                         {qtd(s.quantidade)} un. vendidas · {moeda(s.valor)}
                       </span>
                     </span>
-                    <button className="btn-secondary btn-sm" onClick={() => setEditando(s.chave)}>
-                      <Link2 className="h-3.5 w-3.5" /> DE.PARA
-                    </button>
+                    <span className="flex gap-2">
+                      <button className="btn-secondary btn-sm" onClick={() => setEditando(s.chave)}>
+                        <Link2 className="h-3.5 w-3.5" /> DE.PARA
+                      </button>
+                      <button
+                        className="btn-secondary btn-sm"
+                        title="Produto sem DE.PARA: a venda vai direto para a receita, sem passar pelo estoque e sem CMV"
+                        onClick={() => onProduto({ ...(produtos[s.chave] ?? { chave: s.chave, qtdInicial: null, valorInicial: null, componentes: null }), semEstoque: true })}
+                      >
+                        <PackageX className="h-3.5 w-3.5" /> Sem estoque
+                      </button>
+                    </span>
                   </div>
                 ))}
               </div>
@@ -258,6 +291,108 @@ export function Estoque({
         </div>
       </Section>
 
+      <Section
+        title="Operações fora do estoque"
+        icone={ArrowLeftRight}
+        cor="violet"
+        actions={
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+            <input type="checkbox" checked={params.estoqueParear} onChange={(e) => onParams({ ...params, estoqueParear: e.target.checked })} />
+            Tirar compras devolvidas no mesmo valor
+          </label>
+        }
+      >
+        <p className="-mt-2 mb-3 text-sm text-slate-500">
+          Entrada e saída do <strong>mesmo produto</strong> (EAN, SKU ou descrição), com a <strong>mesma quantidade e o mesmo valor</strong> e o mesmo fornecedor — compra
+          devolvida (5202, 6949…), venda à ordem (2923 × 6118) — não compõem o estoque nem o CMV. Devolução de parte da compra pelo mesmo preço é estornada da própria
+          compra. Para tirar uma nota inteira, marque-a em “Notas de compra”.
+        </p>
+        {estoque.pares.length === 0 ? (
+          <p className="text-sm text-slate-400">{params.estoqueParear ? 'Nenhuma operação pareada.' : 'Pareamento desligado.'}</p>
+        ) : (
+          <div className="max-h-80 overflow-auto">
+            <table className="w-full min-w-[56rem] text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
+                  <th className="py-2 pr-3">Produto</th>
+                  <th className="px-2 py-2">Entrada</th>
+                  <th className="px-2 py-2">Saída</th>
+                  <th className="px-2 py-2 text-right">Qtd.</th>
+                  <th className="px-2 py-2 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody className="tabular-nums">
+                {estoque.pares.map((p, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="max-w-72 truncate py-1.5 pr-3" title={p.descricao}>
+                      {p.descricao}
+                      {p.tipo === 'parcial' && <span className="ml-1 rounded bg-slate-100 px-1 text-[0.625rem] text-slate-500">parcial</span>}
+                    </td>
+                    <td className="px-2 py-1.5 text-xs">
+                      {p.entrada.cfop} · NF {p.entrada.nota || '—'} · {nomeMes(p.entrada.competencia)}
+                    </td>
+                    <td className="px-2 py-1.5 text-xs">
+                      {p.saida.cfop} · NF {p.saida.nota || '—'} · {nomeMes(p.saida.competencia)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right">{qtd(p.quantidade)}</td>
+                    <td className="px-2 py-1.5 text-right">{moeda(p.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {semEstoque.length > 0 && (
+          <div className="mt-4">
+            <div className="mb-1 text-xs font-semibold text-slate-600">Produtos sem estoque (vendas direto na receita, sem CMV)</div>
+            <div className="flex flex-wrap gap-2">
+              {semEstoque.map((c) => (
+                <span key={c.chave} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs">
+                  {itens.find((i) => i.ean === c.chave || `COD:${i.codigo}` === c.chave)?.descricao.slice(0, 40) ?? c.chave}
+                  <button className="font-bold text-slate-400 hover:text-rose-600" title="Voltar a controlar no estoque" onClick={() => onProduto({ ...c, semEstoque: false })}>
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="mt-4">
+          <button className="btn-secondary btn-sm" onClick={() => setVerNotas((v) => !v)}>
+            {verNotas ? 'Ocultar' : 'Ver'} notas de compra ({notasCompra.length}){params.estoqueNotasFora.length ? ` · ${params.estoqueNotasFora.length} fora do estoque` : ''}
+          </button>
+          {verNotas && (
+            <>
+              {notasCompra.length === 0 && (
+                <p className="mt-2 text-sm text-slate-500">Os itens foram importados sem o número da nota — reimporte o Registro de Entradas detalhado para listar as notas.</p>
+              )}
+              <div className="mt-2 max-h-96 overflow-auto">
+                <table className="w-full min-w-[48rem] text-sm">
+                  <tbody className="tabular-nums">
+                    {notasCompra.map((n) => (
+                      <tr key={n.chave} className={`border-b border-slate-100 ${fora.has(n.chave) ? 'bg-slate-50 text-slate-400 line-through' : ''}`}>
+                        <td className="py-1.5 pr-2">
+                          <input type="checkbox" checked={!fora.has(n.chave)} onChange={() => alternarNota(n.chave)} title="Compõe o estoque" />
+                        </td>
+                        <td className="px-2 py-1.5">{nomeMes(n.competencia)}</td>
+                        <td className="px-2 py-1.5 font-medium">NF {n.nota}</td>
+                        <td className="max-w-72 truncate px-2 py-1.5">{n.parceiro}</td>
+                        <td className="px-2 py-1.5 text-xs">{[...n.cfops].join(', ')}</td>
+                        <td className="px-2 py-1.5 text-right">
+                          {n.itens} item(ns) · {qtd(n.qtd)} un.
+                        </td>
+                        <td className="px-2 py-1.5 text-right">{moeda(n.valor)}</td>
+                        <td className="px-2 py-1.5 text-xs text-violet-700">{paresNotas.has(n.chave) ? 'pareada' : ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </Section>
+
       <Section title="CFOPs no estoque" icone={Settings2} cor="violet">
         <p className="-mt-2 mb-3 text-sm text-slate-500">
           Como cada CFOP mexe no estoque. Padrão: compras (x102, x403), bonificações e a entrada física em venda à ordem (x923) entram; vendas baixam; remessas e retornos
@@ -317,6 +452,7 @@ function EditorProduto({
   const [qtdIni, setQtdIni] = useState(config?.qtdInicial ?? null)
   const [valIni, setValIni] = useState(config?.valorInicial ?? null)
   const [comps, setComps] = useState(config?.componentes ?? [])
+  const [semEst, setSemEst] = useState(config?.semEstoque ?? false)
   const [filtro, setFiltro] = useState('')
   const num = (v: string) => (v === '' ? null : Number(v))
   const filtradas = opcoes.filter((o) => !filtro || o.rotulo.toLowerCase().includes(filtro.toLowerCase())).slice(0, 200)
@@ -328,6 +464,12 @@ function EditorProduto({
           <input className="input" type="number" step="0.001" placeholder="Quantidade" value={qtdIni ?? ''} onChange={(e) => setQtdIni(num(e.target.value))} />
           <input className="input" type="number" step="0.01" placeholder="Valor total (R$)" value={valIni ?? ''} onChange={(e) => setValIni(num(e.target.value))} />
           <p className="text-xs text-slate-500">Chave do produto: {chave}</p>
+          <label className="flex items-start gap-2 rounded-lg bg-slate-50 p-2 text-xs text-slate-600 ring-1 ring-slate-200">
+            <input type="checkbox" className="mt-0.5" checked={semEst} onChange={(e) => setSemEst(e.target.checked)} />
+            <span>
+              <strong>Produto sem estoque (sem DE.PARA)</strong> — as vendas vão direto para a receita, não passam pelo estoque e não geram CMV.
+            </span>
+          </label>
         </div>
         <div className="space-y-2 lg:col-span-2">
           <div className="text-xs font-semibold text-slate-600">DE.PARA — cada unidade vendida baixa do estoque:</div>
@@ -367,14 +509,14 @@ function EditorProduto({
           </div>
           <p className="text-xs text-slate-500">
             Ex.: kit com 3 essências → as 3 essências com fator 1; caixa com 12 unidades vendida por unidade → fator 1/12 (0,0833). Sem DE.PARA, o produto baixa a si mesmo
-            (mesmo EAN ou código de {chaveProduto('', 'X').startsWith('COD') ? 'sistema' : ''} compra).
+            (mesmo EAN, SKU ou descrição da compra).
           </p>
         </div>
       </div>
       <div className="mt-4 flex justify-end">
         <button
           className="btn-primary"
-          onClick={() => onSalvar({ chave, qtdInicial: qtdIni, valorInicial: valIni, componentes: comps.filter((c) => c.chave && c.fator > 0) })}
+          onClick={() => onSalvar({ chave, qtdInicial: qtdIni, valorInicial: valIni, componentes: comps.filter((c) => c.chave && c.fator > 0), semEstoque: semEst })}
         >
           Salvar
         </button>
