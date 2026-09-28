@@ -168,8 +168,8 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
   )
   // estoque e CMV pelo custo médio ponderado (itens dos relatórios detalhados + estoque inicial + DE.PARA)
   const estoque = useMemo(
-    () => (itensEstoque.length ? calcularEstoque(itensEstoque, produtosEstoque, paramsSalvos.cfopNatureza, paramsSalvos.cfopEstoque) : null),
-    [itensEstoque, produtosEstoque, paramsSalvos.cfopNatureza, paramsSalvos.cfopEstoque],
+    () => (itensEstoque.length ? calcularEstoque(itensEstoque, produtosEstoque, paramsSalvos.cfopNatureza, paramsSalvos.cfopEstoque, { parear: paramsSalvos.estoqueParear, notasFora: paramsSalvos.estoqueNotasFora }) : null),
+    [itensEstoque, produtosEstoque, paramsSalvos.cfopNatureza, paramsSalvos.cfopEstoque, paramsSalvos.estoqueParear, paramsSalvos.estoqueNotasFora],
   )
   const cmvEstoque = useMemo(() => (estoque ? Object.fromEntries(estoque.meses.map((m) => [m, estoque.porMes[m].cmvEstimado])) : undefined), [estoque])
   const params = useMemo(

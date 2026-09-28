@@ -156,6 +156,10 @@ export interface Parametros {
   metodoCmv: 'estoque' | 'compras'
   /** Tratamento de cada CFOP no estoque (sobrepõe a natureza): compra, venda, devoluções ou neutro */
   cfopEstoque: Record<string, 'compra' | 'dev_compra' | 'venda' | 'dev_venda' | 'neutro'>
+  /** Tira do estoque as compras devolvidas no mesmo valor e as entradas/saídas pareadas (venda à ordem) */
+  estoqueParear: boolean
+  /** Notas de compra fora do estoque (tipo|nota|parceiro) */
+  estoqueNotasFora: string[]
   /** CMV mensal calculado pelo estoque (custo médio) — preenchido no painel, não é gravado */
   cmvEstoque?: Record<string, number>
   /** Observações do contador impressas no relatório ao cliente */
@@ -223,6 +227,8 @@ export const PARAMETROS_PADRAO: Parametros = {
   pgdas: {},
   metodoCmv: 'estoque',
   cfopEstoque: {},
+  estoqueParear: true,
+  estoqueNotasFora: [],
 }
 
 export const comPadrao = (p: Partial<Parametros> | null | undefined): Parametros => ({ ...PARAMETROS_PADRAO, ...(p ?? {}) })
