@@ -39,6 +39,9 @@ create table public.pes_recorrencias (
   descricao text not null,
   valor numeric(14, 2) not null check (valor > 0),
   dia int not null check (dia between 1 and 31),
+  -- null = dia fixo do mês; 'seg_sab' / 'seg_sex' = "dia" é o N-ésimo dia útil
+  -- (para salário, o sábado conta: CLT art. 459 §1º e IN MTb/SNT nº 1/1989)
+  dia_util text check (dia_util in ('seg_sab', 'seg_sex')),
   conta_id uuid not null references public.pes_contas (id) on delete restrict,
   categoria_id uuid references public.pes_categorias (id) on delete set null,
   pessoa_id uuid references public.pes_pessoas (id) on delete set null,
@@ -97,6 +100,59 @@ from public.pes_contas c
 left join public.pes_lancamentos l on l.conta_id = c.id or l.conta_destino_id = c.id
 group by c.id, c.saldo_inicial;
 
+-- ---------------------------------------------------------------- dias úteis
+-- Páscoa (algoritmo de Meeus/Jones/Butcher), para a Sexta-feira Santa
+create function public.pes_pascoa(ano int)
+returns date
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  a int := ano % 19; b int := ano / 100; c int := ano % 100; d int := b / 4; e int := b % 4;
+  f int := (b + 8) / 25; g int := (b - f + 1) / 3; h int := (19 * a + b - d - g + 15) % 30;
+  i int := c / 4; k int := c % 4; l int := (32 + 2 * e + 2 * i - h - k) % 7; m int := (a + 11 * h + 22 * l) / 451;
+begin
+  return make_date(ano, (h + l - 7 * m + 114) / 31, ((h + l - 7 * m + 114) % 31) + 1);
+end;
+$$;
+
+-- Feriados nacionais (Leis 662/1949, 6.802/1980, 10.607/2002, 14.759/2023) e Sexta-feira Santa (Lei 9.093/1995)
+create function public.pes_feriado(d date)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select to_char(d, 'MM-DD') in ('01-01', '04-21', '05-01', '09-07', '10-12', '11-02', '11-15', '11-20', '12-25')
+      or d = public.pes_pascoa(extract(year from d)::int) - 2
+$$;
+
+-- N-ésimo dia útil do mês (m = primeiro dia do mês). Domingo e feriado nunca contam; sábado conta em 'seg_sab'.
+create function public.pes_dia_util(m date, n int, modo text)
+returns date
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  d date := m;
+  fim date := (m + interval '1 month - 1 day')::date;
+  cont int := 0;
+begin
+  while d <= fim loop
+    if extract(isodow from d) <> 7 and not (modo = 'seg_sex' and extract(isodow from d) = 6) and not public.pes_feriado(d) then
+      cont := cont + 1;
+      if cont = n then
+        return d;
+      end if;
+    end if;
+    d := d + 1;
+  end loop;
+  return fim;
+end;
+$$;
+
 -- ---------------------------------------------------------------- geração automática das recorrências
 -- Cria os lançamentos de cada recorrência ativa até o mês seguinte ao atual.
 -- Idempotente: a constraint (recorrencia_id, competencia) impede duplicar.
@@ -125,7 +181,10 @@ begin
     m := coalesce((r.gerado_ate + interval '1 month')::date, date_trunc('month', r.inicio)::date);
     select tipo = 'cartao' into cartao from public.pes_contas where id = r.conta_id;
     while m <= ate loop
-      d := m + (least(r.dia, extract(day from (m + interval '1 month - 1 day'))::int) - 1);
+      d := case
+        when r.dia_util is not null then public.pes_dia_util(m, r.dia, r.dia_util)
+        else m + (least(r.dia, extract(day from (m + interval '1 month - 1 day'))::int) - 1)
+      end;
       if d >= r.inicio and (r.fim is null or d <= r.fim) then
         insert into public.pes_lancamentos
           (tipo, descricao, valor, data, pago, conta_id, categoria_id, pessoa_id, natureza, observacao, recorrencia_id, competencia)

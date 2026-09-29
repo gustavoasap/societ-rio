@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { CreditCard, Repeat, Trash2 } from 'lucide-react'
 import { useApp, type InicialLancamento } from '../contexto'
-import { hoje } from '../lib/datas'
+import { hoje, type ModoDiaUtil } from '../lib/datas'
 import { atualizarDaquiEmDiante, excluir, excluirDaquiEmDiante, gerarRecorrencias, inserirVarios, salvar } from '../lib/dados'
 import { datasDaFatura, faturaDe, gerarParcelas } from '../lib/financas'
 import { dataBR, mesAbreviado, moeda } from '../lib/formato'
 import { supabase } from '../lib/supabase'
 import { NATUREZAS, rotuloDe, type Lancamento, type Natureza, type TipoLancamento } from '../tipos'
+import { CampoDia } from './CampoDia'
 import { SeletorPessoa } from './SeletorPessoa'
 import { Campo, CampoValor, Erro, Modal, Segmentado, Selecao } from './ui'
 
@@ -35,6 +36,8 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   const [parcelaAtual, setParcelaAtual] = useState(1)
   const [totalParcelas, setTotalParcelas] = useState(10)
   const [fim, setFim] = useState('')
+  const [diaRec, setDiaRec] = useState(() => Number((inicial.data ?? hoje()).slice(8, 10)))
+  const [modoRec, setModoRec] = useState<ModoDiaUtil | null>(null)
   const [autoPago, setAutoPago] = useState(false)
   const [aplicarProximos, setAplicarProximos] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -60,6 +63,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
     if (tipo === 'transferencia' && (!destinoId || destinoId === contaId)) return setErro('Escolha a conta de destino (diferente da de origem).')
     const desc = descricao.trim() || (tipo === 'transferencia' ? 'Transferência' : (cat?.nome ?? ''))
     if (!desc) return setErro('Informe uma descrição.')
+    if (repeticao === 'recorrente' && (!diaRec || diaRec < 1 || diaRec > (modoRec ? 23 : 31))) return setErro(modoRec ? 'Informe qual dia útil (de 1 a 23).' : 'Informe o dia do mês.')
     if (repeticao === 'parcelado' && (totalParcelas < 2 || parcelaAtual < 1 || parcelaAtual > totalParcelas)) return setErro('Confira a parcela atual e o total de parcelas.')
 
     const transf = tipo === 'transferencia'
@@ -101,7 +105,8 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
           tipo,
           descricao: desc,
           valor,
-          dia: Number(data.slice(8, 10)),
+          dia: diaRec,
+          dia_util: modoRec,
           conta_id: contaId,
           categoria_id: comum.categoria_id,
           pessoa_id: comum.pessoa_id,
@@ -224,7 +229,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
           <Campo label={repeticao === 'parcelado' ? (valorEhTotal ? 'Valor total da compra' : 'Valor da parcela') : 'Valor'}>
             <CampoValor valor={valor} onChange={setValor} autoFocus={!edicao && !inicial.valor} />
           </Campo>
-          <Campo label={repeticao === 'parcelado' ? 'Data da parcela atual' : repeticao === 'recorrente' ? 'Primeiro mês (dia)' : ehCartao ? 'Data da compra' : 'Data'}>
+          <Campo label={repeticao === 'parcelado' ? 'Data da parcela atual' : repeticao === 'recorrente' ? 'Começa em' : ehCartao ? 'Data da compra' : 'Data'}>
             <input className="input" type="date" value={data} onChange={(e) => mudarData(e.target.value)} required />
           </Campo>
         </div>
@@ -256,9 +261,9 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
           <div className="space-y-3 rounded-xl bg-azul-50 p-3">
             <p className="flex items-start gap-2 text-xs text-azul-900">
               <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Repete todo dia {Number(data.slice(8, 10))}, a partir de {dataBR(data)}. Os meses vão sendo lançados sozinhos (sempre até o mês seguinte). Ideal para salário, aluguel, assinaturas e
-              contas fixas.
+              Repete todo mês a partir de {dataBR(data)}. Os meses vão sendo lançados sozinhos (sempre até o mês seguinte). Ideal para salário, aluguel, assinaturas e contas fixas.
             </p>
+            <CampoDia dia={diaRec} setDia={setDiaRec} modo={modoRec} setModo={setModoRec} aPartirDe={data.slice(0, 7)} />
             <div className="grid grid-cols-2 items-end gap-3">
               <Campo label="Até (opcional)">
                 <input className="input" type="date" value={fim} onChange={(e) => setFim(e.target.value)} />

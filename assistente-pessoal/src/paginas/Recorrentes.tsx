@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowDownRight, ArrowUpRight, CalendarClock, Pause, Pencil, Plus, Repeat, Trash2 } from 'lucide-react'
+import { CampoDia } from '../components/CampoDia'
 import { SeletorPessoa } from '../components/SeletorPessoa'
 import { Bolinha, Cabecalho, Campo, CampoValor, Carregando, Erro, Modal, Segmentado, Selecao, Vazio } from '../components/ui'
 import { COR_NATUREZA, corDe, iconeDe } from '../components/visual'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
-import { diasNoMes, hoje } from '../lib/datas'
+import { dataDaRecorrencia, hoje, type ModoDiaUtil } from '../lib/datas'
 import { avisarMudanca, buscarRecorrencias, gerarRecorrencias, salvar, useDados } from '../lib/dados'
 import { dataBR, moeda } from '../lib/formato'
 import { Link } from '../lib/rotas'
@@ -58,7 +59,7 @@ export function Recorrentes() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-slate-800">{r.descricao}</span>
                   <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-slate-500">
-                    <span>dia {r.dia}</span>·<span>{conta?.tipo === 'cartao' ? `💳 ${conta.nome}` : (conta?.nome ?? '?')}</span>
+                    <span>{r.dia_util ? `${r.dia}º dia útil` : `dia ${r.dia}`}</span>·<span>{conta?.tipo === 'cartao' ? `💳 ${conta.nome}` : (conta?.nome ?? '?')}</span>
                     {tipo === 'despesa' && (
                       <span className="inline-flex items-center gap-1">
                         · <span className="h-2 w-2 rounded-sm" style={{ background: COR_NATUREZA[n] }} />
@@ -156,11 +157,6 @@ function Plano({ rotulo, valor, destaque, dica }: { rotulo: string; valor: numbe
   )
 }
 
-const dataDoMes = (competencia: string, dia: number) => {
-  const [a, m] = competencia.split('-').map(Number)
-  return `${competencia.slice(0, 7)}-${String(Math.min(dia, diasNoMes(a, m))).padStart(2, '0')}`
-}
-
 function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 'receita' | 'despesa' }; onClose: () => void }) {
   const { contas, categorias } = useApp()
   const edicao = 'id' in inicial ? inicial : null
@@ -168,6 +164,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
   const [descricao, setDescricao] = useState(edicao?.descricao ?? '')
   const [valor, setValor] = useState<number | null>(edicao?.valor ?? null)
   const [dia, setDia] = useState(edicao?.dia ?? 5)
+  const [diaUtil, setDiaUtil] = useState<ModoDiaUtil | null>(edicao?.dia_util ?? null)
   const [contaId, setContaId] = useState(edicao?.conta_id ?? contas.find((c) => c.ativa && c.tipo !== 'cartao')?.id ?? contas[0]?.id ?? '')
   const [categoriaId, setCategoriaId] = useState(edicao?.categoria_id ?? '')
   const [natureza, setNatureza] = useState<Natureza | ''>(edicao?.natureza ?? '')
@@ -189,12 +186,14 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
     if (!contaId) return setErro('Cadastre uma conta primeiro.')
     const desc = descricao.trim() || cat?.nome || ''
     if (!desc) return setErro('Informe uma descrição.')
-    const d = Math.min(31, Math.max(1, Math.floor(dia)))
+    if (!dia || dia < 1 || dia > (diaUtil ? 23 : 31)) return setErro(diaUtil ? 'Informe qual dia útil (de 1 a 23).' : 'Informe o dia do mês (de 1 a 31).')
+    const d = Math.floor(dia)
     const campos = {
       tipo,
       descricao: desc,
       valor,
       dia: d,
+      dia_util: diaUtil,
       conta_id: contaId,
       categoria_id: categoriaId || null,
       natureza: natureza || null,
@@ -221,7 +220,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
               categoria_id: campos.categoria_id,
               natureza: campos.natureza,
               pessoa_id: campos.pessoa_id,
-              ...(l.competencia ? { data: dataDoMes(l.competencia, d) } : {}),
+              ...(l.competencia ? { data: dataDaRecorrencia(l.competencia.slice(0, 7), d, diaUtil) } : {}),
             })
             .eq('id', l.id)
         }
@@ -302,13 +301,14 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
         <Campo label="Descrição">
           <input className="input" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={tipo === 'receita' ? 'Ex.: Pró-labore ASAP' : 'Ex.: Aluguel, condomínio, Netflix'} autoFocus={!edicao} />
         </Campo>
+        <Campo label="Valor mensal">
+          <CampoValor valor={valor} onChange={setValor} />
+        </Campo>
+        <div className="rounded-xl bg-azul-50 p-3">
+          <div className="mb-2 text-xs font-semibold text-slate-600">{tipo === 'receita' ? 'Quando cai na conta' : 'Quando vence'}</div>
+          <CampoDia dia={dia} setDia={setDia} modo={diaUtil} setModo={setDiaUtil} aPartirDe={inicio.slice(0, 7)} />
+        </div>
         <div className="grid grid-cols-2 gap-3">
-          <Campo label="Valor mensal">
-            <CampoValor valor={valor} onChange={setValor} />
-          </Campo>
-          <Campo label="Dia do mês">
-            <input className="input" type="number" min={1} max={31} value={dia} onChange={(e) => setDia(Number(e.target.value))} />
-          </Campo>
           <Campo label="Categoria">
             <Selecao value={categoriaId} onChange={setCategoriaId} opcoes={cats.map((c) => ({ value: c.id, label: c.nome }))} vazio="Sem categoria" />
           </Campo>

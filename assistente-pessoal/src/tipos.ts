@@ -63,6 +63,8 @@ export interface Recorrencia {
   descricao: string
   valor: number
   dia: number
+  /** null = dia fixo; senão, `dia` é o N-ésimo dia útil */
+  dia_util: 'seg_sab' | 'seg_sex' | null
   conta_id: string
   categoria_id: string | null
   pessoa_id: string | null
