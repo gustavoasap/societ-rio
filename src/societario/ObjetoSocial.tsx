@@ -312,7 +312,14 @@ export function ObjetoSocial({ session }: { session: Session }) {
                 marcado={opcoes.caracteresEspeciais}
                 onChange={(v) => mudarOpcao({ caracteresEspeciais: v })}
                 titulo="Incluir caracteres especiais?"
-                ajuda="Desmarcado: usa somente vírgula e ponto final (sem ponto e vírgula, dois-pontos, hífen, parênteses ou barra). Os acentos são mantidos."
+                ajuda="Desmarcado: usa somente vírgula e ponto final (sem ponto e vírgula, dois-pontos, hífen, parênteses ou barra)."
+              />
+              <Opcao
+                id="op-acentos"
+                marcado={opcoes.acentos}
+                onChange={(v) => mudarOpcao({ acentos: v })}
+                titulo="Incluir acentos?"
+                ajuda="Desmarcado: escreve sem acentos, til e cedilha. Ex.: comercio varejista de calcados."
               />
               <Opcao
                 id="op-caixa-alta"

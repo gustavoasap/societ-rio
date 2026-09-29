@@ -6,6 +6,7 @@ export type Finalidade = 'constituicao' | 'alteracao'
 export interface OpcoesObjeto {
   finalidade: Finalidade
   caracteresEspeciais: boolean
+  acentos: boolean
   caixaAlta: boolean
   agrupar: boolean
 }
@@ -15,7 +16,7 @@ export interface AtividadeCnae {
   descricao: string
 }
 
-export const OPCOES_PADRAO: OpcoesObjeto = { finalidade: 'constituicao', caracteresEspeciais: true, caixaAlta: false, agrupar: true }
+export const OPCOES_PADRAO: OpcoesObjeto = { finalidade: 'constituicao', caracteresEspeciais: true, acentos: true, caixaAlta: false, agrupar: true }
 
 export const formatarCnae = (c: string) => `${c.slice(0, 4)}-${c.slice(4, 5)}/${c.slice(5, 7)}`
 
@@ -88,6 +89,9 @@ function agruparAtividades(itens: string[]) {
   })
 }
 
+// Tira acentos, til e cedilha (ç vira c)
+export const semAcentos = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').normalize('NFC')
+
 function juntar(itens: string[], separador: string, ultimo: string) {
   if (itens.length <= 1) return itens.join('')
   return itens.slice(0, -1).join(separador) + ultimo + itens[itens.length - 1]
@@ -110,5 +114,6 @@ export function gerarObjetoSocial(atividades: AtividadeCnae[], opcoes: OpcoesObj
     texto = semEspeciais(texto) + '.'
     texto = texto.replace(/\.\.+$/, '.')
   }
+  if (!opcoes.acentos) texto = semAcentos(texto)
   return opcoes.caixaAlta ? texto.toLocaleUpperCase('pt-BR') : texto
 }
