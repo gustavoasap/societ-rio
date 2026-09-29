@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CalendarDays, CheckCircle2, Loader2, ReceiptText, RotateCcw, Search, XCircle } from 'lucide-react'
 import { Section } from '../../../components/ui'
-import { listarNotas } from '../../dados'
+import { chavesNotasFiltradas, listarNotasPagina, resumoNotasImportadas, type FiltroNotas, type NotaLista, type ResumoNotasMes } from '../../dados'
 import { nomeMes } from '../../engine/base'
-import { resumoNotas, type AjusteNota, type NotaDetalhe, type NotaResumo } from '../../engine/notas'
+import type { AjusteNota, NotaDetalhe, NotaResumo } from '../../engine/notas'
 import type { Estabelecimento } from '../../engine/tipos'
-import { moeda, moedaCurta } from '../../formatacao'
+import { moeda } from '../../formatacao'
 import { Kpi } from '../comum'
 
 const POR_PAGINA = 100
 const dataBr = (d: string) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '—')
-const novoAjuste = (chave: string, a?: AjusteNota): AjusteNota => a ?? { chave, data: null, cfop: null, excluir: false, observacao: '' }
+const novoAjuste = (chave: string, a?: AjusteNota | null): AjusteNota => a ?? { chave, data: null, cfop: null, excluir: false, observacao: '' }
 const NOME_TIPO: Record<string, string> = {
   entrada: 'Entrada',
   saida: 'Saída',
@@ -18,9 +18,38 @@ const NOME_TIPO: Record<string, string> = {
   servico_prestado: 'Serv. prestado',
 }
 
-type Situacao = 'todas' | 'consideradas' | 'ajustadas' | 'fora'
+type Situacao = FiltroNotas['situacao']
+const mudaCalculo = (n: NotaLista) => {
+  const a = n.ajuste
+  return !!a && (a.excluir || (!!a.data && a.data.slice(0, 7) !== n.competencia) || (!!a.cfop && a.cfop !== n.cfops))
+}
 
-/** Resumo da movimentação importada, nota a nota, com os ajustes do contador (data, CFOP, considerar ou não). */
+/** Resumo por mês (entradas × saídas), como importado e depois dos ajustes. */
+function porMes(linhas: ResumoNotasMes[]) {
+  const vazio = () => ({ entradas: 0, valorEntradas: 0, saidas: 0, valorSaidas: 0, ajustadas: 0, excluidas: 0 })
+  const m = new Map<string, { competencia: string; original: ReturnType<typeof vazio>; ajustado: ReturnType<typeof vazio> }>()
+  for (const r of linhas) {
+    const x = m.get(r.competencia) ?? { competencia: r.competencia, original: vazio(), ajustado: vazio() }
+    const entrada = r.tipo === 'entrada' || r.tipo === 'servico_tomado'
+    if (entrada) {
+      x.original.entradas += r.notas
+      x.original.valorEntradas += r.valor
+      x.ajustado.entradas += r.notas_aj
+      x.ajustado.valorEntradas += r.valor_aj
+    } else {
+      x.original.saidas += r.notas
+      x.original.valorSaidas += r.valor
+      x.ajustado.saidas += r.notas_aj
+      x.ajustado.valorSaidas += r.valor_aj
+    }
+    x.ajustado.ajustadas += r.ajustadas
+    x.ajustado.excluidas += r.excluidas
+    m.set(r.competencia, x)
+  }
+  return [...m.values()].sort((a, b) => a.competencia.localeCompare(b.competencia))
+}
+
+/** Resumo da movimentação importada, nota a nota, com os ajustes do contador (data, CFOP, considerar ou não). O resumo e a lista vêm prontos do banco. */
 export function Notas({
   empresaId,
   estabelecimentos,
@@ -34,13 +63,16 @@ export function Notas({
   notasDetalhe: NotaDetalhe[]
   onAjustes: (lista: AjusteNota[]) => Promise<void>
 }) {
-  const [notas, setNotas] = useState<NotaResumo[] | null>(null)
+  const [resumoBanco, setResumo] = useState<{ versao: number; linhas: ResumoNotasMes[] } | null>(null)
+  const [pag, setPag] = useState<{ chave: string; notas: NotaLista[]; total: number } | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
+  const [versao, setVersao] = useState(0)
   const [tipo, setTipo] = useState('')
   const [mes, setMes] = useState('')
   const [cfop, setCfop] = useState('')
   const [busca, setBusca] = useState('')
+  const [buscaAtiva, setBuscaAtiva] = useState('')
   const [situacao, setSituacao] = useState<Situacao>('todas')
   const [pagina, setPagina] = useState(0)
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set())
@@ -48,44 +80,38 @@ export function Notas({
   const [dataLote, setDataLote] = useState('')
 
   useEffect(() => {
-    listarNotas(empresaId)
-      .then(setNotas)
-      .catch((e) => setErro((e as Error).message))
-  }, [empresaId])
+    const t = setTimeout(() => setBuscaAtiva(busca), 350)
+    return () => clearTimeout(t)
+  }, [busca])
+  const filtro: FiltroNotas = useMemo(() => ({ tipo, mes, cfop, busca: buscaAtiva, situacao }), [tipo, mes, cfop, buscaAtiva, situacao])
+  const chavePagina = JSON.stringify([filtro, pagina, versao])
 
-  // uma nota pode vir de mais de uma importação (reimportação): o resumo mostra uma linha por chave
-  const unicas = useMemo(() => {
-    const m = new Map<string, NotaResumo>()
-    for (const n of notas ?? []) if (!m.has(n.chave)) m.set(n.chave, n)
-    return [...m.values()].sort((a, b) => a.data.localeCompare(b.data) || a.nota.localeCompare(b.nota, 'pt-BR', { numeric: true }))
-  }, [notas])
-  const resumo = useMemo(() => resumoNotas(unicas, ajustes), [unicas, ajustes])
-  const mudaCalculo = (n: NotaResumo) => {
-    const a = ajustes[n.chave]
-    return !!a && (a.excluir || (!!a.data && a.data.slice(0, 7) !== n.competencia) || (!!a.cfop && a.cfop !== n.cfops))
-  }
-  const termo = busca.trim().toLowerCase()
-  const filtradas = useMemo(
-    () =>
-      unicas.filter((n) => {
-        const a = ajustes[n.chave]
-        const comp = a?.data ? a.data.slice(0, 7) : n.competencia
-        if (tipo && n.tipo !== tipo) return false
-        if (mes && comp !== mes && n.competencia !== mes) return false
-        if (cfop && !(a?.cfop ?? n.cfops).includes(cfop)) return false
-        if (termo && !n.nota.includes(termo) && !n.parceiro_nome.toLowerCase().includes(termo) && !n.documento.includes(termo)) return false
-        if (situacao === 'fora' && !a?.excluir) return false
-        if (situacao === 'consideradas' && a?.excluir) return false
-        if (situacao === 'ajustadas' && !a) return false
-        return true
-      }),
-    [unicas, ajustes, tipo, mes, cfop, termo, situacao],
-  )
-  const paginas = Math.max(1, Math.ceil(filtradas.length / POR_PAGINA))
-  const visiveis = filtradas.slice(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA)
-  const chavesImportadas = new Set(notasDetalhe.map((n) => n.chave))
-  for (const n of unicas) chavesImportadas.add(n.chave)
-  const semNota = Object.keys(ajustes).filter((k) => !chavesImportadas.has(k))
+  useEffect(() => {
+    let vivo = true
+    resumoNotasImportadas(empresaId)
+      .then((linhas) => vivo && setResumo({ versao, linhas }))
+      .catch((e: Error) => vivo && setErro(e.message))
+    return () => {
+      vivo = false
+    }
+  }, [empresaId, versao])
+  useEffect(() => {
+    let vivo = true
+    listarNotasPagina(empresaId, filtro, pagina, POR_PAGINA)
+      .then((r) => vivo && setPag({ chave: chavePagina, ...r }))
+      .catch((e: Error) => vivo && setErro(e.message))
+    return () => {
+      vivo = false
+    }
+  }, [empresaId, filtro, pagina, chavePagina])
+
+  const buscando = !pag || pag.chave !== chavePagina
+  const resumo = useMemo(() => porMes(resumoBanco?.linhas ?? []), [resumoBanco])
+  const visiveis = pag?.notas ?? []
+  const totalFiltradas = pag?.total ?? 0
+  const paginas = Math.max(1, Math.ceil(totalFiltradas / POR_PAGINA))
+  const comDetalhe = new Set(notasDetalhe.map((n) => n.chave))
+  const semNota = Object.keys(ajustes).filter((k) => !comDetalhe.has(k))
   const nomeEstab = (id?: string | null) => estabelecimentos.find((e) => e.id === id)?.nome ?? ''
   const meses = resumo.map((r) => r.competencia)
   const total = resumo.reduce(
@@ -96,22 +122,29 @@ export function Notas({
     }),
     { notas: 0, ajustadas: 0, fora: 0 },
   )
-
+  
   async function salvar(lista: AjusteNota[]) {
     setSalvando(true)
     setErro(null)
     try {
       await onAjustes(lista)
       setMarcadas(new Set())
+      setVersao((v) => v + 1)
     } catch (e) {
       setErro((e as Error).message)
     } finally {
       setSalvando(false)
     }
   }
-  const emLote = (f: (a: AjusteNota, n: NotaResumo) => AjusteNota) => {
-    const alvo = marcadas.size ? unicas.filter((n) => marcadas.has(n.chave)) : filtradas
-    return salvar(alvo.map((n) => f(novoAjuste(n.chave, ajustes[n.chave]), n)))
+  const emLote = async (f: (a: AjusteNota) => AjusteNota) => {
+    setSalvando(true)
+    try {
+      const chaves = marcadas.size ? [...marcadas] : await chavesNotasFiltradas(empresaId, filtro, totalFiltradas)
+      await salvar(chaves.map((k) => f(novoAjuste(k, ajustes[k]))))
+    } catch (e) {
+      setErro((e as Error).message)
+      setSalvando(false)
+    }
   }
   const alternar = (k: string) =>
     setMarcadas((s) => {
@@ -121,14 +154,14 @@ export function Notas({
       return n
     })
 
-  if (erro && !notas) return <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{erro}</div>
-  if (!notas)
+  if (erro && !resumoBanco) return <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{erro}</div>
+  if (!resumoBanco)
     return (
       <div className="flex items-center justify-center gap-2 py-16 text-slate-400">
         <Loader2 className="h-5 w-5 animate-spin" /> Carregando as notas importadas...
       </div>
     )
-  if (!unicas.length)
+  if (!resumo.length)
     return (
       <Section title="Notas importadas" icone={ReceiptText}>
         <p className="text-sm text-slate-600">
@@ -138,7 +171,7 @@ export function Notas({
       </Section>
     )
 
-  const alvoLote = marcadas.size ? `${marcadas.size} nota(s) marcada(s)` : `${filtradas.length} nota(s) filtrada(s)`
+  const alvoLote = marcadas.size ? `${marcadas.size} nota(s) marcada(s)` : `${totalFiltradas.toLocaleString('pt-BR')} nota(s) filtrada(s)`
 
   return (
     <div className="space-y-5">
@@ -254,8 +287,7 @@ export function Notas({
 
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
           <span className="font-semibold text-slate-600">
-            Aplicar a {alvoLote} ({moedaCurta((marcadas.size ? unicas.filter((n) => marcadas.has(n.chave)) : filtradas).reduce((s, n) => s + n.valor, 0))}
-            ):
+            Aplicar a {alvoLote}:
           </span>
           <button className="btn-secondary btn-sm" disabled={salvando} onClick={() => emLote((a) => ({ ...a, excluir: true }))}>
             <XCircle className="h-3.5 w-3.5" /> Tirar da análise
@@ -292,7 +324,7 @@ export function Notas({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[64rem] text-sm">
+          <table className={`w-full min-w-[64rem] text-sm transition-opacity ${buscando ? 'opacity-50' : ''}`}>
             <thead>
               <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                 <th className="py-2 pr-2">
@@ -324,7 +356,7 @@ export function Notas({
             </thead>
             <tbody className="tabular-nums">
               {visiveis.map((n) => {
-                const a = ajustes[n.chave]
+                const a = n.ajuste ?? undefined
                 const aberta = editando === n.chave
                 return (
                   <FragmentoNota
@@ -350,7 +382,13 @@ export function Notas({
         </div>
         <div className="mt-3 flex items-center justify-between text-sm text-slate-500">
           <span>
-            {filtradas.length.toLocaleString('pt-BR')} nota(s) · {moeda(filtradas.reduce((s, n) => s + n.valor, 0))}
+            {buscando ? (
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="h-4 w-4 animate-spin" /> buscando...
+              </span>
+            ) : (
+              `${totalFiltradas.toLocaleString('pt-BR')} nota(s)`
+            )}
           </span>
           {paginas > 1 && (
             <span className="flex items-center gap-2">
