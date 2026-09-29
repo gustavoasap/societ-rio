@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { KeyRound, Pencil, Plus, ShieldCheck, Smartphone, Tags, Trash2, Users } from 'lucide-react'
+import { KeyRound, Pencil, Plus, ShieldCheck, Smartphone, Tags, Trash2, UserRound, Users } from 'lucide-react'
 import { Bolinha, Cabecalho, Campo, CampoValor, Erro, Modal, Segmentado } from '../components/ui'
 import { COR_NATUREZA, CORES, corDe, ICONES, iconeDe } from '../components/visual'
 import { useApp } from '../contexto'
@@ -63,6 +63,7 @@ export function Ajustes({ email }: { email: string }) {
       <Pessoas />
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <MeuNome />
         <TrocarSenha />
         <section className="cartao space-y-2 text-sm text-slate-600">
           <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
@@ -269,5 +270,31 @@ function Pessoas() {
       </form>
       <Erro>{erro}</Erro>
     </section>
+  )
+}
+
+function MeuNome() {
+  const { nome } = useApp()
+  const [valor, setValor] = useState(nome)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  async function salvarNome(e: FormEvent) {
+    e.preventDefault()
+    setMsg(null)
+    setErro(null)
+    const { error } = await supabase.auth.updateUser({ data: { nome: valor.trim() } })
+    if (error) setErro(error.message)
+    else setMsg('Nome salvo.')
+  }
+  return (
+    <form onSubmit={salvarNome} className="cartao space-y-3">
+      <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+        <UserRound className="h-4 w-4 text-azul-600" /> Como quer ser chamado
+      </h2>
+      <input className="input" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="Ex.: Gustavo" required />
+      <Erro>{erro}</Erro>
+      {msg && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{msg}</p>}
+      <button className="btn-secondary">Salvar nome</button>
+    </form>
   )
 }

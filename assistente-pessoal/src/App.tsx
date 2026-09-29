@@ -123,7 +123,13 @@ function AreaDoDono({ session }: { session: Session }) {
   return (
     <Contexto.Provider value={ctx}>
       <Layout nome={nome}>
-        {erro && <p className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">Não foi possível carregar os dados: {erro}</p>}
+        {erro && (
+          <p className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
+            {erro.includes('schema cache')
+              ? 'O banco de dados ainda não tem as tabelas desta versão do app. Rode o SQL da atualização (arquivo 20260929100000_cartao_recorrencias_dre.sql) no SQL Editor do Supabase, projeto “Gustavo - Pessoal”.'
+              : `Não foi possível carregar os dados: ${erro}`}
+          </p>
+        )}
         {pagina}
       </Layout>
       {form && <LancamentoForm key={'id' in form ? form.id : 'novo'} inicial={form} onClose={() => setForm(null)} />}
