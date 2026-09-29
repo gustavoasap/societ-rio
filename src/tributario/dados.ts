@@ -489,25 +489,85 @@ const expandirItem = (x: ItemCompacto, n: NotaResumo): ItemEstoque => ({
 const CAMPOS_NOTA = 'chave, tipo, nota, documento, parceiro_nome, data, competencia, cfops, valor, itens, estabelecimento_id, importacao_id'
 const paraNota = (n: NotaResumo) => ({ ...n, valor: Number(n.valor) || 0, data: n.data ?? `${n.competencia}-01` })
 
-/** Resumo de todas as notas importadas (paginado; sem a parte de cada nota no movimento). */
-export async function listarNotas(empresaId: string): Promise<NotaResumo[]> {
-  const { count, error } = await supabase.from('trib_notas').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)
+export interface FiltroNotas {
+  tipo: string
+  mes: string
+  cfop: string
+  busca: string
+  situacao: 'todas' | 'consideradas' | 'ajustadas' | 'fora'
+}
+export type NotaLista = NotaResumo & { ajuste: AjusteNota | null }
+export interface ResumoNotasMes {
+  competencia: string
+  tipo: string
+  notas: number
+  valor: number
+  notas_aj: number
+  valor_aj: number
+  ajustadas: number
+  excluidas: number
+}
+
+/** Resumo mensal das notas (importado × ajustado), calculado no banco. */
+export async function resumoNotasImportadas(empresaId: string): Promise<ResumoNotasMes[]> {
+  const { data, error } = await supabase.rpc('trib_notas_resumo', { p_empresa: empresaId })
   if (error && /trib_notas/.test(error.message)) return []
   erro(error)
+  return ((data ?? []) as ResumoNotasMes[]).map((r) => ({ ...r, valor: Number(r.valor) || 0, valor_aj: Number(r.valor_aj) || 0 }))
+}
+
+const consultaNotas = (empresaId: string, colunas: string, contar = false) =>
+  supabase
+    .from('trib_notas_lista')
+    .select(colunas, contar ? { count: 'exact' } : undefined)
+    .eq('empresa_id', empresaId)
+type ConsultaNotas = ReturnType<typeof consultaNotas>
+
+function filtrarNotas(q: ConsultaNotas, f: FiltroNotas) {
+  if (f.tipo) q = q.eq('tipo', f.tipo)
+  if (f.mes) q = q.eq('competencia_efetiva', f.mes)
+  if (f.cfop) q = q.like('cfop_efetivo', `%${f.cfop}%`)
+  const b = f.busca.trim().replace(/[,()*%]/g, ' ').trim()
+  if (b) q = q.or(`nota.ilike.*${b}*,parceiro_nome.ilike.*${b}*,documento.ilike.*${b.replace(/\D/g, '') || b}*`)
+  if (f.situacao === 'fora') q = q.eq('aj_excluir', true)
+  if (f.situacao === 'consideradas') q = q.eq('aj_excluir', false)
+  if (f.situacao === 'ajustadas') q = q.eq('ajustada', true)
+  return q
+}
+
+type LinhaListaNota = NotaResumo & { aj_data: string | null; aj_cfop: string | null; aj_excluir: boolean; aj_observacao: string; ajustada: boolean }
+
+/** Uma página de notas (com o ajuste de cada uma), filtrada e ordenada no banco. */
+export async function listarNotasPagina(empresaId: string, f: FiltroNotas, pagina: number, porPagina: number): Promise<{ notas: NotaLista[]; total: number }> {
+  const q = filtrarNotas(consultaNotas(empresaId, '*', true), f)
+  const { data, error, count } = await q
+    .order('data')
+    .order('nota')
+    .range(pagina * porPagina, (pagina + 1) * porPagina - 1)
+  if (error && /trib_notas/.test(error.message)) return { notas: [], total: 0 }
+  erro(error)
+  return {
+    total: count ?? 0,
+    notas: ((data ?? []) as unknown as LinhaListaNota[]).map((n) => ({
+      ...paraNota(n),
+      ajuste: n.ajustada ? { chave: n.chave, data: n.aj_data, cfop: n.aj_cfop, excluir: n.aj_excluir, observacao: n.aj_observacao ?? '' } : null,
+    })),
+  }
+}
+
+/** Chaves de todas as notas do filtro (para ajustar em lote). */
+export async function chavesNotasFiltradas(empresaId: string, f: FiltroNotas, total: number): Promise<string[]> {
   const pagina = 1000
   const paginas = await Promise.all(
-    Array.from({ length: Math.ceil((count ?? 0) / pagina) }, async (_, p) => {
-      const { data, error: e } = await supabase
-        .from('trib_notas')
-        .select(CAMPOS_NOTA)
-        .eq('empresa_id', empresaId)
+    Array.from({ length: Math.ceil(total / pagina) }, async (_, p) => {
+      const { data, error } = await filtrarNotas(consultaNotas(empresaId, 'chave'), f)
         .order('id')
         .range(p * pagina, (p + 1) * pagina - 1)
-      erro(e)
-      return ((data ?? []) as NotaResumo[]).map(paraNota)
+      erro(error)
+      return ((data ?? []) as unknown as { chave: string }[]).map((x) => x.chave)
     }),
   )
-  return paginas.flat()
+  return [...new Set(paginas.flat())]
 }
 
 /** Notas com a parte no movimento e no estoque, pelas chaves (para aplicar os ajustes). */
