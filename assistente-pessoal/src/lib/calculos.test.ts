@@ -18,6 +18,10 @@ const lanc = (p: Partial<Lancamento>): Lancamento => ({
   grupo: null,
   parcela: null,
   parcelas: null,
+  natureza: null,
+  pessoa_id: null,
+  reembolsado: false,
+  recorrencia_id: null,
   ...p,
 })
 
@@ -125,5 +129,32 @@ describe('metas', () => {
     expect(p.fracao).toBe(1)
     expect(p.falta).toBe(0)
     expect(p.porMes).toBeNull()
+  })
+})
+
+describe('dias úteis', () => {
+  it('Páscoa e Sexta-feira Santa', async () => {
+    const { pascoa, feriadoNacional } = await import('./datas')
+    expect(pascoa(2026)).toBe('2026-04-05')
+    expect(pascoa(2027)).toBe('2027-03-28')
+    expect(feriadoNacional('2026-04-03')).toBe(true)
+    expect(feriadoNacional('2026-11-20')).toBe(true)
+    expect(feriadoNacional('2026-11-19')).toBe(false)
+  })
+  it('5º dia útil: sábado conta (regra do salário) ou não', async () => {
+    const { enesimoDiaUtil } = await import('./datas')
+    // out/2026: 1 qui, 2 sex, 3 sáb, 4 dom, 5 seg, 6 ter, 7 qua
+    expect(enesimoDiaUtil('2026-10', 5, 'seg_sab')).toBe('2026-10-06')
+    expect(enesimoDiaUtil('2026-10', 5, 'seg_sex')).toBe('2026-10-07')
+    // set/2026: 7 de setembro (seg) é feriado → 1 ter, 2 qua, 3 qui, 4 sex, 5 sáb
+    expect(enesimoDiaUtil('2026-09', 5, 'seg_sab')).toBe('2026-09-05')
+    expect(enesimoDiaUtil('2026-09', 5, 'seg_sex')).toBe('2026-09-08')
+    // jan/2027: 1º é feriado (sex), 2 sáb, 3 dom → 2, 4, 5, 6, 7
+    expect(enesimoDiaUtil('2027-01', 5, 'seg_sab')).toBe('2027-01-07')
+  })
+  it('data da recorrência com dia fixo respeita o fim do mês', async () => {
+    const { dataDaRecorrencia } = await import('./datas')
+    expect(dataDaRecorrencia('2026-02', 31, null)).toBe('2026-02-28')
+    expect(dataDaRecorrencia('2026-10', 5, 'seg_sab')).toBe('2026-10-06')
   })
 })

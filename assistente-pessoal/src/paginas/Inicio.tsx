@@ -1,13 +1,14 @@
-import { ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, Eye, EyeOff, Flag, Landmark, Scale, Target } from 'lucide-react'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, CreditCard, Eye, EyeOff, Flag, Landmark, Scale, Target, Users } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { GraficoMensal, Legenda } from '../components/Grafico'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Bolinha, Carregando, Progresso, Vazio } from '../components/ui'
-import { corDe, iconeDe, VISUAL_AREA } from '../components/visual'
+import { COR_NATUREZA, corDe, iconeDe, VISUAL_AREA } from '../components/visual'
 import { useApp } from '../contexto'
 import { contasEmAberto, despesasPorCategoria, progressoEtapas, progressoMeta, resumo, resumoPorMes, somar } from '../lib/calculos'
 import { hoje, mesAtual, mesDe, primeiroDia, somarDias, somarMesesAoMes, ultimoDia } from '../lib/datas'
 import { buscarLancamentos, buscarMetas, buscarObjetivos, useDados } from '../lib/dados'
+import { aReceberDeTerceiros, despesasPorNatureza, ehMeu, faturasDoCartao } from '../lib/financas'
 import { dataBR, moeda, percentual } from '../lib/formato'
 import { Link } from '../lib/rotas'
 
@@ -25,7 +26,7 @@ function Titulo({ children, para, rotulo = 'Ver tudo' }: { children: ReactNode; 
 }
 
 export function Inicio() {
-  const { contas, categorias, abrirLancamento } = useApp()
+  const { contas, categorias, pessoas, abrirLancamento } = useApp()
   const [oculto, setOculto] = useState(() => {
     try {
       return localStorage.getItem('pes-ocultar-valores') === '1'
@@ -43,10 +44,19 @@ export function Inicio() {
 
   if (lanc.carregando) return <Carregando />
   const todos = lanc.dados ?? []
-  const doMes = todos.filter((l) => mesDe(l.data) === mes)
+  // números do mês: só o que é meu (gastos de terceiros ficam em "A receber de terceiros")
+  const meus = todos.filter(ehMeu)
+  const doMes = meus.filter((l) => mesDe(l.data) === mes)
   const r = resumo(doMes)
+  const nat = despesasPorNatureza(doMes, categorias)
   const meses = Array.from({ length: 6 }, (_, i) => somarMesesAoMes(mes, i - 5))
-  const serie = resumoPorMes(todos, meses)
+  const serie = resumoPorMes(meus, meses)
+  const terceiros = aReceberDeTerceiros(todos.filter((l) => l.data <= hj))
+  const totalTerceiros = somar([...terceiros.values()].map((t) => t.total))
+  const cartoes = contas.filter((c) => c.tipo === 'cartao' && c.ativa)
+  const proximasFaturas = cartoes
+    .map((c) => ({ c, f: faturasDoCartao(c, todos).find((f) => (f.vencimento ?? ultimoDia(f.mes)) >= hj && f.total - f.pago > 0.009) }))
+    .filter((x) => x.f)
   const patrimonio = somar(contas.filter((c) => c.ativa).map((c) => c.saldo))
   const emAberto = contasEmAberto(todos, hj)
   const topCategorias = despesasPorCategoria(doMes).slice(0, 5)
@@ -84,6 +94,47 @@ export function Inicio() {
           sub={r.receitas > 0 ? `${r.resultado >= 0 ? 'Sobra' : 'Falta'} de ${percentual(Math.abs(r.resultado) / r.receitas)} da receita` : undefined}
           negativo={r.resultado < 0}
         />
+      </div>
+
+      {/* Classificação das despesas do mês, faturas e terceiros */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <Link para="/dre" className="cartao block transition hover:ring-2 hover:ring-azul-200">
+          <div className="mb-2 text-xs font-semibold text-slate-500">Despesas do mês por classificação</div>
+          {(['fixa', 'variavel', 'eventual'] as const).map((k) => (
+            <div key={k} className="flex items-center gap-2 py-0.5 text-sm">
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: COR_NATUREZA[k] }} />
+              <span className="flex-1 text-slate-600">{k === 'fixa' ? 'Fixas' : k === 'variavel' ? 'Variáveis' : 'Eventuais'}</span>
+              <span className="font-semibold tabular-nums">{v(nat[k])}</span>
+            </div>
+          ))}
+        </Link>
+        <Link para="/cartoes" className="cartao block transition hover:ring-2 hover:ring-azul-200">
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+            <CreditCard className="h-3.5 w-3.5 text-violet-600" /> Próximas faturas
+          </div>
+          {proximasFaturas.length === 0 ? (
+            <p className="text-sm text-slate-400">{cartoes.length ? 'Nenhuma fatura em aberto.' : 'Nenhum cartão cadastrado.'}</p>
+          ) : (
+            proximasFaturas.map(({ c, f }) => (
+              <div key={c.id} className="flex justify-between py-0.5 text-sm">
+                <span className="truncate text-slate-600">
+                  {c.nome}
+                  {f!.vencimento && <span className="text-xs text-slate-400"> · vence {dataBR(f!.vencimento)}</span>}
+                </span>
+                <span className="font-semibold tabular-nums">{v(f!.total - f!.pago)}</span>
+              </div>
+            ))
+          )}
+        </Link>
+        <Link para="/terceiros" className="cartao block transition hover:ring-2 hover:ring-azul-200">
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+            <Users className="h-3.5 w-3.5 text-amber-600" /> A receber de terceiros
+          </div>
+          <div className="text-xl font-extrabold text-slate-900 tabular-nums">{v(totalTerceiros)}</div>
+          <div className="text-xs text-slate-400">
+            {terceiros.size ? [...terceiros.keys()].map((id) => pessoas.find((p) => p.id === id)?.nome ?? '?').join(', ') : 'Ninguém te deve nada.'}
+          </div>
+        </Link>
       </div>
 
       {contas.length === 0 && (

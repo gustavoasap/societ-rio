@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Aporte, Categoria, Conta, Etapa, Lancamento, Meta, Objetivo } from '../tipos'
+import type { Aporte, Categoria, Conta, Etapa, Lancamento, Meta, Objetivo, Pessoa, Recorrencia } from '../tipos'
 import { supabase } from './supabase'
 
 // Qualquer gravação avisa as telas abertas para recarregarem os dados.
@@ -114,9 +114,31 @@ export async function buscarObjetivos() {
   return { objetivos: ok(objetivos) as Objetivo[], etapas: ok(etapas) as Etapa[] }
 }
 
+export async function buscarPessoas() {
+  return ok(await supabase.from('pes_pessoas').select('*').order('nome')) as Pessoa[]
+}
+
+export async function buscarRecorrencias() {
+  return num(ok(await supabase.from('pes_recorrencias').select('*').order('tipo', { ascending: false }).order('dia')) as Recorrencia[], ['valor'])
+}
+
+/** Despesas em nome de outras pessoas ainda não reembolsadas. */
+export async function buscarDeTerceiros() {
+  const r = await supabase.from('pes_lancamentos').select('*').not('pessoa_id', 'is', null).eq('reembolsado', false).eq('tipo', 'despesa').order('data').limit(5000)
+  return num(ok(r) as Lancamento[], ['valor'])
+}
+
+/** Cria no banco os lançamentos das recorrências (salário, aluguel...) até o mês que vem. */
+export async function gerarRecorrencias() {
+  const r = await supabase.rpc('pes_gerar_recorrencias')
+  if (r.error) throw new Error(r.error.message)
+  if ((r.data as number) > 0) avisarMudanca()
+  return r.data as number
+}
+
 // ---------------------------------------------------------------- gravação
 
-type Tabela = 'pes_contas' | 'pes_categorias' | 'pes_lancamentos' | 'pes_metas' | 'pes_meta_aportes' | 'pes_objetivos' | 'pes_etapas'
+type Tabela = 'pes_contas' | 'pes_categorias' | 'pes_lancamentos' | 'pes_metas' | 'pes_meta_aportes' | 'pes_objetivos' | 'pes_etapas' | 'pes_pessoas' | 'pes_recorrencias'
 
 export async function salvar<T extends object>(tabela: Tabela, id: string | null | undefined, valores: T) {
   const r = id ? await supabase.from(tabela).update(valores).eq('id', id).select().single() : await supabase.from(tabela).insert(valores).select().single()

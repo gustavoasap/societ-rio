@@ -16,7 +16,7 @@ export function Orcamento() {
   const lanc = useDados(() => buscarLancamentos(primeiroDia(mes), ultimoDia(mes)), [mes])
 
   if (lanc.carregando) return <Carregando />
-  const gastos = new Map(despesasPorCategoria(lanc.dados ?? []).map((g) => [g.categoriaId, g.total]))
+  const gastos = new Map(despesasPorCategoria((lanc.dados ?? []).filter((l) => !l.pessoa_id)).map((g) => [g.categoriaId, g.total]))
   const cats = categorias
     .filter((c) => c.tipo === 'despesa' && (c.ativa || gastos.has(c.id)))
     .map((c) => ({ c, gasto: gastos.get(c.id) ?? 0 }))
