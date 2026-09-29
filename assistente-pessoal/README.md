@@ -19,7 +19,7 @@ Assistente pessoal do Gustavo para **finanças, metas e objetivos**. Segue os me
 
 ## Banco de dados (Supabase “Gustavo - Pessoal”)
 
-As migrations da pasta `supabase/migrations` são aplicadas no projeto em ordem (`20260928100000_assistente_pessoal.sql` e `20260929100000_cartao_recorrencias_dre.sql`). Ela cria as tabelas com prefixo `pes_`, para não se misturar com as outras tabelas que já existem nesse projeto:
+As migrations da pasta `supabase/migrations` são aplicadas no projeto em ordem (`20260928100000_assistente_pessoal.sql` e `20260929100000_cartao_recorrencias_dre.sql`). Elas criam as tabelas com prefixo `pes_`, para não se misturar com as outras tabelas que já existem nesse projeto:
 
 - `pes_contas`, `pes_categorias`, `pes_lancamentos` (e a view `pes_saldos`)
 - `pes_metas`, `pes_meta_aportes`
