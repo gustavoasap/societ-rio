@@ -1,9 +1,10 @@
+-- Pode ser executado mais de uma vez sem erro (tudo com "if not exists" / "or replace").
 -- Assistente Pessoal, parte 2: classificação (fixa/variável/eventual), responsável pelo gasto,
 -- cartão de crédito (fechamento/vencimento), recorrências (salário, custos fixos) e DRE.
 
 -- ---------------------------------------------------------------- classificação
 alter table public.pes_categorias
-  add column natureza text not null default 'variavel' check (natureza in ('fixa', 'variavel', 'eventual'));
+  add column if not exists natureza text not null default 'variavel' check (natureza in ('fixa', 'variavel', 'eventual'));
 
 update public.pes_categorias set natureza = 'fixa'
   where (tipo, nome) in (('receita', 'Salário / Pró-labore'), ('despesa', 'Moradia'), ('despesa', 'Educação'), ('despesa', 'Assinaturas'), ('despesa', 'Saúde'));
@@ -20,7 +21,7 @@ insert into public.pes_categorias (nome, tipo, cor, icone, natureza) values
 on conflict (tipo, nome) do nothing;
 
 -- ---------------------------------------------------------------- pessoas (responsável pelo gasto)
-create table public.pes_pessoas (
+create table if not exists public.pes_pessoas (
   id uuid primary key default gen_random_uuid(),
   nome text not null unique,
   ativa boolean not null default true,
@@ -29,11 +30,11 @@ create table public.pes_pessoas (
 
 -- ---------------------------------------------------------------- cartão de crédito
 alter table public.pes_contas
-  add column dia_fechamento int check (dia_fechamento between 1 and 31),
-  add column dia_vencimento int check (dia_vencimento between 1 and 31);
+  add column if not exists dia_fechamento int check (dia_fechamento between 1 and 31),
+  add column if not exists dia_vencimento int check (dia_vencimento between 1 and 31);
 
 -- ---------------------------------------------------------------- recorrências (salário, aluguel, assinaturas...)
-create table public.pes_recorrencias (
+create table if not exists public.pes_recorrencias (
   id uuid primary key default gen_random_uuid(),
   tipo text not null check (tipo in ('receita', 'despesa')),
   descricao text not null,
@@ -59,13 +60,19 @@ create table public.pes_recorrencias (
 
 -- ---------------------------------------------------------------- lançamentos
 alter table public.pes_lancamentos
-  add column natureza text check (natureza in ('fixa', 'variavel', 'eventual')),
-  add column pessoa_id uuid references public.pes_pessoas (id) on delete set null,
-  add column reembolsado boolean not null default false,
-  add column recorrencia_id uuid references public.pes_recorrencias (id) on delete set null,
-  add column competencia date,
-  add constraint pes_lancamentos_recorrencia_mes unique (recorrencia_id, competencia);
-create index pes_lancamentos_pessoa on public.pes_lancamentos (pessoa_id);
+  add column if not exists natureza text check (natureza in ('fixa', 'variavel', 'eventual')),
+  add column if not exists pessoa_id uuid references public.pes_pessoas (id) on delete set null,
+  add column if not exists reembolsado boolean not null default false,
+  add column if not exists recorrencia_id uuid references public.pes_recorrencias (id) on delete set null,
+  add column if not exists competencia date;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'pes_lancamentos_recorrencia_mes') then
+    alter table public.pes_lancamentos add constraint pes_lancamentos_recorrencia_mes unique (recorrencia_id, competencia);
+  end if;
+end;
+$$;
+create index if not exists pes_lancamentos_pessoa on public.pes_lancamentos (pessoa_id);
 
 -- ---------------------------------------------------------------- acesso: só o dono
 do $$
@@ -75,6 +82,7 @@ begin
   foreach t in array array['pes_pessoas', 'pes_recorrencias']
   loop
     execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists "somente o dono" on public.%I', t);
     execute format(
       'create policy "somente o dono" on public.%I for all to authenticated using ((select public.pes_eh_dono())) with check ((select public.pes_eh_dono()))',
       t
@@ -102,7 +110,7 @@ group by c.id, c.saldo_inicial;
 
 -- ---------------------------------------------------------------- dias úteis
 -- Páscoa (algoritmo de Meeus/Jones/Butcher), para a Sexta-feira Santa
-create function public.pes_pascoa(ano int)
+create or replace function public.pes_pascoa(ano int)
 returns date
 language plpgsql
 immutable
@@ -118,7 +126,7 @@ end;
 $$;
 
 -- Feriados nacionais (Leis 662/1949, 6.802/1980, 10.607/2002, 14.759/2023) e Sexta-feira Santa (Lei 9.093/1995)
-create function public.pes_feriado(d date)
+create or replace function public.pes_feriado(d date)
 returns boolean
 language sql
 immutable
@@ -129,7 +137,7 @@ as $$
 $$;
 
 -- N-ésimo dia útil do mês (m = primeiro dia do mês). Domingo e feriado nunca contam; sábado conta em 'seg_sab'.
-create function public.pes_dia_util(m date, n int, modo text)
+create or replace function public.pes_dia_util(m date, n int, modo text)
 returns date
 language plpgsql
 immutable
@@ -156,7 +164,7 @@ $$;
 -- ---------------------------------------------------------------- geração automática das recorrências
 -- Cria os lançamentos de cada recorrência ativa até o mês seguinte ao atual.
 -- Idempotente: a constraint (recorrencia_id, competencia) impede duplicar.
-create function public.pes_gerar_recorrencias()
+create or replace function public.pes_gerar_recorrencias()
 returns int
 language plpgsql
 security invoker
@@ -206,3 +214,11 @@ $$;
 
 revoke all on function public.pes_gerar_recorrencias() from public, anon;
 grant execute on function public.pes_gerar_recorrencias() to authenticated;
+
+-- atualiza o cache da API para as tabelas novas aparecerem na hora
+notify pgrst, 'reload schema';
+
+select 'Assistente Pessoal: banco atualizado com sucesso' as resultado,
+  (select count(*) from public.pes_categorias) as categorias,
+  to_regclass('public.pes_pessoas') is not null as tem_pessoas,
+  to_regclass('public.pes_recorrencias') is not null as tem_recorrencias;
