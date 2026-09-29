@@ -4,6 +4,7 @@
 // - Registro de Serviços — Detalhado (tomados ou prestados)
 // As linhas são agregadas por competência × CFOP × NCM × UF × CST × serviço, que é o que o motor precisa.
 import { guardaNota, type ItemEstoque } from '../engine/estoque'
+import { chaveDaNota, type NotaDetalhe } from '../engine/notas'
 import { somarMeses } from '../engine/base'
 import type { Destinatario, MovimentoLinha, TipoMovimento } from '../engine/tipos'
 import { lerXlsx, type Celula } from './xlsx'
@@ -47,6 +48,8 @@ export interface RelatorioLido {
   parceiros: Record<string, Parceiro>
   /** Itens por produto (relatórios detalhados de mercadorias): base do estoque e do CMV pelo custo médio */
   itens: ItemEstoque[]
+  /** Notas do relatório detalhado, com a parte de cada uma no movimento e no estoque (resumo e ajustes por nota) */
+  notas: NotaDetalhe[]
   /** Resumos que cobrem mais de um mês precisam de uma competência (ou rateio) escolhida pelo usuário. */
   exigeCompetencia: boolean
   avisos: string[]
@@ -84,6 +87,21 @@ export function competenciaDe(v: Celula | undefined): string | null {
   if (m) return `${m[3]}-${m[2].padStart(2, '0')}`
   m = s.match(/^(\d{4})-(\d{2})/)
   if (m) return `${m[1]}-${m[2]}`
+  return null
+}
+
+/** Data do relatório em AAAA-MM-DD. */
+export function dataDe(v: Celula | undefined): string | null {
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v === 'number') {
+    if (v < 20_000 || v > 80_000) return null
+    return new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86_400_000).toISOString().slice(0, 10)
+  }
+  const s = String(v).trim()
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`
   return null
 }
 
@@ -195,6 +213,19 @@ class Agregador {
   }
 }
 
+/** Soma a parte da nota no movimento (mesma chave do agregado). */
+function somarParte(nf: NotaDetalhe, dims: Omit<LinhaImportada, 'itens' | 'valor_contabil' | 'bc_icms' | 'icms' | 'icms_st' | 'ipi' | 'pis' | 'cofins' | 'iss' | 'difal' | 'retencoes'>, v: Partial<LinhaImportada>) {
+  const mesma = (l: LinhaImportada) =>
+    l.cfop === dims.cfop && l.ncm === dims.ncm && l.uf === dims.uf && l.cst === dims.cst && (l.cst_pis ?? '') === (dims.cst_pis ?? '') && l.destinatario === dims.destinatario && l.parceiro === dims.parceiro
+  let l = nf.linhas.find(mesma)
+  if (!l) {
+    l = { ...dims, itens: 0, valor_contabil: 0, bc_icms: 0, icms: 0, icms_st: 0, ipi: 0, pis: 0, cofins: 0, iss: 0, difal: 0, retencoes: 0 }
+    nf.linhas.push(l)
+  }
+  l.itens += 1
+  for (const campo of ['valor_contabil', 'bc_icms', 'icms', 'icms_st', 'ipi', 'pis', 'cofins', 'iss', 'difal', 'retencoes'] as const) l[campo] += v[campo] ?? 0
+}
+
 /** Registra o parceiro (PJ) e devolve o CNPJ usado como chave; pessoa física fica agrupada (chave vazia). */
 function registrarParceiro(parceiros: Record<string, Parceiro>, documento: Celula | undefined, tipo: Destinatario, nome: Celula | undefined, uf: string, municipio: Celula | undefined) {
   const d = texto(documento).replace(/\D/g, '')
@@ -210,6 +241,7 @@ function lerDetalhado(
   produtos: Record<string, string>,
   parceiros: Record<string, Parceiro>,
   itens: Map<string, ItemEstoque>,
+  notas: Map<string, NotaDetalhe>,
 ) {
   const cab = acharCabecalho(celulas, ['cfop'])
   if (!cab) throw new Error('Cabeçalho com a coluna CFOP não encontrado.')
@@ -267,6 +299,32 @@ function lerDetalhado(
     const ncm = texto(l[c.ncm]).replace(/\D/g, '')
     if (ncm && !produtos[ncm] && c.produto >= 0) produtos[ncm] = texto(l[c.produto])
     const uf = texto(l[c.uf]).toUpperCase()
+    // nota: resumo e a parte dela no movimento e no estoque (para os ajustes por nota)
+    const numNota = c.nota >= 0 ? texto(l[c.nota]).replace(/\.0+$/, '') : ''
+    const docNota = c.documento >= 0 ? texto(l[c.documento]).replace(/\D/g, '') : ''
+    const nomeNota = c.nome >= 0 ? texto(l[c.nome]) : ''
+    let nf: NotaDetalhe | null = null
+    if (numNota) {
+      const kn = chaveDaNota(tipo, numNota, docNota, nomeNota)
+      nf = notas.get(kn) ?? {
+        chave: kn,
+        tipo,
+        nota: numNota,
+        documento: docNota,
+        parceiro_nome: nomeNota,
+        data: dataDe(l[c.data]) ?? `${comp}-01`,
+        competencia: comp,
+        cfops: '',
+        valor: 0,
+        itens: 0,
+        linhas: [],
+        estoque: [],
+      }
+      if (!nf.cfops.split(',').includes(cfop)) nf.cfops = nf.cfops ? `${nf.cfops},${cfop}` : cfop
+      nf.valor = Math.round((nf.valor + valor) * 100) / 100
+      nf.itens++
+      notas.set(kn, nf)
+    }
     // item do produto para o estoque (quantidade e custo/valor), quando o relatório traz produto e quantidade
     if (c.quantidade >= 0 && (tipo === 'entrada' || tipo === 'saida')) {
       const codigo = c.codigo >= 0 ? texto(l[c.codigo]) : ''
@@ -295,36 +353,45 @@ function lerDetalhado(
         }
         it.quantidade += qtd
         it.valor += valor
-        it.valor_produto = (it.valor_produto ?? 0) + (c.total >= 0 ? v(c.total) - v(c.desconto) : valor)
+        const vp = c.total >= 0 ? v(c.total) - v(c.desconto) : valor
+        it.valor_produto = (it.valor_produto ?? 0) + vp
         itens.set(k, it)
+        if (nf) {
+          const e = nf.estoque.find((x) => x.cfop === cfop && x.codigo === codigo && x.ean === ean)
+          if (e) {
+            e.quantidade += qtd
+            e.valor += valor
+            e.valor_produto = (e.valor_produto ?? 0) + vp
+          } else nf.estoque.push({ ...it, quantidade: qtd, valor, valor_produto: vp })
+        }
       }
     }
     const destinatario = c.documento >= 0 ? tipoDestinatario(l[c.documento], c.ie >= 0 ? l[c.ie] : null) : ''
-    ag.somar(
-      {
-        competencia: comp,
-        tipo,
-        cfop,
-        ncm,
-        uf,
-        cst: texto(l[c.cst]).replace(/\D/g, ''),
-        cst_pis: cstPis(c.cstPis >= 0 ? l[c.cstPis] : undefined),
-        servico: '',
-        destinatario,
-        parceiro: registrarParceiro(parceiros, l[c.documento], destinatario, l[c.nome], uf, l[c.municipio]),
-      },
-      {
-        valor_contabil: valor,
-        bc_icms: v(c.bcIcms),
-        icms: v(c.icms),
-        icms_st: st,
-        ipi,
-        pis: v(c.pis),
-        cofins: v(c.cofins),
-        difal: v(c.difal),
-        retencoes: c.ret.reduce((s, j) => s + v(j), 0),
-      },
-    )
+    const dims = {
+      competencia: comp,
+      tipo,
+      cfop,
+      ncm,
+      uf,
+      cst: texto(l[c.cst]).replace(/\D/g, ''),
+      cst_pis: cstPis(c.cstPis >= 0 ? l[c.cstPis] : undefined),
+      servico: '',
+      destinatario,
+      parceiro: registrarParceiro(parceiros, l[c.documento], destinatario, l[c.nome], uf, l[c.municipio]),
+    }
+    const valores = {
+      valor_contabil: valor,
+      bc_icms: v(c.bcIcms),
+      icms: v(c.icms),
+      icms_st: st,
+      ipi,
+      pis: v(c.pis),
+      cofins: v(c.cofins),
+      difal: v(c.difal),
+      retencoes: c.ret.reduce((s, j) => s + v(j), 0),
+    }
+    ag.somar(dims, valores)
+    if (nf) somarParte(nf, dims, valores)
   }
   if (semData) avisos.push(`${semData} linha(s) sem data válida foram ignoradas.`)
   return ag
@@ -417,6 +484,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
   const produtos: Record<string, string> = {}
   const parceiros: Record<string, Parceiro> = {}
   const itens = new Map<string, ItemEstoque>()
+  const notas = new Map<string, NotaDetalhe>()
 
   let tipo: TipoRelatorio
   if (tn.includes('servico')) tipo = 'servicos'
@@ -443,7 +511,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
           : 'Período do resumo não identificado: escolha a competência.',
       )
   } else {
-    ag = lerDetalhado(celulas, tipo === 'saidas_detalhado' ? 'saida' : 'entrada', avisos, produtos, parceiros, itens)
+    ag = lerDetalhado(celulas, tipo === 'saidas_detalhado' ? 'saida' : 'entrada', avisos, produtos, parceiros, itens, notas)
   }
 
   const linhas = ag.linhas()
@@ -465,6 +533,7 @@ export function lerRelatorio(dados: Uint8Array, arquivo: string, tipoServico?: '
     produtos,
     parceiros,
     itens: [...itens.values()].map((i) => ({ ...i, quantidade: Math.round(i.quantidade * 10000) / 10000, valor: Math.round(i.valor * 100) / 100 })),
+    notas: [...notas.values()],
     exigeCompetencia,
     avisos,
   }
