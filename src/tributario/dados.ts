@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import type { ConfigProduto, ItemEstoque } from './engine/estoque'
+import { ajusteVazio, type AjusteNota, type NotaDetalhe, type NotaResumo } from './engine/notas'
 import type { ConfigNcm, Estabelecimento, MovimentoLinha, Parametros, RegimeAtual, RegimeFornecedor, TipoMovimento } from './engine/tipos'
 import type { LinhaImportada, Parceiro, TipoRelatorio } from './importacao/relatorios'
 
@@ -160,6 +161,7 @@ export async function gravarImportacao(args: {
   produtos?: Record<string, string>
   parceiros?: Record<string, Parceiro>
   itens?: ItemEstoque[]
+  notas?: NotaDetalhe[]
 }) {
   const comps = args.linhas.map((l) => l.competencia).sort()
   if (!comps.length) throw new Error('Nenhuma linha para importar.')
@@ -194,6 +196,29 @@ export async function gravarImportacao(args: {
     const itens = (args.itens ?? []).map((i) => ({ ...i, importacao_id: importacaoId, empresa_id: args.empresaId, estabelecimento_id: args.estabelecimentoId }))
     for (let i = 0; i < itens.length; i += 500) {
       const { error: e } = await supabase.from('trib_estoque_movimentos').insert(itens.slice(i, i + 500))
+      erro(e)
+    }
+    // notas (resumo e ajustes por nota); sem a tabela (migration pendente) segue sem elas
+    const notas = (args.notas ?? []).map((n) => ({
+      importacao_id: importacaoId,
+      empresa_id: args.empresaId,
+      estabelecimento_id: args.estabelecimentoId,
+      chave: n.chave,
+      tipo: n.tipo,
+      nota: n.nota,
+      documento: n.documento,
+      parceiro_nome: n.parceiro_nome,
+      data: n.data,
+      competencia: n.competencia,
+      cfops: n.cfops,
+      valor: r2(n.valor),
+      itens: n.itens,
+      linhas: n.linhas.map(compactarParte),
+      estoque: n.estoque.map(compactarItem),
+    }))
+    for (let i = 0; i < notas.length; i += 500) {
+      const { error: e } = await supabase.from('trib_notas').insert(notas.slice(i, i + 500))
+      if (e && /trib_notas/.test(e.message)) break
       erro(e)
     }
   } catch (e) {
@@ -394,4 +419,137 @@ export async function salvarProdutoEstoque(empresaId: string, c: ConfigProduto) 
           { onConflict: 'empresa_id,chave' },
         )
   erro(error)
+}
+
+// ---------------------------------------------------------------------------
+// Notas importadas e ajustes por nota
+// ---------------------------------------------------------------------------
+
+// A parte de cada nota é gravada compacta (em listas): relatórios de marketplace têm milhares de notas de um item.
+type ParteCompacta = [string, string, string, string, string, string, string, string, ...number[]]
+type ItemCompacto = [string, string, string, string, string, string, number, number, number | null, number]
+const r2 = (v: number) => Math.round(v * 100) / 100
+const VALORES = ['itens', 'valor_contabil', 'bc_icms', 'icms', 'icms_st', 'ipi', 'pis', 'cofins', 'iss', 'difal', 'retencoes'] as const
+const compactarParte = (l: NotaDetalhe['linhas'][number]): ParteCompacta => [
+  l.cfop,
+  l.ncm,
+  l.uf,
+  l.cst,
+  l.cst_pis ?? '',
+  l.servico,
+  l.destinatario,
+  l.parceiro,
+  ...VALORES.map((c) => r2(l[c] ?? 0)),
+]
+const expandirParte = (x: ParteCompacta, n: NotaResumo): NotaDetalhe['linhas'][number] => {
+  const [cfop, ncm, uf, cst, cst_pis, servico, destinatario, parceiro, ...v] = x
+  return {
+    competencia: n.competencia,
+    tipo: n.tipo,
+    cfop,
+    ncm,
+    uf,
+    cst,
+    cst_pis,
+    servico,
+    destinatario: destinatario as NotaDetalhe['linhas'][number]['destinatario'],
+    parceiro,
+    ...(Object.fromEntries(VALORES.map((c, i) => [c, Number(v[i]) || 0])) as Record<(typeof VALORES)[number], number>),
+  }
+}
+// o item guarda nota/parceiro só quando o estoque também guarda (compras, devoluções…); nas vendas comuns fica vazio
+const compactarItem = (i: ItemEstoque): ItemCompacto => [
+  i.cfop,
+  i.codigo,
+  i.ean,
+  i.descricao,
+  i.ncm,
+  i.unidade,
+  Math.round(i.quantidade * 10000) / 10000,
+  r2(i.valor),
+  i.valor_produto === undefined ? null : r2(i.valor_produto),
+  i.nota ? 1 : 0,
+]
+const expandirItem = (x: ItemCompacto, n: NotaResumo): ItemEstoque => ({
+  competencia: n.competencia,
+  tipo: n.tipo as ItemEstoque['tipo'],
+  cfop: x[0],
+  codigo: x[1],
+  ean: x[2],
+  descricao: x[3],
+  ncm: x[4],
+  unidade: x[5],
+  quantidade: Number(x[6]) || 0,
+  valor: Number(x[7]) || 0,
+  valor_produto: x[8] === null ? undefined : Number(x[8]),
+  nota: x[9] ? n.nota : '',
+  parceiro: x[9] ? n.parceiro_nome : '',
+})
+
+const CAMPOS_NOTA = 'chave, tipo, nota, documento, parceiro_nome, data, competencia, cfops, valor, itens, estabelecimento_id, importacao_id'
+const paraNota = (n: NotaResumo) => ({ ...n, valor: Number(n.valor) || 0, data: n.data ?? `${n.competencia}-01` })
+
+/** Resumo de todas as notas importadas (paginado; sem a parte de cada nota no movimento). */
+export async function listarNotas(empresaId: string): Promise<NotaResumo[]> {
+  const { count, error } = await supabase.from('trib_notas').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)
+  if (error && /trib_notas/.test(error.message)) return []
+  erro(error)
+  const pagina = 1000
+  const paginas = await Promise.all(
+    Array.from({ length: Math.ceil((count ?? 0) / pagina) }, async (_, p) => {
+      const { data, error: e } = await supabase
+        .from('trib_notas')
+        .select(CAMPOS_NOTA)
+        .eq('empresa_id', empresaId)
+        .order('id')
+        .range(p * pagina, (p + 1) * pagina - 1)
+      erro(e)
+      return ((data ?? []) as NotaResumo[]).map(paraNota)
+    }),
+  )
+  return paginas.flat()
+}
+
+/** Notas com a parte no movimento e no estoque, pelas chaves (para aplicar os ajustes). */
+export async function carregarNotasDetalhe(empresaId: string, chaves: string[]): Promise<NotaDetalhe[]> {
+  const r: NotaDetalhe[] = []
+  for (let i = 0; i < chaves.length; i += 100) {
+    const { data, error } = await supabase.from('trib_notas').select(`${CAMPOS_NOTA}, linhas, estoque`).eq('empresa_id', empresaId).in('chave', chaves.slice(i, i + 100))
+    if (error && /trib_notas/.test(error.message)) return []
+    erro(error)
+    r.push(
+      ...((data ?? []) as NotaDetalhe[]).map((n) => ({
+        ...paraNota(n),
+        linhas: ((n.linhas ?? []) as unknown as ParteCompacta[]).map((l) => expandirParte(l, n)),
+        estoque: ((n.estoque ?? []) as unknown as ItemCompacto[]).map((x) => expandirItem(x, n)),
+      })),
+    )
+  }
+  return r
+}
+
+export async function listarAjustesNotas(empresaId: string): Promise<Record<string, AjusteNota>> {
+  const { data, error } = await supabase.from('trib_notas_ajustes').select('chave, data, cfop, excluir, observacao').eq('empresa_id', empresaId)
+  if (error && /trib_notas_ajustes/.test(error.message)) return {}
+  erro(error)
+  return Object.fromEntries(((data ?? []) as AjusteNota[]).map((a) => [a.chave, { ...a, observacao: a.observacao ?? '' }]))
+}
+
+/** Grava (ou apaga, quando não muda nada) os ajustes de várias notas. */
+export async function salvarAjustesNotas(empresaId: string, ajustes: AjusteNota[]) {
+  const apagar = ajustes.filter(ajusteVazio).map((a) => a.chave)
+  const gravar = ajustes.filter((a) => !ajusteVazio(a))
+  for (let i = 0; i < apagar.length; i += 100) {
+    const { error } = await supabase.from('trib_notas_ajustes').delete().eq('empresa_id', empresaId).in('chave', apagar.slice(i, i + 100))
+    erro(error)
+  }
+  for (let i = 0; i < gravar.length; i += 500) {
+    const { error } = await supabase
+      .from('trib_notas_ajustes')
+      .upsert(
+        gravar.slice(i, i + 500).map((a) => ({ empresa_id: empresaId, chave: a.chave, data: a.data, cfop: a.cfop, excluir: a.excluir, observacao: a.observacao, updated_at: new Date().toISOString() })),
+        { onConflict: 'empresa_id,chave' },
+      )
+    erro(error)
+  }
 }

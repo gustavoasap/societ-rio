@@ -15,6 +15,7 @@ import {
   MapPinned,
   Pencil,
   Percent,
+  ReceiptText,
   Scale,
   Settings2,
   Table2,
@@ -27,11 +28,15 @@ import { apurar, type Contexto } from '../engine/apuracao'
 import { estimarMix, linhaConsiderada, montarBases, naturezaDe, receitaDaBase, type DadosEstab } from '../engine/base'
 import { perfilIcmsPorNcm } from '../engine/perfilNcm'
 import { calcularEstoque, type ConfigProduto, type ItemEstoque } from '../engine/estoque'
+import { aplicarAjustesItens, aplicarAjustesLinhas, ajusteVazio, type AjusteNota, type NotaDetalhe } from '../engine/notas'
 import { projetar } from '../engine/projecao'
 import { ICMS_INTERNO_UF } from '../engine/tabelas'
 import { comPadrao, type Parametros as P, type MovimentoLinha, type RegimeFornecedor, type RegimeId } from '../engine/tipos'
 import {
   carregarEstoque,
+  carregarNotasDetalhe,
+  listarAjustesNotas,
+  salvarAjustesNotas,
   carregarMovimentos,
   listarProdutosEstoque,
   salvarProdutoEstoque,
@@ -57,6 +62,7 @@ import { Comparativo } from './abas/Comparativo'
 import { Creditos } from './abas/Creditos'
 import { Dre } from './abas/Dre'
 import { Estoque } from './abas/Estoque'
+import { Notas } from './abas/Notas'
 import { Icms } from './abas/Icms'
 import { Importar } from './abas/Importar'
 import { Legislacao } from './abas/Legislacao'
@@ -84,6 +90,7 @@ type Aba =
   | 'reforma'
   | 'ncm'
   | 'estoque'
+  | 'notas'
   | 'importar'
   | 'parametros'
   | 'legislacao'
@@ -91,7 +98,9 @@ type Aba =
 const NOME_REGIME_ATUAL = { simples: 'Simples Nacional', presumido: 'Lucro Presumido', real: 'Lucro Real' }
 
 export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEstab; onVoltar: () => void; onEditar: () => void }) {
-  const [linhas, setLinhas] = useState<MovimentoLinha[]>([])
+  const [linhasBrutas, setLinhas] = useState<MovimentoLinha[]>([])
+  const [ajustesNotas, setAjustesNotas] = useState<Record<string, AjusteNota>>({})
+  const [notasAjustadas, setNotasAjustadas] = useState<NotaDetalhe[]>([])
   const [importacoes, setImportacoes] = useState<Importacao[]>([])
   const [parceiros, setParceiros] = useState<ParceiroRegistro[]>([])
   const [carregando, setCarregando] = useState(true)
@@ -99,21 +108,24 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
   const [aba, setAba] = useState<Aba>('geral')
   const [paramsSalvos, setParams] = useState<P>(() => comPadrao(empresa.parametros))
   const [ncms, setNcms] = useState<NcmRegistro[]>([])
-  const [itensEstoque, setItensEstoque] = useState<ItemEstoque[]>([])
+  const [itensBrutos, setItensEstoque] = useState<ItemEstoque[]>([])
   const [produtosEstoque, setProdutosEstoque] = useState<Record<string, ConfigProduto>>({})
   const [gravacao, setGravacao] = useState<'salvo' | 'pendente' | 'salvando'>('salvo')
   const [estabFiltro, setEstabFiltro] = useState('')
 
   const carregar = useCallback(async () => {
     try {
-      const [movs, imps, regs, parcs, est, prods] = await Promise.all([
+      const [movs, imps, regs, parcs, est, prods, ajs] = await Promise.all([
         carregarMovimentos(empresa.id),
         listarImportacoes(empresa.id),
         listarNcms(empresa.id),
         listarParceiros(empresa.id),
         carregarEstoque(empresa.id),
         listarProdutosEstoque(empresa.id),
+        listarAjustesNotas(empresa.id),
       ])
+      setAjustesNotas(ajs)
+      setNotasAjustadas(await carregarNotasDetalhe(empresa.id, Object.keys(ajs)))
       setItensEstoque(est)
       setProdutosEstoque(prods)
       setLinhas(movs)
@@ -149,6 +161,23 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
       }
     }, 1000)
   }, [empresa.id])
+
+  // ajustes por nota (data/competência, CFOP, considerar ou não) aplicados sobre o movimento e o estoque importados
+  const linhas = useMemo(() => aplicarAjustesLinhas(linhasBrutas, notasAjustadas, ajustesNotas), [linhasBrutas, notasAjustadas, ajustesNotas])
+  const itensEstoque = useMemo(() => aplicarAjustesItens(itensBrutos, notasAjustadas, ajustesNotas), [itensBrutos, notasAjustadas, ajustesNotas])
+
+  async function mudarAjustesNotas(lista: AjusteNota[]) {
+    await salvarAjustesNotas(empresa.id, lista)
+    const novos = { ...ajustesNotas }
+    for (const a of lista) {
+      if (ajusteVazio(a)) delete novos[a.chave]
+      else novos[a.chave] = a
+    }
+    const faltam = lista.filter((a) => !ajusteVazio(a) && !notasAjustadas.some((n) => n.chave === a.chave)).map((a) => a.chave)
+    const det = faltam.length ? await carregarNotasDetalhe(empresa.id, faltam) : []
+    setNotasAjustadas((l) => [...l.filter((n) => novos[n.chave]), ...det])
+    setAjustesNotas(novos)
+  }
 
   const estabs = empresa.trib_estabelecimentos
   const dadosEstab: DadosEstab = useCallback(
@@ -247,6 +276,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     { id: 'apuracao', label: 'Apuração atual', icone: <Calculator className="h-4 w-4" />, grupo: 'Análises' },
     { id: 'preco', label: 'Preço e markup', icone: <Tags className="h-4 w-4" />, grupo: 'Análises' },
     { id: 'relatorio', label: 'Relatório PDF', icone: <FileDown className="h-4 w-4" />, grupo: 'Análises' },
+    { id: 'notas', label: 'Notas importadas', icone: <ReceiptText className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'movimento', label: 'Movimento e CFOP', icone: <Table2 className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'parceiros', label: 'Clientes e fornecedores', icone: <Users className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'ncm', label: 'Produtos (NCM)', icone: <Barcode className="h-4 w-4" />, grupo: 'Dados' },
@@ -255,7 +285,7 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
     { id: 'parametros', label: 'Parâmetros', icone: <Settings2 className="h-4 w-4" />, grupo: 'Dados' },
     { id: 'legislacao', label: 'Legislação', icone: <BookOpen className="h-4 w-4" />, grupo: 'Dados' },
   ]
-  const precisaDados = !['ncm', 'estoque', 'importar', 'parametros', 'legislacao', 'parceiros'].includes(aba)
+  const precisaDados = !['ncm', 'estoque', 'notas', 'importar', 'parametros', 'legislacao', 'parceiros'].includes(aba)
 
   return (
     <div className="space-y-5">
@@ -338,6 +368,9 @@ export function Painel({ empresa, onVoltar, onEditar }: { empresa: EmpresaComEst
       )}
       {!carregando && aba === 'parceiros' && <Parceiros d={dados} onRegime={mudarRegimeFornecedor} />}
       {!carregando && aba === 'ncm' && <Produtos linhas={linhas} registros={ncms} params={params} perfil={perfilIcms} ufReferencia={ufMatriz} aliquotaModal={dadosEstab(null).aliquota} onMudar={mudarNcm} />}
+      {!carregando && aba === 'notas' && (
+        <Notas empresaId={empresa.id} estabelecimentos={estabs} ajustes={ajustesNotas} notasDetalhe={notasAjustadas} onAjustes={mudarAjustesNotas} />
+      )}
       {!carregando && aba === 'estoque' && (
         <Estoque estoque={estoque} itens={itensEstoque} produtos={produtosEstoque} params={params} onParams={mudarParams} onProduto={mudarProdutoEstoque} />
       )}
