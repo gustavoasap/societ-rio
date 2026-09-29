@@ -4,6 +4,7 @@ import { House, LogOut, Search, Settings, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Link, useRota } from '../lib/rotas'
 import { Dashboard } from '../components/Dashboard'
+import { ObjetoSocial } from '../societario/ObjetoSocial'
 import { Tributario } from '../tributario/components/Tributario'
 import { Admin } from './Admin'
 import { DepartamentoForm, ModuloForm } from './Formularios'
@@ -15,6 +16,7 @@ import { usePortal } from './usePortal'
 // Ferramentas que rodam dentro do portal. O link cadastrado na ferramenta aponta para cá.
 const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> = {
   '/societario/processos': Dashboard,
+  '/societario/objeto-social': ObjetoSocial,
   '/fiscal/reforma-tributaria': Tributario,
 }
 
