@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { KeyRound, Pencil, Plus, ShieldCheck, Smartphone, Tags, Trash2 } from 'lucide-react'
+import { KeyRound, Pencil, Plus, ShieldCheck, Smartphone, Tags, Trash2, Users } from 'lucide-react'
 import { Bolinha, Cabecalho, Campo, CampoValor, Erro, Modal, Segmentado } from '../components/ui'
-import { CORES, corDe, ICONES, iconeDe } from '../components/visual'
+import { COR_NATUREZA, CORES, corDe, ICONES, iconeDe } from '../components/visual'
 import { useApp } from '../contexto'
 import { excluir, salvar } from '../lib/dados'
 import { moeda } from '../lib/formato'
 import { supabase } from '../lib/supabase'
-import type { Categoria } from '../tipos'
+import { NATUREZAS, rotuloDe, type Categoria, type Natureza, type Pessoa } from '../tipos'
 
 export function Ajustes({ email }: { email: string }) {
   const { categorias } = useApp()
@@ -45,7 +45,11 @@ export function Ajustes({ email }: { email: string }) {
                 <Bolinha icone={iconeDe(c.icone)} fundo={cor.fundo} texto={cor.texto} tamanho="h-9 w-9" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-slate-800">{c.nome}</div>
-                  <div className="text-xs text-slate-400">{!c.ativa ? 'Desativada' : c.orcamento_mensal ? `Limite ${moeda(c.orcamento_mensal)}/mês` : ' '}</div>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <span className="h-2 w-2 rounded-sm" style={{ background: COR_NATUREZA[c.natureza] }} />
+                    {rotuloDe(NATUREZAS, c.natureza)}
+                    {!c.ativa ? ' · desativada' : c.orcamento_mensal ? ` · limite ${moeda(c.orcamento_mensal)}/mês` : ''}
+                  </div>
                 </div>
                 <button className="icon-btn" onClick={() => setEdit(c)} aria-label={`Editar ${c.nome}`}>
                   <Pencil className="h-4 w-4" />
@@ -55,6 +59,8 @@ export function Ajustes({ email }: { email: string }) {
           })}
         </div>
       </section>
+
+      <Pessoas />
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <TrocarSenha />
@@ -115,13 +121,14 @@ function CategoriaForm({ inicial, tipoPadrao, onClose }: { inicial: Categoria | 
   const [icone, setIcone] = useState(inicial?.icone ?? 'tag')
   const [cor, setCor] = useState(inicial?.cor ?? 'azul')
   const [limite, setLimite] = useState<number | null>(inicial?.orcamento_mensal ?? null)
+  const [natureza, setNatureza] = useState<Natureza>(inicial?.natureza ?? 'variavel')
   const [ativa, setAtiva] = useState(inicial?.ativa ?? true)
   const [erro, setErro] = useState<string | null>(null)
 
   async function gravar(e: FormEvent) {
     e.preventDefault()
     try {
-      await salvar('pes_categorias', inicial?.id, { nome: nome.trim(), tipo, icone, cor, ativa, orcamento_mensal: tipo === 'despesa' && limite && limite > 0 ? limite : null })
+      await salvar('pes_categorias', inicial?.id, { nome: nome.trim(), tipo, icone, cor, ativa, natureza, orcamento_mensal: tipo === 'despesa' && limite && limite > 0 ? limite : null })
       onClose()
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e)
@@ -168,6 +175,9 @@ function CategoriaForm({ inicial, tipoPadrao, onClose }: { inicial: Categoria | 
         <Campo label="Nome">
           <input className="input" value={nome} onChange={(e) => setNome(e.target.value)} required autoFocus={!inicial} />
         </Campo>
+        <Campo label="Classificação" dica={tipo === 'despesa' ? 'Fixa: todo mês, mesmo valor (aluguel). Variável: todo mês, valor muda (mercado). Eventual: de vez em quando (viagem, IPVA).' : 'Fixa: salário/pró-labore. Variável: lucros, comissões. Eventual: 13º, venda de bem.'}>
+          <Segmentado valor={natureza} onChange={setNatureza} opcoes={NATUREZAS} />
+        </Campo>
         {tipo === 'despesa' && (
           <Campo label="Limite mensal (orçamento, opcional)">
             <CampoValor valor={limite} onChange={setLimite} />
@@ -203,5 +213,61 @@ function CategoriaForm({ inicial, tipoPadrao, onClose }: { inicial: Categoria | 
         <Erro>{erro}</Erro>
       </form>
     </Modal>
+  )
+}
+
+function Pessoas() {
+  const { pessoas, nome } = useApp()
+  const [novo, setNovo] = useState('')
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function adicionar(e: FormEvent) {
+    e.preventDefault()
+    if (!novo.trim()) return
+    try {
+      await salvar('pes_pessoas', null, { nome: novo.trim() })
+      setNovo('')
+      setErro(null)
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      setErro(m.includes('duplicate') ? 'Essa pessoa já está cadastrada.' : m)
+    }
+  }
+
+  async function renomear(p: Pessoa) {
+    const n = window.prompt('Nome', p.nome)?.trim()
+    if (n && n !== p.nome) await salvar('pes_pessoas', p.id, { nome: n }).catch((e: Error) => setErro(e.message))
+  }
+
+  return (
+    <section className="cartao">
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-800">
+        <Users className="h-4 w-4 text-amber-600" /> Pessoas (responsáveis por gastos)
+      </h2>
+      <p className="mb-3 text-xs text-slate-500">
+        Quem usa seu cartão ou sua conta: família, amigos, sócios. Os gastos delas ficam fora da sua DRE e aparecem em “A receber de terceiros”. O padrão é sempre você ({nome}).
+      </p>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {pessoas.map((p) => (
+          <span key={p.id} className={`inline-flex items-center gap-1 rounded-full py-1 pr-1 pl-3 text-sm ${p.ativa ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-200' : 'bg-slate-100 text-slate-400 line-through'}`}>
+            {p.nome}
+            <button className="icon-btn h-6 w-6" onClick={() => renomear(p)} aria-label={`Renomear ${p.nome}`}>
+              <Pencil className="h-3 w-3" />
+            </button>
+            <button className="icon-btn h-6 w-6" onClick={() => salvar('pes_pessoas', p.id, { ativa: !p.ativa })} title={p.ativa ? 'Desativar' : 'Reativar'} aria-label={p.ativa ? 'Desativar' : 'Reativar'}>
+              {p.ativa ? <Trash2 className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+            </button>
+          </span>
+        ))}
+        {pessoas.length === 0 && <span className="text-sm text-slate-400">Nenhuma pessoa cadastrada.</span>}
+      </div>
+      <form onSubmit={adicionar} className="flex max-w-sm gap-2">
+        <input className="input" value={novo} onChange={(e) => setNovo(e.target.value)} placeholder="Nome (ex.: Maria, Pai, Sócio)" />
+        <button className="btn-primary px-3" aria-label="Adicionar pessoa" disabled={!novo.trim()}>
+          <Plus className="h-4 w-4" />
+        </button>
+      </form>
+      <Erro>{erro}</Erro>
+    </section>
   )
 }

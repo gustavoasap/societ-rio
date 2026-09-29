@@ -18,6 +18,10 @@ const lanc = (p: Partial<Lancamento>): Lancamento => ({
   grupo: null,
   parcela: null,
   parcelas: null,
+  natureza: null,
+  pessoa_id: null,
+  reembolsado: false,
+  recorrencia_id: null,
   ...p,
 })
 

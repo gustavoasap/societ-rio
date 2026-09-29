@@ -40,7 +40,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react'
-import type { AreaObjetivo, TipoConta } from '../tipos'
+import type { AreaObjetivo, Natureza, TipoConta } from '../tipos'
 
 export const ICONES: Record<string, LucideIcon> = {
   tag: Tag,
@@ -124,3 +124,6 @@ export const VISUAL_AREA: Record<AreaObjetivo, { icone: LucideIcon; cor: string 
   espiritual: { icone: Sun, cor: 'amarelo' },
   lazer: { icone: Plane, cor: 'laranja' },
 }
+
+/** Cores das classificações (validadas para daltonismo; sempre acompanhadas de rótulo). */
+export const COR_NATUREZA: Record<Natureza, string> = { fixa: '#8a5cd8', variavel: '#17a08f', eventual: '#d69a17' }

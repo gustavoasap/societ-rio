@@ -18,3 +18,22 @@ export function AbasMetas() {
     </div>
   )
 }
+
+/** Alterna entre Dashboard e DRE. */
+export function AbasAnalise() {
+  const rota = useRota()
+  const item = (para: string, label: string) => (
+    <Link
+      para={para}
+      className={`flex-1 rounded-lg px-3 py-2 text-center text-sm font-semibold transition ${rota === para ? 'bg-white text-azul-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+    >
+      {label}
+    </Link>
+  )
+  return (
+    <div className="flex rounded-xl bg-slate-200/60 p-1 sm:max-w-sm">
+      {item('/dashboard', 'Dashboard')}
+      {item('/dre', 'DRE')}
+    </div>
+  )
+}

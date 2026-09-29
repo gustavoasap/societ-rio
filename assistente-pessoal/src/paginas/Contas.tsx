@@ -96,9 +96,11 @@ function Resumo({ rotulo, valor, cor }: { rotulo: string; valor: number; cor: st
   )
 }
 
-function ContaForm({ inicial, onClose }: { inicial: ContaComSaldo | null; onClose: () => void }) {
+export function ContaForm({ inicial, onClose, tipoPadrao = 'corrente' }: { inicial: ContaComSaldo | null; onClose: () => void; tipoPadrao?: TipoConta }) {
   const [nome, setNome] = useState(inicial?.nome ?? '')
-  const [tipo, setTipo] = useState<TipoConta>(inicial?.tipo ?? 'corrente')
+  const [tipo, setTipo] = useState<TipoConta>(inicial?.tipo ?? tipoPadrao)
+  const [fechamento, setFechamento] = useState<number | ''>(inicial?.dia_fechamento ?? '')
+  const [vencimento, setVencimento] = useState<number | ''>(inicial?.dia_vencimento ?? '')
   const [instituicao, setInstituicao] = useState(inicial?.instituicao ?? '')
   // no cartão, o usuário digita a fatura atual (positiva) e gravamos como saldo negativo
   const [saldo, setSaldo] = useState<number | null>(inicial ? (inicial.tipo === 'cartao' ? -inicial.saldo_inicial : inicial.saldo_inicial) : null)
@@ -120,6 +122,8 @@ function ContaForm({ inicial, onClose }: { inicial: ContaComSaldo | null; onClos
         instituicao: instituicao.trim() || null,
         saldo_inicial,
         limite: tipo === 'cartao' ? limite : null,
+        dia_fechamento: tipo === 'cartao' && fechamento ? fechamento : null,
+        dia_vencimento: tipo === 'cartao' && vencimento ? vencimento : null,
         cor,
         ativa,
       })
@@ -189,6 +193,16 @@ function ContaForm({ inicial, onClose }: { inicial: ContaComSaldo | null; onClos
             </label>
           )}
         </div>
+        {tipo === 'cartao' && (
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Dia do fechamento" dica="Compras a partir desse dia vão para a próxima fatura.">
+              <input className="input" type="number" min={1} max={31} value={fechamento} onChange={(e) => setFechamento(e.target.value ? Number(e.target.value) : '')} />
+            </Campo>
+            <Campo label="Dia do vencimento">
+              <input className="input" type="number" min={1} max={31} value={vencimento} onChange={(e) => setVencimento(e.target.value ? Number(e.target.value) : '')} />
+            </Campo>
+          </div>
+        )}
         <Campo label="Cor">
           <div className="flex flex-wrap gap-2">
             {Object.entries(CORES).map(([k, c]) => (

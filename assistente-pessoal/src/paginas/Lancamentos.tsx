@@ -7,33 +7,39 @@ import { resumo } from '../lib/calculos'
 import { mesAtual, primeiroDia, ultimoDia } from '../lib/datas'
 import { buscarLancamentos, useDados } from '../lib/dados'
 import { diaPorExtenso, moeda } from '../lib/formato'
-import type { Lancamento } from '../tipos'
+import { NATUREZAS, type Lancamento } from '../tipos'
 
 export function Lancamentos() {
-  const { contas, categorias, abrirLancamento } = useApp()
+  const { contas, categorias, pessoas, nome, abrirLancamento } = useApp()
   const [mes, setMes] = useState(mesAtual)
   const [tipo, setTipo] = useState('')
   const [contaId, setContaId] = useState('')
   const [categoriaId, setCategoriaId] = useState('')
   const [situacao, setSituacao] = useState('')
   const [busca, setBusca] = useState('')
+  const [pessoa, setPessoa] = useState('')
+  const [natureza, setNatureza] = useState('')
   const lanc = useDados(() => buscarLancamentos(primeiroDia(mes), ultimoDia(mes)), [mes])
 
   const t = busca.trim().toLowerCase()
+  const cats = new Map(categorias.map((c) => [c.id, c]))
   const lista = (lanc.dados ?? []).filter(
     (l) =>
       (!tipo || l.tipo === tipo) &&
       (!contaId || l.conta_id === contaId || l.conta_destino_id === contaId) &&
       (!categoriaId || l.categoria_id === categoriaId) &&
       (!situacao || (situacao === 'aberto' ? !l.pago : l.pago)) &&
+      (!pessoa || (pessoa === 'eu' ? !l.pessoa_id : l.pessoa_id === pessoa)) &&
+      (!natureza || (l.tipo !== 'transferencia' && (l.natureza ?? cats.get(l.categoria_id ?? '')?.natureza ?? 'variavel') === natureza)) &&
       (!t || `${l.descricao} ${l.observacao ?? ''}`.toLowerCase().includes(t)),
   )
-  const r = resumo(lista)
+  // totais: só o que é meu (gastos de terceiros ficam de fora)
+  const r = resumo(lista.filter((l) => !l.pessoa_id))
 
   const porDia = new Map<string, Lancamento[]>()
   for (const l of lista) porDia.set(l.data, [...(porDia.get(l.data) ?? []), l])
 
-  const filtrando = tipo || contaId || categoriaId || situacao || t
+  const filtrando = tipo || contaId || categoriaId || situacao || pessoa || natureza || t
   return (
     <div className="space-y-4">
       <Cabecalho
@@ -55,7 +61,7 @@ export function Lancamentos() {
         <Mini rotulo="Resultado" valor={r.resultado} cor={r.resultado < 0 ? 'text-rose-600' : 'text-azul-700'} />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
         <label className="relative col-span-2 sm:col-span-3 xl:col-span-1">
           <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input className="input pl-10" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar descrição" />
@@ -81,6 +87,8 @@ export function Lancamentos() {
         />
         <Selecao value={contaId} onChange={setContaId} vazio="Todas as contas" opcoes={contas.map((c) => ({ value: c.id, label: c.nome }))} />
         <Selecao value={categoriaId} onChange={setCategoriaId} vazio="Todas as categorias" opcoes={categorias.map((c) => ({ value: c.id, label: `${c.nome} (${c.tipo === 'receita' ? 'rec.' : 'desp.'})` }))} />
+        <Selecao value={natureza} onChange={setNatureza} vazio="Fixas, variáveis e eventuais" opcoes={NATUREZAS.map((n) => ({ value: n.value, label: `Só ${n.label.toLowerCase()}s` }))} />
+        <Selecao value={pessoa} onChange={setPessoa} vazio="Todos os responsáveis" opcoes={[{ value: 'eu', label: `Só meus (${nome})` }, ...pessoas.map((p) => ({ value: p.id, label: `Só de ${p.nome}` }))]} />
       </div>
 
       {lanc.erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{lanc.erro}</p>}

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ArrowLeftRight, ChartPie, Ellipsis, Flag, House, Landmark, LogOut, Plus, Settings, Target, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, ChartColumn, ChartPie, CreditCard, Ellipsis, FileSpreadsheet, Flag, House, Landmark, LogOut, Plus, Repeat, Settings, Target, Users, X, type LucideIcon } from 'lucide-react'
 import { useApp } from '../contexto'
 import { Link, useRota } from '../lib/rotas'
 import { supabase } from '../lib/supabase'
@@ -8,20 +8,27 @@ interface Item {
   para: string
   label: string
   icone: LucideIcon
+  grupo: string
 }
 
 const ITENS: Item[] = [
-  { para: '/', label: 'Início', icone: House },
-  { para: '/lancamentos', label: 'Lançamentos', icone: ArrowLeftRight },
-  { para: '/contas', label: 'Contas', icone: Landmark },
-  { para: '/orcamento', label: 'Orçamento', icone: ChartPie },
-  { para: '/metas', label: 'Metas', icone: Target },
-  { para: '/objetivos', label: 'Objetivos', icone: Flag },
-  { para: '/ajustes', label: 'Ajustes', icone: Settings },
+  { para: '/', label: 'Resumo', icone: House, grupo: 'Visão geral' },
+  { para: '/dashboard', label: 'Dashboard', icone: ChartColumn, grupo: 'Visão geral' },
+  { para: '/dre', label: 'DRE', icone: FileSpreadsheet, grupo: 'Visão geral' },
+  { para: '/lancamentos', label: 'Lançamentos', icone: ArrowLeftRight, grupo: 'Movimento' },
+  { para: '/fixos', label: 'Fixos e salário', icone: Repeat, grupo: 'Movimento' },
+  { para: '/cartoes', label: 'Cartões', icone: CreditCard, grupo: 'Movimento' },
+  { para: '/terceiros', label: 'A receber de terceiros', icone: Users, grupo: 'Movimento' },
+  { para: '/contas', label: 'Contas', icone: Landmark, grupo: 'Movimento' },
+  { para: '/orcamento', label: 'Orçamento', icone: ChartPie, grupo: 'Planejamento' },
+  { para: '/metas', label: 'Metas', icone: Target, grupo: 'Planejamento' },
+  { para: '/objetivos', label: 'Objetivos', icone: Flag, grupo: 'Planejamento' },
+  { para: '/ajustes', label: 'Ajustes', icone: Settings, grupo: 'Planejamento' },
 ]
 
 // No celular, a barra inferior mostra os mais usados; o resto fica em "Mais"
-const BARRA = ['/', '/lancamentos', '/metas']
+const BARRA = ['/', '/lancamentos', '/dashboard']
+const ANALISE = ['/dashboard', '/dre']
 
 /** As cinco estrelas do Cruzeiro do Sul, como no escudo — só enfeite. */
 export function Estrelas({ className = '' }: { className?: string }) {
@@ -92,16 +99,18 @@ export function Layout({ nome, children }: { nome: string; children: ReactNode }
           <button className="btn-primary mb-3 w-full" onClick={() => abrirLancamento()}>
             <Plus className="h-4 w-4" /> Novo lançamento
           </button>
-          {ITENS.map((it) => (
-            <Link
-              key={it.para}
-              para={it.para}
-              className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${ativo(it.para) ? 'bg-azul-100 text-azul-800' : 'text-slate-500 hover:bg-white hover:text-slate-900'}`}
-              aria-current={ativo(it.para) ? 'page' : undefined}
-            >
-              <it.icone className="h-4.5 w-4.5 shrink-0" />
-              {it.label}
-            </Link>
+          {ITENS.map((it, i) => (
+            <div key={it.para}>
+              {ITENS[i - 1]?.grupo !== it.grupo && <div className="px-3 pt-3 pb-1 text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">{it.grupo}</div>}
+              <Link
+                para={it.para}
+                className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${ativo(it.para) ? 'bg-azul-100 text-azul-800' : 'text-slate-500 hover:bg-white hover:text-slate-900'}`}
+                aria-current={ativo(it.para) ? 'page' : undefined}
+              >
+                <it.icone className="h-4.5 w-4.5 shrink-0" />
+                {it.label}
+              </Link>
+            </div>
           ))}
         </nav>
         <main className="min-w-0">{children}</main>
@@ -122,9 +131,9 @@ export function Layout({ nome, children }: { nome: string; children: ReactNode }
               <Plus className="h-7 w-7" />
             </button>
           </div>
-          <ItemBarra item={ITENS.find((i) => i.para === '/metas')!} ativo={ativo('/metas') || ativo('/objetivos')} />
+          <ItemBarra item={ITENS.find((i) => i.para === '/dashboard')!} ativo={ANALISE.some(ativo)} />
           <button
-            className={`flex cursor-pointer flex-col items-center gap-0.5 py-1 text-[0.6875rem] font-semibold ${![...BARRA, '/objetivos'].some(ativo) ? 'text-azul-700' : 'text-slate-400'}`}
+            className={`flex cursor-pointer flex-col items-center gap-0.5 py-1 text-[0.6875rem] font-semibold ${![...BARRA, ...ANALISE].some(ativo) ? 'text-azul-700' : 'text-slate-400'}`}
             onClick={() => setMais(true)}
           >
             <Ellipsis className="h-6 w-6" />

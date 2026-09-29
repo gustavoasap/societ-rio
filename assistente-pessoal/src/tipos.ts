@@ -3,6 +3,7 @@ export type TipoLancamento = 'receita' | 'despesa' | 'transferencia'
 export type AreaObjetivo = 'pessoal' | 'profissional' | 'financeiro' | 'saude' | 'familia' | 'estudos' | 'espiritual' | 'lazer'
 export type StatusObjetivo = 'planejado' | 'andamento' | 'pausado' | 'concluido'
 export type Prioridade = 'alta' | 'media' | 'baixa'
+export type Natureza = 'fixa' | 'variavel' | 'eventual'
 
 export interface Conta {
   id: string
@@ -14,6 +15,8 @@ export interface Conta {
   cor: string
   ativa: boolean
   ordem: number
+  dia_fechamento: number | null
+  dia_vencimento: number | null
 }
 
 export interface Categoria {
@@ -23,6 +26,7 @@ export interface Categoria {
   cor: string
   icone: string
   orcamento_mensal: number | null
+  natureza: Natureza
   ativa: boolean
 }
 
@@ -40,6 +44,35 @@ export interface Lancamento {
   grupo: string | null
   parcela: number | null
   parcelas: number | null
+  natureza: Natureza | null
+  /** Responsável pelo gasto; null = eu */
+  pessoa_id: string | null
+  reembolsado: boolean
+  recorrencia_id: string | null
+}
+
+export interface Pessoa {
+  id: string
+  nome: string
+  ativa: boolean
+}
+
+export interface Recorrencia {
+  id: string
+  tipo: 'receita' | 'despesa'
+  descricao: string
+  valor: number
+  dia: number
+  conta_id: string
+  categoria_id: string | null
+  pessoa_id: string | null
+  natureza: Natureza | null
+  auto_pago: boolean
+  inicio: string
+  fim: string | null
+  ativa: boolean
+  gerado_ate: string | null
+  observacao: string | null
 }
 
 export interface Meta {
@@ -113,6 +146,12 @@ export const PRIORIDADES: { value: Prioridade; label: string }[] = [
   { value: 'alta', label: 'Alta' },
   { value: 'media', label: 'Média' },
   { value: 'baixa', label: 'Baixa' },
+]
+
+export const NATUREZAS: { value: Natureza; label: string }[] = [
+  { value: 'fixa', label: 'Fixa' },
+  { value: 'variavel', label: 'Variável' },
+  { value: 'eventual', label: 'Eventual' },
 ]
 
 export const rotuloDe = <T extends string>(lista: { value: T; label: string }[], v: T) => lista.find((o) => o.value === v)?.label ?? v

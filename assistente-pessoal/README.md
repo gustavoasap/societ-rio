@@ -8,21 +8,23 @@ Assistente pessoal do Gustavo para **finanças, metas e objetivos**. Segue os me
 
 | Tela | Para quê |
 |---|---|
-| **Início** | Patrimônio, receitas/despesas/resultado do mês, gráfico dos últimos 6 meses, contas a pagar/receber (vencidas e próximos 10 dias), onde o dinheiro foi, metas e objetivos em andamento. Botão de olho para esconder os valores. |
-| **Lançamentos** | Extrato do mês, agrupado por dia, com filtros por tipo, conta, categoria, situação e busca. Tem receitas, despesas e transferências entre contas. Um lançamento pode ser **único**, **todo mês** (aluguel, assinatura) ou **parcelado** (divide o total, e os centavos que sobram vão na 1ª parcela). Para marcar como pago/recebido, é só tocar no círculo. |
-| **Contas** | Bancos, carteira, cartão de crédito (fatura e limite disponível) e investimentos. O saldo = saldo inicial + tudo o que já foi pago/recebido. |
-| **Orçamento** | Limite mensal por categoria, quanto já foi gasto e um alerta de “gastando rápido” quando o gasto passa do ritmo do mês. |
-| **Metas** | Metas financeiras com valor, prazo e aportes/retiradas. O app mostra **quanto guardar por mês** para cumprir o prazo. |
-| **Objetivos** | Objetivos de vida por área (pessoal, profissional, saúde, família...), com situação, prioridade, prazo e etapas em checklist. |
-| **Ajustes** | Categorias (ícone, cor, limite), troca de senha e como instalar no celular. |
+| **Resumo** | Patrimônio, receitas/despesas/resultado do mês (só o que é seu), despesas por classificação (fixa/variável/eventual), próximas faturas, quanto terceiros te devem, contas a pagar, metas e objetivos. |
+| **Dashboard** | 6 ou 12 meses, ou o ano: receita e despesa média, taxa de poupança, % da receita comprometida com custo fixo, gráfico mês a mês, composição fixo × variável × eventual, maiores categorias, faturas futuras e terceiros. |
+| **DRE** | DRE pessoal por competência: receitas (fixas, variáveis, eventuais) − custos fixos − custos variáveis − despesas eventuais = resultado. No computador mostra o ano mês a mês com total, média e AV%; no celular, um mês por vez comparado ao anterior. Exporta CSV para o Excel. Os gastos de terceiros ficam fora do resultado. |
+| **Lançamentos** | Extrato do mês com filtros (tipo, conta, categoria, classificação, responsável, situação). Um lançamento pode ser único, **parcelado a partir da parcela atual** (ex.: 4 de 10, e os meses seguintes entram sozinhos) ou **todo mês** (recorrente). |
+| **Fixos e salário** | Cadastro das recorrências (salário, pró-labore, aluguel, escola, assinaturas). O app lança cada mês sozinho, sempre até o mês seguinte. Mostra o mês planejado: receitas fixas − custos fixos − variáveis previstos = sobra. |
+| **Cartões** | Cartão com limite e dias de fechamento/vencimento. Fatura mês a mês (compra no dia do fechamento ou depois vai para a próxima), quem gastou o quê, parcelas futuras e o botão “Pagar fatura”. |
+| **A receber de terceiros** | Despesas lançadas em nome de outra pessoa (responsável), com o botão “fulano me pagou”. |
+| **Contas / Orçamento / Metas / Objetivos / Ajustes** | Contas bancárias, limite por categoria, metas com aporte mensal sugerido, objetivos de vida com etapas, categorias (com classificação) e pessoas. |
 
 ## Banco de dados (Supabase “Gustavo - Pessoal”)
 
-A migration `supabase/migrations/20260928100000_assistente_pessoal.sql` **já foi aplicada** no projeto. Ela cria as tabelas com prefixo `pes_`, para não se misturar com as outras tabelas que já existem nesse projeto:
+As migrations da pasta `supabase/migrations` são aplicadas no projeto em ordem (`20260928100000_assistente_pessoal.sql` e `20260929100000_cartao_recorrencias_dre.sql`). Ela cria as tabelas com prefixo `pes_`, para não se misturar com as outras tabelas que já existem nesse projeto:
 
 - `pes_contas`, `pes_categorias`, `pes_lancamentos` (e a view `pes_saldos`)
 - `pes_metas`, `pes_meta_aportes`
 - `pes_objetivos`, `pes_etapas`
+- `pes_pessoas` (responsáveis pelos gastos) e `pes_recorrencias` (salário e custos fixos; a função `pes_gerar_recorrencias` lança os meses)
 - `pes_dono`: guarda quem é o dono
 
 **Só você tem acesso.** O primeiro usuário que entra no app vira o dono (função `pes_reivindicar`). Toda tabela tem RLS que só libera para o dono (`pes_eh_dono()`). Se outra pessoa conseguir criar um login, ela vê a tela “Acesso restrito” e o banco não entrega nada.
