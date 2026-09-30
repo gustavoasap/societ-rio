@@ -31,6 +31,16 @@ describe('gerarObjetoSocial', () => {
     expect(t.endsWith('.')).toBe(true)
   })
 
+  it('sem acentos tira acento, til e cedilha', () => {
+    const t = gerarObjetoSocial(ativ('4711302', '4782201'), { ...OPCOES_PADRAO, acentos: false })
+    expect(t).toBe(
+      'A sociedade tem por objeto social o exercicio das seguintes atividades: comercio varejista de mercadorias em geral, com predominancia de produtos alimenticios - supermercados; e comercio varejista de calcados.',
+    )
+    expect(gerarObjetoSocial(ativ('6920601'), { ...OPCOES_PADRAO, acentos: false, caixaAlta: true, caracteresEspeciais: false })).toBe(
+      'A SOCIEDADE TEM POR OBJETO SOCIAL O EXERCICIO DAS ATIVIDADES DE CONTABILIDADE.',
+    )
+  })
+
   it('alteração e caixa alta', () => {
     const t = gerarObjetoSocial(ativ('6920601'), { ...OPCOES_PADRAO, finalidade: 'alteracao', caixaAlta: true })
     expect(t).toBe('A SOCIEDADE PASSA A TER POR OBJETO SOCIAL O EXERCÍCIO DA SEGUINTE ATIVIDADE: ATIVIDADES DE CONTABILIDADE.')

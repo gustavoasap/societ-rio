@@ -9,7 +9,7 @@ import { extrairCodigos, formatarCnae, gerarObjetoSocial, OPCOES_PADRAO, type At
 
 interface ObjetoSalvo {
   id: string
-  titulo: string
+  nome: string
   texto: string
   cnaes: string[]
   created_at: string
@@ -88,7 +88,7 @@ export function ObjetoSocial({ session }: { session: Session }) {
   }, [])
 
   const carregarSalvos = useCallback(async () => {
-    const [r] = await comRetentativa(() => Promise.all([supabase.from('soc_objetos_sociais').select('id, titulo, texto, cnaes, created_at').order('titulo')]))
+    const [r] = await comRetentativa(() => Promise.all([supabase.from('soc_objetos_sociais').select('id, nome, texto, cnaes, created_at').order('nome')]))
     if (r.error) setErro(r.error.message)
     else setSalvos((r.data as ObjetoSalvo[]) ?? [])
   }, [])
@@ -150,7 +150,7 @@ export function ObjetoSocial({ session }: { session: Session }) {
 
   async function salvar() {
     if (!titulo.trim() || !texto.trim()) return
-    const { error } = await supabase.from('soc_objetos_sociais').insert({ titulo: titulo.trim(), texto: texto.trim(), cnaes: codigos })
+    const { error } = await supabase.from('soc_objetos_sociais').insert({ nome: titulo.trim(), texto: texto.trim(), cnaes: codigos })
     if (error) return setErro(error.message)
     setSalvando(false)
     setTitulo('')
@@ -160,7 +160,7 @@ export function ObjetoSocial({ session }: { session: Session }) {
   }
 
   async function excluir(o: ObjetoSalvo) {
-    if (!confirm(`Excluir o objeto social salvo "${o.titulo}"?`)) return
+    if (!confirm(`Excluir o objeto social salvo "${o.nome}"?`)) return
     const { error } = await supabase.from('soc_objetos_sociais').delete().eq('id', o.id)
     if (error) return setErro(error.message)
     setSalvos((l) => l.filter((x) => x.id !== o.id))
@@ -168,8 +168,10 @@ export function ObjetoSocial({ session }: { session: Session }) {
 
   function usar(o: ObjetoSalvo) {
     pararDigitacao()
-    setEntrada(o.cnaes.map(formatarCnae).join('\n'))
-    setAjustes({})
+    if (o.cnaes?.length) {
+      setEntrada(o.cnaes.map(formatarCnae).join('\n'))
+      setAjustes({})
+    }
     setTexto(o.texto)
     setVisivel(o.texto.length)
     setEditado(true)
@@ -180,7 +182,7 @@ export function ObjetoSocial({ session }: { session: Session }) {
   const termo = busca.trim().toLowerCase()
   const termoDigitos = termo.replace(/\D/g, '')
   const filtrados = salvos.filter(
-    (o) => !termo || `${o.titulo} ${o.texto}`.toLowerCase().includes(termo) || (termoDigitos.length >= 4 && o.cnaes.some((c) => c.includes(termoDigitos))),
+    (o) => !termo || `${o.nome} ${o.texto}`.toLowerCase().includes(termo) || (termoDigitos.length >= 4 && (o.cnaes ?? []).some((c) => c.replace(/\D/g, '').includes(termoDigitos))),
   )
   const podeGerar = atividades.length > 0 && semDescricao.length === 0 && !!tabela
 
@@ -312,7 +314,14 @@ export function ObjetoSocial({ session }: { session: Session }) {
                 marcado={opcoes.caracteresEspeciais}
                 onChange={(v) => mudarOpcao({ caracteresEspeciais: v })}
                 titulo="Incluir caracteres especiais?"
-                ajuda="Desmarcado: usa somente vírgula e ponto final (sem ponto e vírgula, dois-pontos, hífen, parênteses ou barra). Os acentos são mantidos."
+                ajuda="Desmarcado: usa somente vírgula e ponto final (sem ponto e vírgula, dois-pontos, hífen, parênteses ou barra)."
+              />
+              <Opcao
+                id="op-acentos"
+                marcado={opcoes.acentos}
+                onChange={(v) => mudarOpcao({ acentos: v })}
+                titulo="Incluir acentos?"
+                ajuda="Desmarcado: escreve sem acentos, til e cedilha. Ex.: comercio varejista de calcados."
               />
               <Opcao
                 id="op-caixa-alta"
@@ -439,8 +448,8 @@ export function ObjetoSocial({ session }: { session: Session }) {
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {filtrados.map((o) => (
                 <article key={o.id} className="flex flex-col gap-2 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200/70">
-                  <h4 className="font-bold text-slate-900">{o.titulo}</h4>
-                  {o.cnaes.length > 0 && (
+                  <h4 className="font-bold text-slate-900">{o.nome}</h4>
+                  {o.cnaes?.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {o.cnaes.map((c) => (
                         <span key={c} className="rounded-md bg-white px-1.5 py-0.5 font-mono text-[0.7rem] text-slate-500 ring-1 ring-slate-200">

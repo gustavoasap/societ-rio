@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { Link } from '../lib/rotas'
-import { REGEX_VIABILIDADE, formatarData, mascaraViabilidade } from '../lib/format'
+import { REGEX_VIABILIDADE, diasDesde, formatarData, mascaraViabilidade } from '../lib/format'
 import {
   ACOMPANHAMENTO_POR_TIPO,
   STATUS_PROCESSO,
@@ -66,6 +66,25 @@ function saudacao() {
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'
 }
 
+// Há quanto tempo o processo está pendente ou em andamento (concluídos não contam)
+function DiasEmAberto({ processo: p }: { processo: Processo }) {
+  if (p.status === 'concluido') return null
+  const dias = diasDesde(p.data_inicio)
+  if (dias === null) return null
+  if (dias < 0)
+    return (
+      <span className="mt-1 block w-fit rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-amber-700 ring-1 ring-amber-200 ring-inset" title="A data de início está no futuro. Confira se o ano está certo.">
+        Data futura
+      </span>
+    )
+  const cor = dias > 15 ? 'bg-rose-50 text-rose-700 ring-rose-200' : dias > 7 ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-slate-100 text-slate-600 ring-slate-200'
+  return (
+    <span className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums ring-1 ring-inset ${cor}`} title="Dias corridos desde o início do processo">
+      {dias === 0 ? 'Aberto hoje' : `${dias} ${dias === 1 ? 'dia' : 'dias'} em aberto`}
+    </span>
+  )
+}
+
 function progresso(p: Processo) {
   return ACOMPANHAMENTO_POR_TIPO[p.tipo].filter((a) => p[a.campo] === a.concluido).length
 }
@@ -92,7 +111,7 @@ export function Dashboard({ session }: { session: Session }) {
   const carregar = useCallback(async () => {
     const buscar = () =>
       Promise.all([
-        supabase.from('soc_processos').select('*').order('data_inicio', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('soc_processos').select('*').order('data_inicio', { ascending: true }).order('created_at', { ascending: true }),
         supabase.from('soc_parceiros').select('*').order('nome'),
         supabase.from('soc_blocos_cnae').select('*').order('nome'),
         supabase.from('soc_objetos_sociais').select('*').order('nome'),
@@ -417,7 +436,10 @@ export function Dashboard({ session }: { session: Session }) {
                             className={`rounded-full border py-1.5 pl-3 text-xs font-semibold outline-none transition ${CORES_SELECT[p.status]}`}
                           />
                         </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">{formatarData(p.data_inicio)}</td>
+                        <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">
+                          {formatarData(p.data_inicio)}
+                          <DiasEmAberto processo={p} />
+                        </td>
                         <td className="py-3.5 pr-5 pl-4">
                           <div className="flex items-center justify-end gap-1">
                             <button className={`btn-sm btn ${aberto ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`} onClick={() => alternar(p.id)}>
