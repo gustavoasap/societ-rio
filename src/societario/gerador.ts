@@ -18,7 +18,10 @@ export interface AtividadeCnae {
 
 export const OPCOES_PADRAO: OpcoesObjeto = { finalidade: 'constituicao', caracteresEspeciais: true, acentos: true, caixaAlta: false, agrupar: true }
 
-export const formatarCnae = (c: string) => `${c.slice(0, 4)}-${c.slice(4, 5)}/${c.slice(5, 7)}`
+export function formatarCnae(codigo: string) {
+  const c = codigo.replace(/\D/g, '')
+  return c.length === 7 ? `${c.slice(0, 4)}-${c.slice(4, 5)}/${c.slice(5, 7)}` : codigo
+}
 
 // Aceita 4711-3/02, 4711302, 47.11-3-02, um por linha ou separados por vírgula, ponto e vírgula ou espaço
 export function extrairCodigos(texto: string): { codigos: string[]; invalidos: string[] } {

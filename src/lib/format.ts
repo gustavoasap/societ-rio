@@ -33,6 +33,15 @@ export function formatarData(iso: string | null | undefined) {
   return `${d}/${m}/${a}`
 }
 
+// Dias corridos entre a data (AAAA-MM-DD) e hoje, pelo calendário local
+export function diasDesde(iso: string | null | undefined, hoje = new Date()) {
+  if (!iso) return null
+  const [a, m, d] = iso.slice(0, 10).split('-').map(Number)
+  const inicio = Date.UTC(a, m - 1, d)
+  const agora = Date.UTC(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
+  return Math.round((agora - inicio) / 86_400_000)
+}
+
 export function formatarMoeda(v: number | null | undefined) {
   if (v === null || v === undefined) return '—'
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })

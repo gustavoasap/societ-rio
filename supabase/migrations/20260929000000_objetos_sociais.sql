@@ -1,14 +1,12 @@
--- Gerador de Objeto Social: objetos sociais padrão salvos pela equipe do Societário
+-- Gerador de Objeto Social: objetos sociais padrão (mesma tabela da tela Modelos dos Processos Societários)
 
-create table if not exists public.soc_objetos_sociais (
-  id uuid primary key default gen_random_uuid(),
-  titulo text not null,
-  texto text not null,
-  cnaes text[] not null default '{}',
-  criado_por uuid default auth.uid() references auth.users (id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+-- A tabela soc_objetos_sociais é criada em 20260925030000_cnaes_objeto_social.sql
+-- (colunas id, nome, texto, created_at). As colunas usadas pelo gerador são
+-- acrescentadas em 20260930010000_objetos_sociais_unificar.sql.
+alter table public.soc_objetos_sociais
+  add column if not exists cnaes text[] not null default '{}',
+  add column if not exists criado_por uuid default auth.uid() references auth.users (id) on delete set null,
+  add column if not exists updated_at timestamptz not null default now();
 
 drop trigger if exists soc_objetos_sociais_updated_at on public.soc_objetos_sociais;
 create trigger soc_objetos_sociais_updated_at
