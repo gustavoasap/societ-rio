@@ -1,8 +1,9 @@
-import { ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, CreditCard, Eye, EyeOff, Flag, Landmark, Scale, Target, Users } from 'lucide-react'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, CreditCard, Eye, EyeOff, Flag, Landmark, Scale, Target, Users, Wallet } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { GraficoMensal, Legenda } from '../components/Grafico'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Bolinha, Carregando, Progresso, Vazio } from '../components/ui'
+import { usePlano } from '../components/usePlano'
 import { COR_NATUREZA, corDe, iconeDe, VISUAL_AREA } from '../components/visual'
 import { useApp } from '../contexto'
 import { contasEmAberto, despesasPorCategoria, progressoEtapas, progressoMeta, resumo, resumoPorMes, somar } from '../lib/calculos'
@@ -77,6 +78,8 @@ export function Inicio() {
   return (
     <div className="space-y-5">
       {lanc.erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600">{lanc.erro}</p>}
+
+      <DisponivelMes oculto={oculto} />
 
       {/* Números do mês */}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -303,5 +306,62 @@ function Numero({ rotulo, valor, icone, sub, destaque, negativo, acao }: { rotul
       <div className={`mt-2 text-lg font-extrabold tracking-tight tabular-nums sm:text-2xl ${negativo ? 'text-rose-600' : destaque ? 'text-white' : 'text-slate-900'}`}>{valor}</div>
       {sub && <div className={`mt-0.5 text-xs ${destaque ? 'text-white/60' : 'text-slate-400'}`}>{sub}</div>}
     </div>
+  )
+}
+
+/** Quanto ainda posso gastar no mês, já descontando o que foi gasto e o que o plano manda separar. */
+function DisponivelMes({ oculto }: { oculto: boolean }) {
+  const p = usePlano()
+  if (!p.dados) return null
+  const d = p.dados.disponivel
+  const v = (n: number) => (oculto ? 'R$ •••••' : moeda(n))
+  const limite = d.renda - d.separar
+  const fracao = limite > 0 ? d.gasto / limite : 1
+  const semRenda = p.dados.plano.renda.total === 0 && d.renda === 0
+  return (
+    <Link para="/plano" className="block rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70 transition hover:ring-azul-300 sm:p-5">
+      {semRenda ? (
+        <div className="flex items-center gap-3 text-sm text-slate-600">
+          <Wallet className="h-5 w-5 text-azul-600" />
+          <span>
+            Cadastre seu salário em <b>Fixos e salário</b> para ver aqui quanto ainda pode gastar no mês, já descontando o que deve ser separado.
+          </span>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                <Wallet className="h-4 w-4 text-azul-600" /> Ainda posso gastar este mês
+              </div>
+              <div className={`text-3xl font-extrabold tracking-tight tabular-nums ${d.disponivel < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{v(d.disponivel)}</div>
+              {d.disponivel > 0 && (
+                <div className="text-xs text-slate-500">
+                  cerca de <b>{v(d.porDia)}</b> por dia nos próximos {d.diasRestantes} dias
+                </div>
+              )}
+              {d.disponivel < 0 && <div className="text-xs font-semibold text-rose-600">Passou do limite do mês: segure os gastos variáveis.</div>}
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-right text-xs">
+              <div>
+                <div className="text-slate-400">Renda do mês</div>
+                <div className="font-bold text-emerald-700 tabular-nums">{v(d.renda)}</div>
+              </div>
+              <div>
+                <div className="text-slate-400">(−) Separar</div>
+                <div className="font-bold text-azul-700 tabular-nums">{v(d.separar)}</div>
+              </div>
+              <div>
+                <div className="text-slate-400">(−) Já gasto</div>
+                <div className="font-bold text-slate-800 tabular-nums">{v(d.gasto)}</div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3">
+            <Progresso fracao={fracao} cor={fracao > 0.9 ? 'bg-amber-500' : 'bg-azul-600'} alerta={d.disponivel < 0} />
+          </div>
+        </>
+      )}
+    </Link>
   )
 }

@@ -9,9 +9,10 @@ import { somar } from '../lib/calculos'
 import { dataDaRecorrencia, hoje, type ModoDiaUtil } from '../lib/datas'
 import { avisarMudanca, buscarRecorrencias, gerarRecorrencias, salvar, useDados } from '../lib/dados'
 import { dataBR, moeda } from '../lib/formato'
+import { mensalizado } from '../lib/plano'
 import { Link } from '../lib/rotas'
 import { supabase } from '../lib/supabase'
-import { NATUREZAS, rotuloDe, type Natureza, type Recorrencia } from '../tipos'
+import { FREQUENCIAS, NATUREZAS, rotuloDe, type Natureza, type Recorrencia } from '../tipos'
 
 export function Recorrentes() {
   const { categorias, contas, pessoas } = useApp()
@@ -25,8 +26,8 @@ export function Recorrentes() {
   const nat = (r: Recorrencia): Natureza => r.natureza ?? (r.categoria_id ? cats.get(r.categoria_id)?.natureza : undefined) ?? 'fixa'
   const minhas = ativas.filter((r) => !r.pessoa_id)
 
-  const receitas = somar(minhas.filter((r) => r.tipo === 'receita').map((r) => r.valor))
-  const fixos = somar(minhas.filter((r) => r.tipo === 'despesa').map((r) => r.valor))
+  const receitas = somar(minhas.filter((r) => r.tipo === 'receita').map(mensalizado))
+  const fixos = somar(minhas.filter((r) => r.tipo === 'despesa').map(mensalizado))
   // variáveis: o que está previsto no orçamento das categorias variáveis
   const variaveisPrev = categorias.filter((c) => c.tipo === 'despesa' && c.ativa && c.natureza !== 'fixa' && c.orcamento_mensal)
   const variaveis = somar(variaveisPrev.map((c) => c.orcamento_mensal!))
@@ -44,7 +45,7 @@ export function Recorrentes() {
         </button>
       </div>
       {itens.length === 0 ? (
-        <p className="py-4 text-center text-sm text-slate-400">{tipo === 'receita' ? 'Cadastre seu salário / pró-labore.' : 'Cadastre aluguel, condomínio, escola, plano de saúde, assinaturas...'}</p>
+        <p className="py-4 text-center text-sm text-slate-400">{tipo === 'receita' ? 'Cadastre seu salário / pró-labore.' : 'Cadastre aluguel, condomínio, escola, plano de saúde, assinaturas, IPVA, IPTU...'}</p>
       ) : (
         <div className="divide-y divide-slate-100">
           {itens.map((r) => {
@@ -59,7 +60,8 @@ export function Recorrentes() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-slate-800">{r.descricao}</span>
                   <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-slate-500">
-                    <span>{r.dia_util ? `${r.dia}º dia útil` : `dia ${r.dia}`}</span>·<span>{conta?.tipo === 'cartao' ? `💳 ${conta.nome}` : (conta?.nome ?? '?')}</span>
+                    <span>{r.dia_util ? `${r.dia}º dia útil` : `dia ${r.dia}`}</span>
+                    {r.intervalo_meses > 1 && <span className="rounded-full bg-amber-100 px-1.5 font-semibold text-amber-800">{FREQUENCIAS.find((f) => f.value === r.intervalo_meses)?.curto}</span>}·<span>{conta?.tipo === 'cartao' ? `💳 ${conta.nome}` : (conta?.nome ?? '?')}</span>
                     {tipo === 'despesa' && (
                       <span className="inline-flex items-center gap-1">
                         · <span className="h-2 w-2 rounded-sm" style={{ background: COR_NATUREZA[n] }} />
@@ -85,7 +87,7 @@ export function Recorrentes() {
     <div className="space-y-5">
       <Cabecalho
         titulo="Fixos e salário"
-        descricao="O que entra e sai todo mês. Cadastre uma vez: o app lança sozinho cada mês (sempre até o mês seguinte)."
+        descricao="Salário, aluguel, assinaturas e também despesas anuais (IPVA, IPTU, seguro, anuidade). Cadastre uma vez: o app lança sozinho, sempre até o mês seguinte."
       />
       {d.erro && <Erro>{d.erro}</Erro>}
 
@@ -93,7 +95,7 @@ export function Recorrentes() {
         <div className="text-xs font-semibold text-white/70">Meu mês planejado</div>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Plano rotulo="Receitas fixas" valor={receitas} />
-          <Plano rotulo="(−) Custos fixos" valor={fixos} />
+          <Plano rotulo="(−) Fixos e anuais (por mês)" valor={fixos} />
           <Plano rotulo="(−) Variáveis previstos" valor={variaveis} dica={variaveisPrev.length ? undefined : 'defina em Orçamento'} />
           <Plano rotulo="(=) Sobra prevista" valor={sobra} destaque />
         </div>
@@ -112,7 +114,7 @@ export function Recorrentes() {
           'receita',
         )}
         {grupo(
-          'Despesas recorrentes (custos fixos, assinaturas...)',
+          'Despesas recorrentes (fixas, assinaturas, anuais...)',
           lista.filter((r) => r.tipo === 'despesa'),
           'despesa',
         )}
@@ -165,6 +167,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
   const [valor, setValor] = useState<number | null>(edicao?.valor ?? null)
   const [dia, setDia] = useState(edicao?.dia ?? 5)
   const [diaUtil, setDiaUtil] = useState<ModoDiaUtil | null>(edicao?.dia_util ?? null)
+  const [intervalo, setIntervalo] = useState(edicao?.intervalo_meses ?? 1)
   const [contaId, setContaId] = useState(edicao?.conta_id ?? contas.find((c) => c.ativa && c.tipo !== 'cartao')?.id ?? contas[0]?.id ?? '')
   const [categoriaId, setCategoriaId] = useState(edicao?.categoria_id ?? '')
   const [natureza, setNatureza] = useState<Natureza | ''>(edicao?.natureza ?? '')
@@ -194,6 +197,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
       valor,
       dia: d,
       dia_util: diaUtil,
+      intervalo_meses: intervalo,
       conta_id: contaId,
       categoria_id: categoriaId || null,
       natureza: natureza || null,
@@ -306,7 +310,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
         </Campo>
         <div className="rounded-xl bg-azul-50 p-3">
           <div className="mb-2 text-xs font-semibold text-slate-600">{tipo === 'receita' ? 'Quando cai na conta' : 'Quando vence'}</div>
-          <CampoDia dia={dia} setDia={setDia} modo={diaUtil} setModo={setDiaUtil} aPartirDe={inicio.slice(0, 7)} />
+          <CampoDia dia={dia} setDia={setDia} modo={diaUtil} setModo={setDiaUtil} aPartirDe={inicio} intervalo={intervalo} setIntervalo={setIntervalo} valor={valor} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Categoria">

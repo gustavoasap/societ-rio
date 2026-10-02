@@ -19,7 +19,7 @@ export function AbasMetas() {
   )
 }
 
-/** Alterna entre Dashboard e DRE. */
+/** Alterna entre Plano, Dashboard e DRE. */
 export function AbasAnalise() {
   const rota = useRota()
   const item = (para: string, label: string) => (
@@ -31,7 +31,8 @@ export function AbasAnalise() {
     </Link>
   )
   return (
-    <div className="flex rounded-xl bg-slate-200/60 p-1 sm:max-w-sm">
+    <div className="flex rounded-xl bg-slate-200/60 p-1 sm:max-w-md">
+      {item('/plano', 'Plano')}
       {item('/dashboard', 'Dashboard')}
       {item('/dre', 'DRE')}
     </div>

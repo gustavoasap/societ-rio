@@ -32,6 +32,7 @@ const cat = (id: string, tipo: 'receita' | 'despesa', natureza: Categoria['natur
   cor: 'azul',
   icone: 'tag',
   orcamento_mensal: null,
+  essencial: false,
   ativa: true,
 })
 
@@ -67,7 +68,7 @@ describe('fatura do cartão', () => {
     expect(faturaDe('2026-09-26', null, null)).toBe('2026-09')
   })
   it('soma a fatura, desconta estornos e reconhece o pagamento', () => {
-    const cartao: Conta = { id: 'k', nome: 'Nubank', tipo: 'cartao', instituicao: null, saldo_inicial: 0, limite: 5000, cor: 'roxo', ativa: true, ordem: 0, dia_fechamento: 3, dia_vencimento: 10 }
+    const cartao: Conta = { id: 'k', nome: 'Nubank', tipo: 'cartao', instituicao: null, saldo_inicial: 0, limite: 5000, cor: 'roxo', ativa: true, ordem: 0, dia_fechamento: 3, dia_vencimento: 10, reserva: false }
     const f = faturasDoCartao(cartao, [
       lanc({ conta_id: 'k', valor: 100, data: '2026-08-20' }),
       lanc({ conta_id: 'k', valor: 50, data: '2026-09-01', pessoa_id: 'maria' }),

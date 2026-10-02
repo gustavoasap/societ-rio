@@ -1,6 +1,8 @@
-import { dataDaRecorrencia, mesAtual, somarMesesAoMes, type ModoDiaUtil } from '../lib/datas'
-import { dataBR } from '../lib/formato'
-import { Campo, Segmentado } from './ui'
+import { dataDaRecorrencia, mesAtual, mesDe, somarMesesAoMes, type ModoDiaUtil } from '../lib/datas'
+import { dataBR, mesPorExtenso } from '../lib/formato'
+import { mensalizado, ocorreNoMes } from '../lib/plano'
+import { FREQUENCIAS } from '../tipos'
+import { Campo, Segmentado, Selecao } from './ui'
 
 /** Quando a recorrência cai: dia fixo do mês (ex.: dia 10) ou N-ésimo dia útil (ex.: 5º dia útil). */
 export function CampoDia({
@@ -9,20 +11,48 @@ export function CampoDia({
   modo,
   setModo,
   aPartirDe,
+  intervalo = 1,
+  setIntervalo,
+  valor,
 }: {
   dia: number
   setDia: (n: number) => void
   modo: ModoDiaUtil | null
   setModo: (m: ModoDiaUtil | null) => void
-  /** mês "AAAA-MM" a partir do qual mostrar as próximas datas */
+  /** data de início (AAAA-MM-DD): define em que mês caem as recorrências anuais/periódicas */
   aPartirDe?: string
+  intervalo?: number
+  setIntervalo?: (n: number) => void
+  /** valor da recorrência, para mostrar a provisão mensal das periódicas */
+  valor?: number | null
 }) {
-  const inicio = aPartirDe && aPartirDe > mesAtual() ? aPartirDe : mesAtual()
+  const inicioISO = aPartirDe && aPartirDe.length >= 10 ? aPartirDe : `${aPartirDe ?? mesAtual()}-01`
+  const desde = mesDe(inicioISO) > mesAtual() ? mesDe(inicioISO) : mesAtual()
   const valido = dia >= 1 && dia <= (modo ? 23 : 31)
-  const proximas = valido ? [0, 1, 2].map((i) => dataDaRecorrencia(somarMesesAoMes(inicio, i), dia, modo)) : []
+  const proximas: string[] = []
+  for (let i = 0; valido && proximas.length < 3 && i < 40; i++) {
+    const m = somarMesesAoMes(desde, i)
+    if (ocorreNoMes({ inicio: inicioISO, fim: null, intervalo_meses: intervalo, ativa: true }, m)) proximas.push(dataDaRecorrencia(m, dia, modo))
+  }
 
   return (
     <div className="space-y-2">
+      {setIntervalo && (
+        <Campo label="Frequência">
+          <Selecao value={String(intervalo)} onChange={(v) => setIntervalo(Number(v))} opcoes={FREQUENCIAS.map((f) => ({ value: String(f.value), label: f.label }))} />
+        </Campo>
+      )}
+      {intervalo > 1 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Cai {intervalo === 12 ? `todo ano em ${mesPorExtenso(mesDe(inicioISO)).split(' de ')[0]}` : `a cada ${intervalo} meses, a partir de ${mesPorExtenso(mesDe(inicioISO))}`} (o mês vem da data de início).
+          {valor ? (
+            <>
+              {' '}
+              Para não pesar no mês, o plano separa <b>{(mensalizado({ valor, intervalo_meses: intervalo })).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b> por mês.
+            </>
+          ) : null}
+        </p>
+      )}
       <Segmentado
         valor={modo ? 'util' : 'fixo'}
         onChange={(v) => setModo(v === 'util' ? 'seg_sab' : null)}
