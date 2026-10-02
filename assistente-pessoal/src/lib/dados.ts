@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Aporte, Categoria, Conta, Etapa, Lancamento, Meta, Objetivo, Pessoa, Recorrencia } from '../tipos'
+import type { Aporte, Categoria, Config, Conta, Etapa, Lancamento, Meta, Objetivo, Pessoa, Recorrencia } from '../tipos'
 import { supabase } from './supabase'
 
 // Qualquer gravação avisa as telas abertas para recarregarem os dados.
@@ -120,6 +120,16 @@ export async function buscarPessoas() {
 
 export async function buscarRecorrencias() {
   return num(ok(await supabase.from('pes_recorrencias').select('*').order('tipo', { ascending: false }).order('dia')) as Recorrencia[], ['valor'])
+}
+
+export async function buscarConfig(): Promise<Config> {
+  const d = ok(await supabase.from('pes_config').select('meses_reserva, pct_investimento').maybeSingle()) as Config | null
+  return { meses_reserva: Number(d?.meses_reserva ?? 6), pct_investimento: Number(d?.pct_investimento ?? 20) }
+}
+
+export async function salvarConfig(c: Partial<Config>) {
+  ok(await supabase.from('pes_config').upsert({ unico: true, ...c, atualizado_em: new Date().toISOString() }))
+  avisarMudanca()
 }
 
 /** Despesas em nome de outras pessoas ainda não reembolsadas. */

@@ -38,6 +38,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   const [fim, setFim] = useState('')
   const [diaRec, setDiaRec] = useState(() => Number((inicial.data ?? hoje()).slice(8, 10)))
   const [modoRec, setModoRec] = useState<ModoDiaUtil | null>(null)
+  const [intervaloRec, setIntervaloRec] = useState(1)
   const [autoPago, setAutoPago] = useState(false)
   const [aplicarProximos, setAplicarProximos] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -107,6 +108,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
           valor,
           dia: diaRec,
           dia_util: modoRec,
+          intervalo_meses: intervaloRec,
           conta_id: contaId,
           categoria_id: comum.categoria_id,
           pessoa_id: comum.pessoa_id,
@@ -220,7 +222,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
             opcoes={[
               { value: 'nao', label: 'Única' },
               { value: 'parcelado', label: 'Parcelada' },
-              { value: 'recorrente', label: 'Todo mês' },
+              { value: 'recorrente', label: 'Repetir' },
             ]}
           />
         )}
@@ -261,9 +263,9 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
           <div className="space-y-3 rounded-xl bg-azul-50 p-3">
             <p className="flex items-start gap-2 text-xs text-azul-900">
               <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Repete todo mês a partir de {dataBR(data)}. Os meses vão sendo lançados sozinhos (sempre até o mês seguinte). Ideal para salário, aluguel, assinaturas e contas fixas.
+              Repete a partir de {dataBR(data)}. Os lançamentos vão sendo criados sozinhos (sempre até o mês seguinte). Ideal para salário, aluguel, assinaturas e despesas anuais como IPVA e IPTU.
             </p>
-            <CampoDia dia={diaRec} setDia={setDiaRec} modo={modoRec} setModo={setModoRec} aPartirDe={data.slice(0, 7)} />
+            <CampoDia dia={diaRec} setDia={setDiaRec} modo={modoRec} setModo={setModoRec} aPartirDe={data} intervalo={intervaloRec} setIntervalo={setIntervaloRec} valor={valor} />
             <div className="grid grid-cols-2 items-end gap-3">
               <Campo label="Até (opcional)">
                 <input className="input" type="date" value={fim} onChange={(e) => setFim(e.target.value)} />

@@ -65,6 +65,7 @@ export function Contas() {
                       {rotuloDe(TIPOS_CONTA, c.tipo)}
                       {c.instituicao ? ` · ${c.instituicao}` : ''}
                       {!c.ativa && ' · desativada'}
+                      {c.reserva && ' · 🛡️ reserva'}
                     </div>
                   </div>
                   <button className="icon-btn" onClick={() => setEdit(c)} aria-label="Editar conta">
@@ -108,6 +109,7 @@ export function ContaForm({ inicial, onClose, tipoPadrao = 'corrente' }: { inici
   const [limite, setLimite] = useState<number | null>(inicial?.limite ?? null)
   const [cor, setCor] = useState(inicial?.cor ?? 'azul')
   const [ativa, setAtiva] = useState(inicial?.ativa ?? true)
+  const [reserva, setReserva] = useState(inicial?.reserva ?? false)
   const [erro, setErro] = useState<string | null>(null)
 
   async function gravar(e: FormEvent) {
@@ -126,6 +128,7 @@ export function ContaForm({ inicial, onClose, tipoPadrao = 'corrente' }: { inici
         dia_vencimento: tipo === 'cartao' && vencimento ? vencimento : null,
         cor,
         ativa,
+        reserva: tipo !== 'cartao' && reserva,
       })
       onClose()
     } catch (e) {
@@ -202,6 +205,15 @@ export function ContaForm({ inicial, onClose, tipoPadrao = 'corrente' }: { inici
               <input className="input" type="number" min={1} max={31} value={vencimento} onChange={(e) => setVencimento(e.target.value ? Number(e.target.value) : '')} />
             </Campo>
           </div>
+        )}
+        {tipo !== 'cartao' && (
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 px-3.5 py-3 text-sm">
+            <input type="checkbox" className="mt-0.5 h-5 w-5 accent-emerald-600" checked={reserva} onChange={(e) => setReserva(e.target.checked)} />
+            <span>
+              <b className="text-slate-800">Faz parte da reserva de emergência</b>
+              <span className="block text-xs text-slate-500">O saldo desta conta conta como reserva no “Meu plano”.</span>
+            </span>
+          </label>
         )}
         <Campo label="Cor">
           <div className="flex flex-wrap gap-2">

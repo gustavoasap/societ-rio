@@ -17,6 +17,8 @@ export interface Conta {
   ordem: number
   dia_fechamento: number | null
   dia_vencimento: number | null
+  /** Conta que forma a reserva de emergência */
+  reserva: boolean
 }
 
 export interface Categoria {
@@ -27,6 +29,8 @@ export interface Categoria {
   icone: string
   orcamento_mensal: number | null
   natureza: Natureza
+  /** Gasto essencial: entra na renda mínima e na reserva de emergência */
+  essencial: boolean
   ativa: boolean
 }
 
@@ -65,6 +69,8 @@ export interface Recorrencia {
   dia: number
   /** null = dia fixo; senão, `dia` é o N-ésimo dia útil */
   dia_util: 'seg_sab' | 'seg_sex' | null
+  /** 1 = mensal, 2 = bimestral, 3 = trimestral, 6 = semestral, 12 = anual */
+  intervalo_meses: number
   conta_id: string
   categoria_id: string | null
   pessoa_id: string | null
@@ -148,6 +154,19 @@ export const PRIORIDADES: { value: Prioridade; label: string }[] = [
   { value: 'alta', label: 'Alta' },
   { value: 'media', label: 'Média' },
   { value: 'baixa', label: 'Baixa' },
+]
+
+export interface Config {
+  meses_reserva: number
+  pct_investimento: number
+}
+
+export const FREQUENCIAS: { value: number; label: string; curto: string }[] = [
+  { value: 1, label: 'Todo mês', curto: 'mensal' },
+  { value: 2, label: 'A cada 2 meses', curto: 'bimestral' },
+  { value: 3, label: 'A cada 3 meses', curto: 'trimestral' },
+  { value: 6, label: 'A cada 6 meses', curto: 'semestral' },
+  { value: 12, label: '1 vez por ano', curto: 'anual' },
 ]
 
 export const NATUREZAS: { value: Natureza; label: string }[] = [

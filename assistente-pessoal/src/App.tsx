@@ -21,6 +21,7 @@ import { Lancamentos } from './paginas/Lancamentos'
 import { Metas } from './paginas/Metas'
 import { Objetivos } from './paginas/Objetivos'
 import { Orcamento } from './paginas/Orcamento'
+import { Plano } from './paginas/Plano'
 
 function NovaSenha({ onDone }: { onDone: () => void }) {
   const [senha, setSenha] = useState('')
@@ -60,11 +61,12 @@ function SemAcesso() {
   )
 }
 
-function nomeDe(session: Session) {
-  const meta = session.user.user_metadata as { nome?: string; name?: string } | undefined
-  const bruto = meta?.nome || meta?.name || (session.user.email ?? '').split('@')[0].split(/[._-]/)[0]
-  const primeiro = bruto.split(' ')[0]
-  return primeiro.charAt(0).toUpperCase() + primeiro.slice(1)
+function nomeCompletoDe(meta: { nome?: string; name?: string } | undefined, email: string) {
+  const bruto = (meta?.nome || meta?.name || email.split('@')[0].split(/[._-]/)[0]).trim()
+  return bruto
+    .split(/\s+/)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ')
 }
 
 function AreaDoDono({ session }: { session: Session }) {
@@ -73,7 +75,14 @@ function AreaDoDono({ session }: { session: Session }) {
   const categorias = useDados(buscarCategorias, [])
   const pessoas = useDados(buscarPessoas, [])
   const [form, setForm] = useState<InicialLancamento | null>(null)
-  const nome = nomeDe(session)
+  // nome vem do cadastro (Ajustes → "Como quer ser chamado"); busca o mais recente no servidor
+  const [meta, setMeta] = useState(session.user.user_metadata as { nome?: string; name?: string } | undefined)
+  useEffect(() => {
+    setMeta(session.user.user_metadata)
+    supabase.auth.getUser().then(({ data }) => data.user && setMeta(data.user.user_metadata))
+  }, [session])
+  const nomeCompleto = nomeCompletoDe(meta, session.user.email ?? '')
+  const nome = nomeCompleto.split(' ')[0]
 
   // lança sozinho os meses das recorrências (salário, aluguel, assinaturas...)
   useEffect(() => {
@@ -93,6 +102,7 @@ function AreaDoDono({ session }: { session: Session }) {
 
   const PAGINAS: Record<string, () => ReactNode> = {
     '/': () => <Inicio />,
+    '/plano': () => <Plano />,
     '/dashboard': () => <Dashboard />,
     '/dre': () => <DrePagina />,
     '/lancamentos': () => <Lancamentos />,
@@ -122,7 +132,7 @@ function AreaDoDono({ session }: { session: Session }) {
   const erro = contas.erro || categorias.erro || pessoas.erro
   return (
     <Contexto.Provider value={ctx}>
-      <Layout nome={nome}>
+      <Layout nome={nomeCompleto} primeiroNome={nome}>
         {erro && (
           <p className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
             {erro.includes('schema cache')

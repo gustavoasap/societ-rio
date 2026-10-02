@@ -143,14 +143,23 @@ export function Metas() {
   )
 }
 
-function MetaForm({ inicial, onClose }: { inicial: Meta | null; onClose: () => void }) {
-  const [nome, setNome] = useState(inicial?.nome ?? '')
-  const [descricao, setDescricao] = useState(inicial?.descricao ?? '')
-  const [alvo, setAlvo] = useState<number | null>(inicial?.valor_alvo ?? null)
+export function MetaForm({
+  inicial,
+  onClose,
+  sugestao,
+}: {
+  inicial: Meta | null
+  onClose: () => void
+  /** valores para preencher uma meta nova (ex.: reserva de emergência calculada pelo plano) */
+  sugestao?: { nome: string; valor_alvo?: number; icone?: string; cor?: string; descricao?: string; prazo?: string }
+}) {
+  const [nome, setNome] = useState(inicial?.nome ?? sugestao?.nome ?? '')
+  const [descricao, setDescricao] = useState(inicial?.descricao ?? sugestao?.descricao ?? '')
+  const [alvo, setAlvo] = useState<number | null>(inicial?.valor_alvo ?? sugestao?.valor_alvo ?? null)
   const [jaTenho, setJaTenho] = useState<number | null>(null)
-  const [prazo, setPrazo] = useState(inicial?.prazo ?? '')
-  const [icone, setIcone] = useState(inicial?.icone ?? 'target')
-  const [cor, setCor] = useState(inicial?.cor ?? 'azul')
+  const [prazo, setPrazo] = useState(inicial?.prazo ?? sugestao?.prazo ?? '')
+  const [icone, setIcone] = useState(inicial?.icone ?? sugestao?.icone ?? 'target')
+  const [cor, setCor] = useState(inicial?.cor ?? sugestao?.cor ?? 'azul')
   const [concluida, setConcluida] = useState(inicial?.concluida ?? false)
   const [erro, setErro] = useState<string | null>(null)
 

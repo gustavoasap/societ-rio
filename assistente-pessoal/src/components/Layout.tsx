@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ArrowLeftRight, ChartColumn, ChartPie, CreditCard, Ellipsis, FileSpreadsheet, Flag, House, Landmark, LogOut, Plus, Repeat, Settings, Target, Users, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, ChartColumn, Compass, ChartPie, CreditCard, Ellipsis, FileSpreadsheet, Flag, House, Landmark, LogOut, Plus, Repeat, Settings, Target, Users, X, type LucideIcon } from 'lucide-react'
 import { useApp } from '../contexto'
 import { Link, useRota } from '../lib/rotas'
 import { supabase } from '../lib/supabase'
@@ -13,6 +13,7 @@ interface Item {
 
 const ITENS: Item[] = [
   { para: '/', label: 'Resumo', icone: House, grupo: 'Visão geral' },
+  { para: '/plano', label: 'Meu plano', icone: Compass, grupo: 'Visão geral' },
   { para: '/dashboard', label: 'Dashboard', icone: ChartColumn, grupo: 'Visão geral' },
   { para: '/dre', label: 'DRE', icone: FileSpreadsheet, grupo: 'Visão geral' },
   { para: '/lancamentos', label: 'Lançamentos', icone: ArrowLeftRight, grupo: 'Movimento' },
@@ -27,8 +28,8 @@ const ITENS: Item[] = [
 ]
 
 // No celular, a barra inferior mostra os mais usados; o resto fica em "Mais"
-const BARRA = ['/', '/lancamentos', '/dashboard']
-const ANALISE = ['/dashboard', '/dre']
+const BARRA = ['/', '/lancamentos', '/plano']
+const ANALISE = ['/plano', '/dashboard', '/dre']
 
 /** As cinco estrelas do Cruzeiro do Sul, como no escudo — só enfeite. */
 export function Estrelas({ className = '' }: { className?: string }) {
@@ -56,7 +57,7 @@ function saudacao() {
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'
 }
 
-export function Layout({ nome, children }: { nome: string; children: ReactNode }) {
+export function Layout({ nome, primeiroNome, children }: { nome: string; primeiroNome: string; children: ReactNode }) {
   const rota = useRota()
   const { abrirLancamento } = useApp()
   const [mais, setMais] = useState(false)
@@ -87,7 +88,7 @@ export function Layout({ nome, children }: { nome: string; children: ReactNode }
           <div className="relative mx-auto max-w-7xl px-4 pt-1 pb-6 sm:px-6 sm:pb-8">
             <p className="text-sm font-medium text-azul-200 first-letter:uppercase">{hojeTexto}</p>
             <h1 className="mt-0.5 text-2xl font-extrabold tracking-tight sm:text-3xl">
-              {saudacao()}, {nome}!
+              {saudacao()}, {primeiroNome}!
             </h1>
           </div>
         )}
@@ -131,7 +132,7 @@ export function Layout({ nome, children }: { nome: string; children: ReactNode }
               <Plus className="h-7 w-7" />
             </button>
           </div>
-          <ItemBarra item={ITENS.find((i) => i.para === '/dashboard')!} ativo={ANALISE.some(ativo)} />
+          <ItemBarra item={{ ...ITENS.find((i) => i.para === '/plano')!, label: 'Plano' }} ativo={ANALISE.some(ativo)} />
           <button
             className={`flex cursor-pointer flex-col items-center gap-0.5 py-1 text-[0.6875rem] font-semibold ${![...BARRA, ...ANALISE].some(ativo) ? 'text-azul-700' : 'text-slate-400'}`}
             onClick={() => setMais(true)}

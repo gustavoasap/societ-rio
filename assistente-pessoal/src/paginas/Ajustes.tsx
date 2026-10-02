@@ -48,6 +48,7 @@ export function Ajustes({ email }: { email: string }) {
                   <div className="flex items-center gap-1.5 text-xs text-slate-400">
                     <span className="h-2 w-2 rounded-sm" style={{ background: COR_NATUREZA[c.natureza] }} />
                     {rotuloDe(NATUREZAS, c.natureza)}
+                    {c.essencial && <span className="rounded-full bg-rose-50 px-1.5 font-bold text-rose-700">essencial</span>}
                     {!c.ativa ? ' · desativada' : c.orcamento_mensal ? ` · limite ${moeda(c.orcamento_mensal)}/mês` : ''}
                   </div>
                 </div>
@@ -123,13 +124,14 @@ function CategoriaForm({ inicial, tipoPadrao, onClose }: { inicial: Categoria | 
   const [cor, setCor] = useState(inicial?.cor ?? 'azul')
   const [limite, setLimite] = useState<number | null>(inicial?.orcamento_mensal ?? null)
   const [natureza, setNatureza] = useState<Natureza>(inicial?.natureza ?? 'variavel')
+  const [essencial, setEssencial] = useState(inicial?.essencial ?? false)
   const [ativa, setAtiva] = useState(inicial?.ativa ?? true)
   const [erro, setErro] = useState<string | null>(null)
 
   async function gravar(e: FormEvent) {
     e.preventDefault()
     try {
-      await salvar('pes_categorias', inicial?.id, { nome: nome.trim(), tipo, icone, cor, ativa, natureza, orcamento_mensal: tipo === 'despesa' && limite && limite > 0 ? limite : null })
+      await salvar('pes_categorias', inicial?.id, { nome: nome.trim(), tipo, icone, cor, ativa, natureza, essencial: tipo === 'despesa' && essencial, orcamento_mensal: tipo === 'despesa' && limite && limite > 0 ? limite : null })
       onClose()
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e)
@@ -179,6 +181,15 @@ function CategoriaForm({ inicial, tipoPadrao, onClose }: { inicial: Categoria | 
         <Campo label="Classificação" dica={tipo === 'despesa' ? 'Fixa: todo mês, mesmo valor (aluguel). Variável: todo mês, valor muda (mercado). Eventual: de vez em quando (viagem, IPVA).' : 'Fixa: salário/pró-labore. Variável: lucros, comissões. Eventual: 13º, venda de bem.'}>
           <Segmentado valor={natureza} onChange={setNatureza} opcoes={NATUREZAS} />
         </Campo>
+        {tipo === 'despesa' && (
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 px-3.5 py-3 text-sm">
+            <input type="checkbox" className="mt-0.5 h-5 w-5 accent-rose-600" checked={essencial} onChange={(e) => setEssencial(e.target.checked)} />
+            <span>
+              <b className="text-slate-800">Gasto essencial</b>
+              <span className="block text-xs text-slate-500">Não dá para cortar (moradia, mercado, saúde...). Entra na renda mínima e na reserva de emergência.</span>
+            </span>
+          </label>
+        )}
         {tipo === 'despesa' && (
           <Campo label="Limite mensal (orçamento, opcional)">
             <CampoValor valor={limite} onChange={setLimite} />
