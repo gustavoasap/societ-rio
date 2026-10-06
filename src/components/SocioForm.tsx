@@ -107,8 +107,14 @@ export function SocioForm({ indice, socio, onChange }: { indice: number; socio: 
         <Field label={`CEP residencial${buscando ? ' (buscando...)' : ''}`}>
           <input className="input" value={socio.cep} onChange={(e) => set('cep', mascaraCep(e.target.value))} onBlur={aoSairDoCep} placeholder="00000-000" />
         </Field>
-        <Field label="Endereço residencial (com número e complemento)" className="sm:col-span-1 lg:col-span-3">
-          <input className="input" value={socio.endereco} onChange={(e) => set('endereco', e.target.value)} />
+        <Field label="Endereço residencial (logradouro)" className="sm:col-span-1 lg:col-span-3">
+          <input className="input" value={socio.endereco} onChange={(e) => set('endereco', e.target.value)} placeholder="Rua, avenida..." />
+        </Field>
+        <Field label="Número">
+          <input className="input" value={socio.numero ?? ''} onChange={(e) => set('numero', e.target.value)} placeholder="Ex.: 120 ou S/N" />
+        </Field>
+        <Field label="Complemento" className="sm:col-span-1 lg:col-span-3">
+          <input className="input" value={socio.complemento ?? ''} onChange={(e) => set('complemento', e.target.value)} placeholder="Apto, bloco, casa..." />
         </Field>
       </div>
     </Section>

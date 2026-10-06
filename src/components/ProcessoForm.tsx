@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Building2, ClipboardList, Layers, ListChecks, Plus, Save, Settings2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { REGEX_CNAE, REGEX_VIABILIDADE, buscarCep, listaCnaes, mascaraCep, mascaraCnae, mascaraCnpj, mascaraViabilidade } from '../lib/format'
+import { REGEX_CNAE, REGEX_VIABILIDADE, buscarCep, lerNumeroBR, listaCnaes, mascaraCep, mascaraCnae, mascaraCnpj, mascaraTelefone, mascaraViabilidade, moedaDigitada } from '../lib/format'
 import { CnaesInput } from './CnaesInput'
 import {
   ACOMPANHAMENTO_POR_TIPO,
@@ -53,7 +53,11 @@ function novoRascunho(tipo: TipoProcesso): Rascunho {
     nome_fantasia: '',
     cep: '',
     endereco: '',
+    numero: '',
     complemento: '',
+    iptu: '',
+    email: '',
+    telefone: '',
     area_imovel: '',
     area_estabelecimento: '',
     area_terreno: '',
@@ -82,16 +86,10 @@ function paraRascunho(p: Processo): Rascunho {
     ;(r as Record<string, unknown>)[k] = v ?? (typeof (r as Record<string, unknown>)[k] === 'string' ? '' : v)
   }
   for (const k of NUMERICOS) r[k] = p[k] === null || p[k] === undefined ? '' : String(p[k]).replace('.', ',')
+  r.capital_social = moedaDigitada(r.capital_social)
   r.socios = (p.socios ?? []).map((s) => ({ ...SOCIO_VAZIO, ...s }))
   if (r.socios.length === 0) r.socios = [{ ...SOCIO_VAZIO }]
   return r
-}
-
-function paraNumero(v: string): number | null {
-  const limpo = v.replace(/\s|R\$/g, '').replace(/\./g, '').replace(',', '.')
-  if (!limpo) return null
-  const n = Number(limpo)
-  return Number.isFinite(n) ? n : null
 }
 
 export function ProcessoForm({
@@ -206,7 +204,7 @@ export function ProcessoForm({
       return
     }
     const payload: Record<string, unknown> = { ...r }
-    for (const k of NUMERICOS) payload[k] = paraNumero(r[k])
+    for (const k of NUMERICOS) payload[k] = lerNumeroBR(r[k])
     for (const [k, v] of Object.entries(payload)) if (v === '') payload[k] = null
     payload.parceiro_id = r.parceiro_id || null
     payload.socios = abertura ? r.socios : []
@@ -334,17 +332,36 @@ export function ProcessoForm({
                 />
               </Field>
               <Field label="Capital Social (R$)" className="sm:col-span-1 lg:col-span-2">
-                <input className="input" inputMode="decimal" value={r.capital_social} onChange={(e) => set('capital_social', e.target.value)} placeholder="10.000,00" />
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  value={r.capital_social}
+                  onChange={(e) => set('capital_social', e.target.value)}
+                  onBlur={() => set('capital_social', moedaDigitada(r.capital_social))}
+                  placeholder="R$ 10.000,00"
+                />
               </Field>
 
               <Field label={`CEP da empresa${buscandoCep ? ' (buscando...)' : ''}`}>
                 <input className="input" value={r.cep ?? ''} onChange={(e) => set('cep', mascaraCep(e.target.value))} onBlur={aoSairDoCep} placeholder="00000-000" />
               </Field>
-              <Field label="Endereço da empresa (com número)" className="sm:col-span-2">
-                <input className="input" value={r.endereco ?? ''} onChange={(e) => set('endereco', e.target.value)} />
+              <Field label="Endereço da empresa (logradouro)" className="sm:col-span-2">
+                <input className="input" value={r.endereco ?? ''} onChange={(e) => set('endereco', e.target.value)} placeholder="Rua, avenida..." />
               </Field>
-              <Field label="Complemento">
-                <input className="input" value={r.complemento ?? ''} onChange={(e) => set('complemento', e.target.value)} />
+              <Field label="Número">
+                <input className="input" value={r.numero ?? ''} onChange={(e) => set('numero', e.target.value)} placeholder="Ex.: 120 ou S/N" />
+              </Field>
+              <Field label="Complemento" className="sm:col-span-1 lg:col-span-2">
+                <input className="input" value={r.complemento ?? ''} onChange={(e) => set('complemento', e.target.value)} placeholder="Sala, loja, bloco..." />
+              </Field>
+              <Field label="Inscrição do IPTU do imóvel" className="sm:col-span-1 lg:col-span-2">
+                <input className="input" value={r.iptu ?? ''} onChange={(e) => set('iptu', e.target.value)} />
+              </Field>
+              <Field label="E-mail da empresa" className="sm:col-span-1 lg:col-span-2">
+                <input type="email" className="input" value={r.email ?? ''} onChange={(e) => set('email', e.target.value)} placeholder="contato@empresa.com.br" />
+              </Field>
+              <Field label="Telefone da empresa" className="sm:col-span-1 lg:col-span-2">
+                <input className="input" value={r.telefone ?? ''} onChange={(e) => set('telefone', mascaraTelefone(e.target.value))} placeholder="(00) 00000-0000" />
               </Field>
 
               <Field label="Área do imóvel (m²)">

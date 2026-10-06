@@ -78,7 +78,11 @@ export function ProcessoDetalhes({
 
               <Info label="CEP" value={p.cep} />
               <Info label="Endereço" value={p.endereco} className="col-span-2" />
+              <Info label="Número" value={p.numero} />
               <Info label="Complemento" value={p.complemento} />
+              <Info label="Inscrição do IPTU" value={p.iptu} />
+              <Info label="E-mail da empresa" value={p.email} className="col-span-2" />
+              <Info label="Telefone da empresa" value={p.telefone} />
               <Info label="Área do imóvel" value={formatarNumero(p.area_imovel, ' m²')} />
               <Info label="Área do estabelecimento" value={formatarNumero(p.area_estabelecimento, ' m²')} />
               <Info label="Área do terreno" value={formatarNumero(p.area_terreno, ' m²')} />
@@ -152,7 +156,9 @@ export function ProcessoDetalhes({
               <Info label="Estado civil" value={s.estado_civil} />
               <Info label="Regime de bens" value={s.regime_bens} />
               <Info label="CEP residencial" value={s.cep} />
-              <Info label="Endereço residencial" value={s.endereco} className="col-span-2 lg:col-span-3" />
+              <Info label="Endereço residencial" value={s.endereco} className="col-span-2" />
+              <Info label="Número" value={s.numero} />
+              <Info label="Complemento" value={s.complemento} />
             </div>
           </Section>
         ))}
