@@ -29,6 +29,8 @@ export interface Socio {
   cnh_orgao_emissor: string
   cep: string
   endereco: string
+  numero: string
+  complemento: string
   estado_civil: string
   regime_bens: string
   naturalidade: string
@@ -54,7 +56,9 @@ export interface Processo {
   nome_fantasia: string | null
   cep: string | null
   endereco: string | null
+  numero: string | null
   complemento: string | null
+  iptu: string | null
   area_imovel: number | null
   area_estabelecimento: number | null
   area_terreno: number | null
@@ -267,6 +271,8 @@ export const SOCIO_VAZIO: Socio = {
   cnh_orgao_emissor: '',
   cep: '',
   endereco: '',
+  numero: '',
+  complemento: '',
   estado_civil: '',
   regime_bens: '',
   naturalidade: '',

@@ -47,6 +47,33 @@ export function formatarMoeda(v: number | null | undefined) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+/**
+ * Lê um valor digitado no padrão brasileiro ou não ("10000", "10.000", "10000.5",
+ * "R$ 10.000,00", "1,5") e devolve o número. Vírgula é sempre decimal; ponto só é
+ * decimal quando seguido de 1 ou 2 dígitos no final (ex.: "1500.50").
+ */
+export function lerNumeroBR(v: string | null | undefined): number | null {
+  let s = (v ?? '').replace(/R\$|\s/g, '').replace(/[^\d.,-]/g, '')
+  if (!s) return null
+  if (s.includes(',')) {
+    const i = s.lastIndexOf(',')
+    s = s.slice(0, i).replace(/[.,]/g, '') + '.' + s.slice(i + 1).replace(/[.,]/g, '')
+  } else if (/\.\d{1,2}$/.test(s)) {
+    const i = s.lastIndexOf('.')
+    s = s.slice(0, i).replace(/\./g, '') + '.' + s.slice(i + 1)
+  } else {
+    s = s.replace(/\./g, '')
+  }
+  const n = Number(s)
+  return s && Number.isFinite(n) ? n : null
+}
+
+/** Formata como moeda com R$, ponto nos milhares e sempre 2 casas decimais. */
+export function moedaDigitada(v: string | null | undefined) {
+  const n = lerNumeroBR(v)
+  return n === null ? '' : n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export function formatarNumero(v: number | null | undefined, sufixo = '') {
   if (v === null || v === undefined) return '—'
   return v.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + sufixo
