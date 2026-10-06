@@ -81,6 +81,8 @@ export function ProcessoDetalhes({
               <Info label="Número" value={p.numero} />
               <Info label="Complemento" value={p.complemento} />
               <Info label="Inscrição do IPTU" value={p.iptu} />
+              <Info label="E-mail da empresa" value={p.email} className="col-span-2" />
+              <Info label="Telefone da empresa" value={p.telefone} />
               <Info label="Área do imóvel" value={formatarNumero(p.area_imovel, ' m²')} />
               <Info label="Área do estabelecimento" value={formatarNumero(p.area_estabelecimento, ' m²')} />
               <Info label="Área do terreno" value={formatarNumero(p.area_terreno, ' m²')} />

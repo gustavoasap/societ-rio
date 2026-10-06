@@ -59,6 +59,8 @@ export interface Processo {
   numero: string | null
   complemento: string | null
   iptu: string | null
+  email: string | null
+  telefone: string | null
   area_imovel: number | null
   area_estabelecimento: number | null
   area_terreno: number | null

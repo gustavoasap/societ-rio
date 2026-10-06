@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Building2, ClipboardList, Layers, ListChecks, Plus, Save, Settings2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { REGEX_CNAE, REGEX_VIABILIDADE, buscarCep, lerNumeroBR, listaCnaes, mascaraCep, mascaraCnae, mascaraCnpj, mascaraViabilidade, moedaDigitada } from '../lib/format'
+import { REGEX_CNAE, REGEX_VIABILIDADE, buscarCep, lerNumeroBR, listaCnaes, mascaraCep, mascaraCnae, mascaraCnpj, mascaraTelefone, mascaraViabilidade, moedaDigitada } from '../lib/format'
 import { CnaesInput } from './CnaesInput'
 import {
   ACOMPANHAMENTO_POR_TIPO,
@@ -56,6 +56,8 @@ function novoRascunho(tipo: TipoProcesso): Rascunho {
     numero: '',
     complemento: '',
     iptu: '',
+    email: '',
+    telefone: '',
     area_imovel: '',
     area_estabelecimento: '',
     area_terreno: '',
@@ -354,6 +356,12 @@ export function ProcessoForm({
               </Field>
               <Field label="Inscrição do IPTU do imóvel" className="sm:col-span-1 lg:col-span-2">
                 <input className="input" value={r.iptu ?? ''} onChange={(e) => set('iptu', e.target.value)} />
+              </Field>
+              <Field label="E-mail da empresa" className="sm:col-span-1 lg:col-span-2">
+                <input type="email" className="input" value={r.email ?? ''} onChange={(e) => set('email', e.target.value)} placeholder="contato@empresa.com.br" />
+              </Field>
+              <Field label="Telefone da empresa" className="sm:col-span-1 lg:col-span-2">
+                <input className="input" value={r.telefone ?? ''} onChange={(e) => set('telefone', mascaraTelefone(e.target.value))} placeholder="(00) 00000-0000" />
               </Field>
 
               <Field label="Área do imóvel (m²)">
