@@ -69,7 +69,7 @@ export function Tributario({ session }: { session: Session }) {
     <div className="min-h-screen">
       <div className="no-print relative overflow-hidden bg-gradient-to-br from-asap-950 via-asap-900 to-asap-700 pb-24 text-white">
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-500/25 blur-3xl" />
-        <header className="relative mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6">
+        <header className="relative flex w-full max-w-none items-center gap-4 py-4 px-3 sm:px-4 md:px-6 lg:px-8">
           <Link para="/" aria-label="Ir para a página inicial do portal">
             <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
           </Link>
@@ -84,7 +84,7 @@ export function Tributario({ session }: { session: Session }) {
             </button>
           </div>
         </header>
-        <div className="relative mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-4 pt-6 sm:px-6">
+        <div className="relative flex w-full max-w-none flex-wrap items-end justify-between gap-4 pt-6 px-3 sm:px-4 md:px-6 lg:px-8">
           <div>
             <p className="text-sm font-medium text-cyan-300">
               <Link para="/" className="hover:underline">
@@ -114,7 +114,7 @@ export function Tributario({ session }: { session: Session }) {
         </div>
       </div>
 
-      <main className="relative mx-auto -mt-16 max-w-7xl space-y-5 px-4 pb-10 sm:px-6 print:mt-0">
+      <main className="relative -mt-16 w-full max-w-none space-y-5 pb-10 px-3 sm:px-4 md:px-6 lg:px-8 print:mt-0">
         {erro && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{erro}</div>}
 
         {empresa ? (

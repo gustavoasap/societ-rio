@@ -196,7 +196,7 @@ export function Clientes({ session }: { session: Session }) {
     <div className="min-h-screen">
       <div className="relative overflow-hidden bg-gradient-to-br from-asap-950 via-asap-900 to-asap-700 text-white">
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-500/25 blur-3xl" />
-        <header className="relative mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6">
+        <header className="relative flex w-full max-w-none items-center gap-4 py-4 px-3 sm:px-4 md:px-6 lg:px-8">
           <Link para="/" aria-label="Ir para a página inicial do portal">
             <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
           </Link>
@@ -211,7 +211,7 @@ export function Clientes({ session }: { session: Session }) {
             </button>
           </div>
         </header>
-        <div className="relative mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-4 pt-4 pb-6 sm:px-6">
+        <div className="relative flex w-full max-w-none flex-wrap items-end justify-between gap-4 pt-4 pb-6 px-3 sm:px-4 md:px-6 lg:px-8">
           <div>
             <p className="text-sm font-medium text-cyan-300">
               <Link para="/" className="hover:underline">
@@ -231,7 +231,7 @@ export function Clientes({ session }: { session: Session }) {
             Novo cliente
           </button>
         </div>
-        <nav className="relative mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 sm:px-6" role="tablist">
+        <nav className="relative flex w-full max-w-none gap-1 overflow-x-auto px-3 sm:px-4 md:px-6 lg:px-8" role="tablist">
           {ABAS.map(({ id, label, icone: I, n }) => (
             <button
               key={id}
@@ -248,7 +248,7 @@ export function Clientes({ session }: { session: Session }) {
         </nav>
       </div>
 
-      <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6">
+      <main className="w-full max-w-none space-y-5 py-6 px-3 sm:px-4 md:px-6 lg:px-8">
         {erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
         {carregando ? (
           <p className="p-10 text-center text-sm text-slate-400">Carregando clientes...</p>

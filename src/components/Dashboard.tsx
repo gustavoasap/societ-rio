@@ -40,6 +40,7 @@ import {
   Search,
   Timer,
   Trash2,
+  UserRound,
   Wallet,
 } from 'lucide-react'
 
@@ -88,6 +89,11 @@ function DiasEmAberto({ processo: p }: { processo: Processo }) {
       {dias === 0 ? 'Aberto hoje' : `${dias} ${dias === 1 ? 'dia' : 'dias'} em aberto`}
     </span>
   )
+}
+
+/** Abertura: o Sócio 1 é o responsável legal. Alteração e baixa: campo Sócio / Responsável. */
+function responsavelLegal(p: Processo) {
+  return (p.tipo === 'abertura' ? p.socios?.[0]?.nome : p.responsavel)?.trim() || null
 }
 
 function progresso(p: Processo) {
@@ -268,7 +274,7 @@ export function Dashboard({ session }: { session: Session }) {
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-500/25 blur-3xl" />
         <div className="pointer-events-none absolute top-20 -left-20 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
 
-        <header className="relative mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6">
+        <header className="relative flex w-full max-w-none items-center gap-4 py-4 px-3 sm:px-4 md:px-6 lg:px-8">
           <Link para="/" aria-label="Ir para a página inicial do portal">
             <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
           </Link>
@@ -294,7 +300,7 @@ export function Dashboard({ session }: { session: Session }) {
           </div>
         </header>
 
-        <div className="relative mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-4 px-4 pt-6 sm:px-6">
+        <div className="relative flex w-full max-w-none flex-wrap items-end justify-between gap-4 pt-6 px-3 sm:px-4 md:px-6 lg:px-8">
           <div>
             <p className="text-sm font-medium text-cyan-300 first-letter:uppercase">
               <Link para="/" className="hover:underline">Página inicial</Link> ›{' '}
@@ -305,7 +311,7 @@ export function Dashboard({ session }: { session: Session }) {
             </h1>
             <p className="mt-1 text-sm text-white/60">Acompanhe as aberturas, alterações e baixas de CNPJ do escritório.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setMostrarModelos(true)}>
               <Layers className="h-4 w-4" />
               Modelos
@@ -322,7 +328,7 @@ export function Dashboard({ session }: { session: Session }) {
         </div>
       </div>
 
-      <main className="relative mx-auto -mt-16 max-w-7xl space-y-5 px-4 pb-10 sm:px-6">
+      <main className="relative -mt-16 w-full max-w-none space-y-5 pb-10 px-3 sm:px-4 md:px-6 lg:px-8">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {CARTOES.map(({ status, icone: I, gradiente, sombra }) => {
             const ativo = status === 'concluido' ? visao === 'concluidos' : visao === 'abertos' && filtroStatus === status
@@ -398,7 +404,7 @@ export function Dashboard({ session }: { session: Session }) {
                 onChange={(e) => setBusca(e.target.value)}
               />
             </div>
-            <div className="flex rounded-xl bg-slate-100 p-1">
+            <div className="flex w-full overflow-x-auto rounded-xl bg-slate-100 p-1 sm:w-auto">
               {[{ value: '', label: 'Todos' }, ...TIPOS].map((t) => {
                 const ativo = filtroTipo === t.value
                 const qtd = t.value ? porTipo[t.value] : daVisao.length
@@ -516,6 +522,12 @@ export function Dashboard({ session }: { session: Session }) {
                                 <span className="font-bold text-slate-800">{p.razao_social || '—'}</span>
                                 <Badge cor={p.tipo}>{labelDe(TIPOS, p.tipo)}</Badge>
                               </div>
+                              {responsavelLegal(p) && (
+                                <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-600" title="Responsável legal">
+                                  <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                  <span className="truncate">{responsavelLegal(p)}</span>
+                                </div>
+                              )}
                               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs whitespace-nowrap text-slate-400">
                                 <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100" title={`${feitos} de ${etapas.length} etapas concluídas`}>
                                   <div
@@ -546,12 +558,14 @@ export function Dashboard({ session }: { session: Session }) {
                           </div>
                         </td>
                         <td className="px-4 py-3.5">
-                          <Select
-                            value={p.status}
-                            onChange={(v) => atualizarCampo(p, 'status', v)}
-                            opcoes={STATUS_PROCESSO}
-                            className={`rounded-full border py-1.5 pl-3 text-xs font-semibold outline-none transition ${CORES_SELECT[p.status]}`}
-                          />
+                          <div className="w-fit">
+                            <Select
+                              value={p.status}
+                              onChange={(v) => atualizarCampo(p, 'status', v)}
+                              opcoes={STATUS_PROCESSO}
+                              className={`rounded-full border py-1.5 pl-3 text-xs font-semibold outline-none transition ${CORES_SELECT[p.status]}`}
+                            />
+                          </div>
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <FaseAtual processo={p} />

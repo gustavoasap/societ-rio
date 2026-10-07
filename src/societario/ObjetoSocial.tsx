@@ -190,7 +190,7 @@ export function ObjetoSocial({ session }: { session: Session }) {
     <div className="min-h-screen">
       <div className="relative overflow-hidden bg-gradient-to-br from-asap-950 via-asap-900 to-asap-700 pb-8 text-white">
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-500/25 blur-3xl" />
-        <header className="relative mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6">
+        <header className="relative flex w-full max-w-none items-center gap-4 py-4 px-3 sm:px-4 md:px-6 lg:px-8">
           <Link para="/" aria-label="Ir para a página inicial do portal">
             <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
           </Link>
@@ -205,7 +205,7 @@ export function ObjetoSocial({ session }: { session: Session }) {
             </button>
           </div>
         </header>
-        <div className="relative mx-auto max-w-7xl px-4 pt-4 sm:px-6">
+        <div className="relative w-full max-w-none pt-4 px-3 sm:px-4 md:px-6 lg:px-8">
           <p className="text-sm font-medium text-cyan-300">
             <Link para="/" className="hover:underline">
               Página inicial
@@ -221,7 +221,7 @@ export function ObjetoSocial({ session }: { session: Session }) {
         </div>
       </div>
 
-      <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6">
+      <main className="w-full max-w-none space-y-5 py-6 px-3 sm:px-4 md:px-6 lg:px-8">
         {erro && (
           <p className="flex items-center justify-between gap-3 rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
             {erro}

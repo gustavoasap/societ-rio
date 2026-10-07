@@ -33,8 +33,25 @@ html {
   }
 }
 
+/* Layout fluido: o conteúdo ocupa 100% da largura da tela, sem faixas vazias nas laterais */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  min-height: 100dvh;
+}
+
 body {
   @apply bg-[#f3f6fc] text-slate-800 antialiased;
+  overflow-x: hidden;
 }
 
 @utility input {

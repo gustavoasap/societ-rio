@@ -86,7 +86,7 @@ export function Portal({ session }: { session: Session }) {
     <div className="min-h-screen">
       <div className="relative overflow-hidden bg-gradient-to-br from-asap-950 via-asap-900 to-asap-700 text-white">
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-brand-500/25 blur-3xl" />
-        <header className="relative mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-4 sm:gap-4 sm:px-6">
+        <header className="relative flex w-full max-w-none flex-wrap items-center gap-3 py-4 sm:gap-4 px-3 sm:px-4 md:px-6 lg:px-8">
           <Link para="/" onClick={() => setBusca('')} aria-label="Ir para a página inicial">
             <img src="/logo-asap.png" alt="ASAP Assessoria Contábil" className="h-9 w-auto sm:h-10" />
           </Link>
@@ -122,7 +122,7 @@ export function Portal({ session }: { session: Session }) {
           </div>
         </header>
         {rota === '/' && !busca && (
-          <div className="relative mx-auto max-w-7xl px-4 pt-2 pb-8 sm:px-6">
+          <div className="relative w-full max-w-none pt-2 pb-8 px-3 sm:px-4 md:px-6 lg:px-8">
             <p className="text-sm font-medium text-cyan-300 first-letter:uppercase">{hoje}</p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
               {saudacao()}, {primeiroNome}!
@@ -132,7 +132,7 @@ export function Portal({ session }: { session: Session }) {
         )}
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[15.625rem_1fr]">
+      <div className="grid w-full max-w-none gap-6 py-6 px-3 sm:px-4 md:px-6 lg:px-8 lg:grid-cols-[15.625rem_minmax(0,1fr)]">
         <nav className="flex gap-1 overflow-x-auto pb-1 lg:sticky lg:top-6 lg:flex-col lg:self-start lg:overflow-visible" aria-label="Menu do portal">
           <Link para="/" onClick={() => setBusca('')} className={itemMenu(rota === '/' && !busca)} aria-current={rota === '/' ? 'page' : undefined}>
             <House className="h-4.5 w-4.5 shrink-0" />
