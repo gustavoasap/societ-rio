@@ -509,10 +509,10 @@ export function Dashboard({ session }: { session: Session }) {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3.5 font-mono text-xs whitespace-nowrap text-slate-600">
-                          <div>{p.cnpj || <span className="text-slate-300">CNPJ —</span>}</div>
-                          <div className="mt-1 text-slate-500">
-                            <span className={`mr-1 font-sans text-[0.625rem] font-bold ${p.tipo === 'baixa' ? 'text-rose-500' : 'text-brand-500'}`}>
+                        <td className="px-4 py-3.5 font-mono text-sm whitespace-nowrap text-slate-700">
+                          <div className="font-semibold">{p.cnpj || <span className="font-normal text-slate-300">CNPJ —</span>}</div>
+                          <div className="mt-1 text-slate-600">
+                            <span className={`mr-1.5 font-sans text-[0.6875rem] font-bold ${p.tipo === 'baixa' ? 'text-rose-500' : 'text-brand-500'}`}>
                               {p.tipo === 'baixa' ? 'DBE' : 'VIAB.'}
                             </span>
                             {numeroReferencia(p) || <span className="text-slate-300">—</span>}
