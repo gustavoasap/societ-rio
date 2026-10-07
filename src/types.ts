@@ -27,6 +27,7 @@ export interface Socio {
   rg_data_emissao: string
   cnh: string
   cnh_orgao_emissor: string
+  cnh_data_emissao: string
   cep: string
   endereco: string
   numero: string
@@ -271,6 +272,7 @@ export const SOCIO_VAZIO: Socio = {
   rg_data_emissao: '',
   cnh: '',
   cnh_orgao_emissor: '',
+  cnh_data_emissao: '',
   cep: '',
   endereco: '',
   numero: '',

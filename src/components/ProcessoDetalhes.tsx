@@ -153,6 +153,7 @@ export function ProcessoDetalhes({
               <Info label="Naturalidade" value={s.naturalidade} />
               <Info label="CNH" value={s.cnh} />
               <Info label="Órgão emissor (CNH)" value={s.cnh_orgao_emissor} />
+              <Info label="Emissão (CNH)" value={s.cnh_data_emissao ? formatarData(s.cnh_data_emissao) : null} />
               <Info label="Estado civil" value={s.estado_civil} />
               <Info label="Regime de bens" value={s.regime_bens} />
               <Info label="CEP residencial" value={s.cep} />

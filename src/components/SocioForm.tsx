@@ -86,6 +86,10 @@ export function SocioForm({ indice, socio, onChange }: { indice: number; socio: 
             placeholder="DETRAN/MG"
           />
         </Field>
+        <Field label="Data de emissão (CNH)">
+          <input type="date" className="input" value={socio.cnh_data_emissao ?? ''} onChange={(e) => set('cnh_data_emissao', e.target.value)} />
+        </Field>
+        <div className="hidden lg:block" />
         <Field label="Estado civil">
           <Select
             value={socio.estado_civil}
