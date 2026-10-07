@@ -3,7 +3,8 @@ import { Badge } from './ui'
 
 export function corEtapa(etapa: Etapa, valor: string) {
   if (valor === etapa.concluido) return 'ok'
-  if (valor.startsWith('pendente') || valor === 'falta_assinatura') return 'pendente'
+  if (valor === 'indeferido') return 'indeferido'
+  if (valor.startsWith('pendente')) return 'pendente'
   return 'analise'
 }
 

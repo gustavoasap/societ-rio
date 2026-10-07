@@ -10,10 +10,12 @@ import {
   ORGAOS_REGISTRO,
   SOCIO_VAZIO,
   STATUS_PROCESSO,
+  statusAutomatico,
   TIPOS,
   type BlocoCnae,
   type ObjetoSocial,
   type Parceiro,
+  type CampoAcompanhamento,
   type Processo,
   type Socio,
   type TipoProcesso,
@@ -117,6 +119,12 @@ export function ProcessoForm({
   const [buscandoCep, setBuscandoCep] = useState(false)
 
   const set = <K extends keyof Rascunho>(k: K, v: Rascunho[K]) => setR((prev) => ({ ...prev, [k]: v }))
+  // Número e etapas do acompanhamento também atualizam o status (Em andamento / Concluído)
+  const setAcompanhamento = <K extends CampoAcompanhamento | 'numero_viabilidade' | 'numero_dbe'>(k: K, v: Rascunho[K]) =>
+    setR((prev) => {
+      const novo = { ...prev, [k]: v }
+      return { ...novo, status: statusAutomatico(novo as unknown as Processo) }
+    })
   const abertura = r.tipo === 'abertura'
   const baixa = r.tipo === 'baixa'
   const etapas = ACOMPANHAMENTO_POR_TIPO[r.tipo]
@@ -245,7 +253,7 @@ export function ProcessoForm({
           <Field label="Tipo de processo">
             <Select value={r.tipo} onChange={(v) => mudarTipo(v as TipoProcesso)} opcoes={TIPOS} />
           </Field>
-          <Field label="Status do processo">
+          <Field label="Status do processo (atualiza sozinho com o acompanhamento)">
             <Select value={r.status} onChange={(v) => set('status', v as Rascunho['status'])} opcoes={STATUS_PROCESSO} />
           </Field>
           <Field label="Data de início">
@@ -450,7 +458,7 @@ export function ProcessoForm({
               <input
                 className="input font-mono tracking-wider"
                 value={r.numero_dbe ?? ''}
-                onChange={(e) => set('numero_dbe', e.target.value.toUpperCase())}
+                onChange={(e) => setAcompanhamento('numero_dbe', e.target.value.toUpperCase())}
               />
             </Field>
           ) : (
@@ -458,7 +466,7 @@ export function ProcessoForm({
               <input
                 className={`input font-mono tracking-wider ${viabilidadeInvalida ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-100' : ''}`}
                 value={r.numero_viabilidade ?? ''}
-                onChange={(e) => set('numero_viabilidade', mascaraViabilidade(e.target.value))}
+                onChange={(e) => setAcompanhamento('numero_viabilidade', mascaraViabilidade(e.target.value))}
                 placeholder="SPN2633893093"
                 maxLength={13}
               />
@@ -469,7 +477,7 @@ export function ProcessoForm({
           )}
           {etapas.map((a) => (
             <Field key={a.campo} label={a.label}>
-              <Select value={r[a.campo]} onChange={(v) => set(a.campo, v)} opcoes={a.opcoes} />
+              <Select value={r[a.campo]} onChange={(v) => setAcompanhamento(a.campo, v)} opcoes={a.opcoes} />
             </Field>
           ))}
           <Field label="Observações" className="sm:col-span-2 lg:col-span-4">

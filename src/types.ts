@@ -1,5 +1,5 @@
 export type TipoProcesso = 'abertura' | 'alteracao' | 'baixa'
-export type StatusProcesso = 'pendente' | 'andamento' | 'concluido'
+export type StatusProcesso = 'aguardando_caucao' | 'pendente' | 'andamento' | 'concluido'
 
 export interface Parceiro {
   id: string
@@ -109,6 +109,7 @@ export const TIPOS: Opcao[] = [
 ]
 
 export const STATUS_PROCESSO: Opcao[] = [
+  { value: 'aguardando_caucao', label: 'Ainda não pagou o caução' },
   { value: 'pendente', label: 'Pendente de Início' },
   { value: 'andamento', label: 'Em andamento' },
   { value: 'concluido', label: 'Concluído' },
@@ -120,9 +121,22 @@ const PENDENTE_ANALISE_OK: Opcao[] = [
   { value: 'ok', label: 'OK' },
 ]
 
+const STATUS_DBE: Opcao[] = [
+  { value: 'pendente', label: 'Pendente' },
+  { value: 'em_analise', label: 'Em análise' },
+  { value: 'indeferido', label: 'Indeferido - Falta Reenviar' },
+  { value: 'ok', label: 'OK' },
+]
+
+const STATUS_TAXA: Opcao[] = [
+  { value: 'pendente', label: 'Pendente' },
+  { value: 'pendente_pagamento', label: 'Pendente de Pagamento' },
+  { value: 'ok', label: 'OK' },
+]
+
 const CONTRATO_SOCIAL: Opcao[] = [
   { value: 'pendente_envio', label: 'Pendente de envio' },
-  { value: 'falta_assinatura', label: 'Falta assinatura' },
+  { value: 'enviado_assinatura', label: 'Enviado para assinatura' },
   { value: 'ok', label: 'OK' },
 ]
 
@@ -147,9 +161,9 @@ export type CampoAcompanhamento =
 export type Etapa = { campo: CampoAcompanhamento; label: string; opcoes: Opcao[]; concluido: string }
 
 const VIABILIDADE: Etapa = { campo: 'status_viabilidade', label: 'Status Viabilidade', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' }
-const DBE: Etapa = { campo: 'status_dbe', label: 'Status DBE', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' }
+const DBE: Etapa = { campo: 'status_dbe', label: 'Status DBE', opcoes: STATUS_DBE, concluido: 'ok' }
 const INTEGRADOR: Etapa = { campo: 'status_integrador', label: 'Integrador', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' }
-const TAXA: Etapa = { campo: 'status_taxa', label: 'Pagamento da Taxa', opcoes: PENDENTE_ANALISE_OK, concluido: 'ok' }
+const TAXA: Etapa = { campo: 'status_taxa', label: 'Pagamento da Taxa', opcoes: STATUS_TAXA, concluido: 'ok' }
 const REGISTRO_SIMPLES: Etapa = { campo: 'status_registro_digital', label: 'Registro Digital', opcoes: REGISTRO_DIGITAL_SIMPLES, concluido: 'concluido' }
 
 /** Etapas de acompanhamento de cada tipo de processo. */
@@ -289,4 +303,19 @@ export function labelDe(opcoes: Opcao[], value: string | null | undefined) {
 /** O primeiro sócio é sempre o responsável legal. */
 export function rotuloSocio(indice: number) {
   return indice === 0 ? 'Sócio 1 - Responsável Legal' : `Sócio ${indice + 1}`
+}
+
+/**
+ * Status calculado a partir do acompanhamento:
+ * - todas as etapas na opção final → Concluído
+ * - número da viabilidade/DBE informado ou alguma etapa iniciada → Em andamento
+ * Usado só quando o número ou uma etapa muda; o status pode ser trocado à mão depois.
+ */
+export function statusAutomatico(p: Processo): StatusProcesso {
+  const etapas = ACOMPANHAMENTO_POR_TIPO[p.tipo]
+  if (etapas.every((e) => p[e.campo] === e.concluido)) return 'concluido'
+  const iniciou = Boolean(numeroReferencia(p)) || etapas.some((e) => p[e.campo] !== e.opcoes[0].value)
+  if (iniciou) return 'andamento'
+  // Deixou de estar tudo concluído e nada foi iniciado: volta para Pendente de Início
+  return p.status === 'concluido' ? 'pendente' : p.status
 }

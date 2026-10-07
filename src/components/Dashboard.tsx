@@ -9,6 +9,7 @@ import {
   TIPOS,
   labelDe,
   numeroReferencia,
+  statusAutomatico,
   type CampoAcompanhamento,
   type BlocoCnae,
   type ObjetoSocial,
@@ -39,9 +40,12 @@ import {
   Search,
   Timer,
   Trash2,
+  Wallet,
 } from 'lucide-react'
 
 const CORES_SELECT: Record<string, string> = {
+  aguardando_caucao: 'border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300',
+  indeferido: 'border-rose-300 bg-rose-50 text-rose-700 hover:border-rose-400',
   ok: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300',
   pendente: 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300',
   analise: 'border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300',
@@ -50,6 +54,7 @@ const CORES_SELECT: Record<string, string> = {
 }
 
 const CARTOES: { status: StatusProcesso; icone: typeof Clock3; gradiente: string; sombra: string }[] = [
+  { status: 'aguardando_caucao', icone: Wallet, gradiente: 'from-rose-400 to-pink-600', sombra: 'shadow-rose-500/30' },
   { status: 'pendente', icone: Clock3, gradiente: 'from-amber-400 to-orange-500', sombra: 'shadow-orange-500/30' },
   { status: 'andamento', icone: Timer, gradiente: 'from-brand-500 to-indigo-600', sombra: 'shadow-brand-500/30' },
   { status: 'concluido', icone: CheckCircle2, gradiente: 'from-emerald-400 to-teal-500', sombra: 'shadow-emerald-500/30' },
@@ -109,10 +114,10 @@ function FaseAtual({ processo: p }: { processo: Processo }) {
   return (
     <div className="leading-tight" title={`O processo está na fase "${fase.label}": ${labelDe(fase.opcoes, p[fase.campo])}`}>
       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${cor === 'pendente' ? 'bg-amber-400' : 'bg-sky-500'}`} />
+        <span className={`h-2 w-2 shrink-0 rounded-full ${cor === 'pendente' ? 'bg-amber-400' : cor === 'indeferido' ? 'bg-rose-500' : 'bg-sky-500'}`} />
         {nomeFase(fase.label)}
       </div>
-      <div className={`mt-0.5 pl-3.5 text-[0.6875rem] font-medium ${cor === 'pendente' ? 'text-amber-700' : 'text-sky-700'}`}>{labelDe(fase.opcoes, p[fase.campo])}</div>
+      <div className={`mt-0.5 pl-3.5 text-[0.6875rem] font-medium ${cor === 'pendente' ? 'text-amber-700' : cor === 'indeferido' ? 'text-rose-700' : 'text-sky-700'}`}>{labelDe(fase.opcoes, p[fase.campo])}</div>
     </div>
   )
 }
@@ -127,6 +132,13 @@ export function Dashboard({ session }: { session: Session }) {
   const [mostrarModelos, setMostrarModelos] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!aviso) return
+    const t = setTimeout(() => setAviso(null), 6000)
+    return () => clearTimeout(t)
+  }, [aviso])
 
   const [busca, setBusca] = useState('')
   const [visao, setVisao] = useState<Visao>('abertos')
@@ -168,7 +180,7 @@ export function Dashboard({ session }: { session: Session }) {
   }, [carregar])
 
   const contagem = useMemo(() => {
-    const c: Record<StatusProcesso, number> = { pendente: 0, andamento: 0, concluido: 0 }
+    const c: Record<StatusProcesso, number> = { aguardando_caucao: 0, pendente: 0, andamento: 0, concluido: 0 }
     processos.forEach((p) => c[p.status]++)
     return c
   }, [processos])
@@ -211,8 +223,17 @@ export function Dashboard({ session }: { session: Session }) {
   }, [daVisao, visao, busca, filtroStatus, filtroTipo, filtroParceiro])
 
   async function atualizarCampo(p: Processo, campo: CampoAcompanhamento | 'status' | 'numero_viabilidade' | 'numero_dbe', valor: string | null) {
-    setProcessos((lista) => lista.map((x) => (x.id === p.id ? { ...x, [campo]: valor } : x)))
-    const { error } = await supabase.from('soc_processos').update({ [campo]: valor }).eq('id', p.id)
+    const mudancas: Partial<Processo> = { [campo]: valor }
+    // Etapa ou número alterado: o status acompanha automaticamente (Em andamento / Concluído)
+    if (campo !== 'status') {
+      const novo = statusAutomatico({ ...p, ...mudancas })
+      if (novo !== p.status) {
+        mudancas.status = novo
+        setAviso(`"${p.razao_social ?? 'Processo'}" passou automaticamente para ${labelDe(STATUS_PROCESSO, novo)}${novo === 'concluido' ? ' e foi para a aba Concluídos' : ''}.`)
+      }
+    }
+    setProcessos((lista) => lista.map((x) => (x.id === p.id ? { ...x, ...mudancas } : x)))
+    const { error } = await supabase.from('soc_processos').update(mudancas).eq('id', p.id)
     if (error) {
       setErro(error.message)
       carregar()
@@ -302,7 +323,7 @@ export function Dashboard({ session }: { session: Session }) {
       </div>
 
       <main className="relative mx-auto -mt-16 max-w-7xl space-y-5 px-4 pb-10 sm:px-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {CARTOES.map(({ status, icone: I, gradiente, sombra }) => {
             const ativo = status === 'concluido' ? visao === 'concluidos' : visao === 'abertos' && filtroStatus === status
             return (
@@ -347,7 +368,7 @@ export function Dashboard({ session }: { session: Session }) {
         <div className="flex flex-wrap items-end gap-1 border-b border-slate-200">
           {(
             [
-              { id: 'abertos', label: 'Em aberto', qtd: contagem.pendente + contagem.andamento, icone: Timer },
+              { id: 'abertos', label: 'Em aberto', qtd: contagem.aguardando_caucao + contagem.pendente + contagem.andamento, icone: Timer },
               { id: 'concluidos', label: 'Concluídos', qtd: contagem.concluido, icone: CheckCircle2 },
             ] as const
           ).map((v) => {
@@ -399,7 +420,7 @@ export function Dashboard({ session }: { session: Session }) {
                   value={filtroStatus}
                   onChange={(v) => setFiltroStatus(v as StatusProcesso | '')}
                   opcoes={STATUS_PROCESSO.filter((o) => o.value !== 'concluido')}
-                  vazio="Pendentes e em andamento"
+                  vazio="Todos em aberto"
                 />
               </div>
             )}
@@ -415,6 +436,12 @@ export function Dashboard({ session }: { session: Session }) {
         </div>
 
         {erro && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{erro}</div>}
+        {aviso && (
+          <div className="animar-modal flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            {aviso}
+          </div>
+        )}
 
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <div className="overflow-x-auto">
@@ -567,7 +594,7 @@ export function Dashboard({ session }: { session: Session }) {
                                       )}
                                       <div className="mb-2 flex items-center gap-2">
                                         <span
-                                          className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.625rem] font-bold text-white ${cor === 'ok' ? 'bg-emerald-500' : cor === 'pendente' ? 'bg-amber-400' : 'bg-sky-500'}`}
+                                          className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.625rem] font-bold text-white ${cor === 'ok' ? 'bg-emerald-500' : cor === 'pendente' ? 'bg-amber-400' : cor === 'indeferido' ? 'bg-rose-500' : 'bg-sky-500'}`}
                                         >
                                           {cor === 'ok' ? '✓' : i + 1}
                                         </span>
