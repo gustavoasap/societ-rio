@@ -89,6 +89,36 @@ function progresso(p: Processo) {
   return ACOMPANHAMENTO_POR_TIPO[p.tipo].filter((a) => p[a.campo] === a.concluido).length
 }
 
+/** Fase atual: a primeira etapa (na ordem do tipo de processo) que ainda não foi concluída. */
+function faseAtual(p: Processo) {
+  return ACOMPANHAMENTO_POR_TIPO[p.tipo].find((a) => p[a.campo] !== a.concluido) ?? null
+}
+
+const nomeFase = (label: string) => label.replace(/^Status /, '')
+
+function FaseAtual({ processo: p }: { processo: Processo }) {
+  const fase = faseAtual(p)
+  if (!fase)
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200 ring-inset">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Etapas concluídas
+      </span>
+    )
+  const cor = corEtapa(fase, p[fase.campo])
+  return (
+    <div className="leading-tight" title={`O processo está na fase "${fase.label}": ${labelDe(fase.opcoes, p[fase.campo])}`}>
+      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${cor === 'pendente' ? 'bg-amber-400' : 'bg-sky-500'}`} />
+        {nomeFase(fase.label)}
+      </div>
+      <div className={`mt-0.5 pl-3.5 text-[0.6875rem] font-medium ${cor === 'pendente' ? 'text-amber-700' : 'text-sky-700'}`}>{labelDe(fase.opcoes, p[fase.campo])}</div>
+    </div>
+  )
+}
+
+type Visao = 'abertos' | 'concluidos'
+
 export function Dashboard({ session }: { session: Session }) {
   const [processos, setProcessos] = useState<Processo[]>([])
   const [parceiros, setParceiros] = useState<Parceiro[]>([])
@@ -99,6 +129,7 @@ export function Dashboard({ session }: { session: Session }) {
   const [erro, setErro] = useState<string | null>(null)
 
   const [busca, setBusca] = useState('')
+  const [visao, setVisao] = useState<Visao>('abertos')
   const [filtroStatus, setFiltroStatus] = useState<'' | StatusProcesso>('')
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroParceiro, setFiltroParceiro] = useState('')
@@ -142,16 +173,28 @@ export function Dashboard({ session }: { session: Session }) {
     return c
   }, [processos])
 
+  // Em aberto = pendentes e em andamento; concluídos ficam numa tela separada
+  const daVisao = useMemo(
+    () => processos.filter((p) => (visao === 'concluidos' ? p.status === 'concluido' : p.status !== 'concluido')),
+    [processos, visao],
+  )
+
   const porTipo = useMemo(() => {
     const c: Record<string, number> = { abertura: 0, alteracao: 0, baixa: 0 }
-    processos.forEach((p) => c[p.tipo]++)
+    daVisao.forEach((p) => c[p.tipo]++)
     return c
-  }, [processos])
+  }, [daVisao])
+
+  function mudarVisao(v: Visao) {
+    setVisao(v)
+    setFiltroStatus('')
+    setExpandidos(new Set())
+  }
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase()
     const termoDigitos = termo.replace(/\D/g, '')
-    return processos.filter((p) => {
+    const lista = daVisao.filter((p) => {
       if (filtroStatus && p.status !== filtroStatus) return false
       if (filtroTipo && p.tipo !== filtroTipo) return false
       if (filtroParceiro && p.parceiro_id !== filtroParceiro) return false
@@ -163,7 +206,9 @@ export function Dashboard({ session }: { session: Session }) {
       if (texto.includes(termo)) return true
       return termoDigitos.length >= 3 && (p.cnpj ?? '').replace(/\D/g, '').includes(termoDigitos)
     })
-  }, [processos, busca, filtroStatus, filtroTipo, filtroParceiro])
+    // Concluídos: os mais recentes primeiro
+    return visao === 'concluidos' ? lista.reverse() : lista
+  }, [daVisao, visao, busca, filtroStatus, filtroTipo, filtroParceiro])
 
   async function atualizarCampo(p: Processo, campo: CampoAcompanhamento | 'status' | 'numero_viabilidade' | 'numero_dbe', valor: string | null) {
     setProcessos((lista) => lista.map((x) => (x.id === p.id ? { ...x, [campo]: valor } : x)))
@@ -259,11 +304,15 @@ export function Dashboard({ session }: { session: Session }) {
       <main className="relative mx-auto -mt-16 max-w-7xl space-y-5 px-4 pb-10 sm:px-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {CARTOES.map(({ status, icone: I, gradiente, sombra }) => {
-            const ativo = filtroStatus === status
+            const ativo = status === 'concluido' ? visao === 'concluidos' : visao === 'abertos' && filtroStatus === status
             return (
               <button
                 key={status}
-                onClick={() => setFiltroStatus(ativo ? '' : status)}
+                onClick={() => {
+                  if (status === 'concluido') return mudarVisao(ativo ? 'abertos' : 'concluidos')
+                  if (visao !== 'abertos') mudarVisao('abertos')
+                  setFiltroStatus(ativo ? '' : status)
+                }}
                 className={`group cursor-pointer rounded-2xl bg-white p-5 text-left shadow-lg shadow-asap-900/5 ring-1 transition hover:-translate-y-0.5 hover:shadow-xl ${ativo ? 'ring-2 ring-brand-500' : 'ring-slate-200/70'}`}
               >
                 <div className="flex items-start justify-between">
@@ -271,7 +320,7 @@ export function Dashboard({ session }: { session: Session }) {
                     <I className="h-5 w-5" />
                   </span>
                   <span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${ativo ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}>
-                    {ativo ? 'filtrando' : 'filtrar'}
+                    {status === 'concluido' ? (ativo ? 'vendo' : 'ver tela') : ativo ? 'filtrando' : 'filtrar'}
                   </span>
                 </div>
                 <div className="mt-4 text-3xl font-extrabold text-slate-900">{contagem[status]}</div>
@@ -285,14 +334,36 @@ export function Dashboard({ session }: { session: Session }) {
                 <FolderOpen className="h-5 w-5" />
               </span>
             </div>
-            <div className="mt-4 text-3xl font-extrabold">{processos.length}</div>
-            <div className="text-sm font-medium text-white/80">Processos no total</div>
+            <div className="mt-4 text-3xl font-extrabold">{daVisao.length}</div>
+            <div className="text-sm font-medium text-white/80">{visao === 'concluidos' ? 'Processos concluídos' : 'Processos em aberto'}</div>
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/70">
               <span>{porTipo.abertura} abertura(s)</span>
               <span>{porTipo.alteracao} alteração(ões)</span>
               <span>{porTipo.baixa} baixa(s)</span>
             </div>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-1 border-b border-slate-200">
+          {(
+            [
+              { id: 'abertos', label: 'Em aberto', qtd: contagem.pendente + contagem.andamento, icone: Timer },
+              { id: 'concluidos', label: 'Concluídos', qtd: contagem.concluido, icone: CheckCircle2 },
+            ] as const
+          ).map((v) => {
+            const ativo = visao === v.id
+            return (
+              <button
+                key={v.id}
+                onClick={() => mudarVisao(v.id)}
+                className={`-mb-px flex cursor-pointer items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-bold transition ${ativo ? (v.id === 'concluidos' ? 'border-emerald-500 text-emerald-700' : 'border-brand-600 text-brand-700') : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+              >
+                <v.icone className="h-4 w-4" />
+                {v.label}
+                <span className={`rounded-md px-1.5 text-[0.6875rem] ${ativo ? (v.id === 'concluidos' ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-100 text-brand-700') : 'bg-slate-200 text-slate-500'}`}>{v.qtd}</span>
+              </button>
+            )
+          })}
         </div>
 
         <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
@@ -309,7 +380,7 @@ export function Dashboard({ session }: { session: Session }) {
             <div className="flex rounded-xl bg-slate-100 p-1">
               {[{ value: '', label: 'Todos' }, ...TIPOS].map((t) => {
                 const ativo = filtroTipo === t.value
-                const qtd = t.value ? porTipo[t.value] : processos.length
+                const qtd = t.value ? porTipo[t.value] : daVisao.length
                 return (
                   <button
                     key={t.value}
@@ -322,9 +393,16 @@ export function Dashboard({ session }: { session: Session }) {
                 )
               })}
             </div>
-            <div className="w-full sm:w-48">
-              <Select value={filtroStatus} onChange={(v) => setFiltroStatus(v as StatusProcesso | '')} opcoes={STATUS_PROCESSO} vazio="Todos os status" />
-            </div>
+            {visao === 'abertos' && (
+              <div className="w-full sm:w-48">
+                <Select
+                  value={filtroStatus}
+                  onChange={(v) => setFiltroStatus(v as StatusProcesso | '')}
+                  opcoes={STATUS_PROCESSO.filter((o) => o.value !== 'concluido')}
+                  vazio="Pendentes e em andamento"
+                />
+              </div>
+            )}
             <div className="w-full sm:w-48">
               <Select
                 value={filtroParceiro}
@@ -344,9 +422,9 @@ export function Dashboard({ session }: { session: Session }) {
               <thead>
                 <tr className="border-b border-slate-100 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
                   <th className="py-3.5 pr-4 pl-5">Empresa</th>
-                  <th className="px-4 py-3.5">CNPJ</th>
-                  <th className="px-4 py-3.5">Nº Viabilidade / DBE</th>
+                  <th className="px-4 py-3.5">CNPJ / Nº Viabilidade ou DBE</th>
                   <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5">Fase atual</th>
                   <th className="px-4 py-3.5">Início</th>
                   <th className="py-3.5 pr-5 pl-4 text-right">Ações</th>
                 </tr>
@@ -366,10 +444,22 @@ export function Dashboard({ session }: { session: Session }) {
                         <FolderOpen className="h-7 w-7" />
                       </div>
                       <p className="mt-3 font-semibold text-slate-700">
-                        {processos.length === 0 ? 'Nenhum processo cadastrado ainda' : 'Nenhum processo encontrado'}
+                        {processos.length === 0
+                          ? 'Nenhum processo cadastrado ainda'
+                          : daVisao.length === 0
+                            ? visao === 'concluidos'
+                              ? 'Nenhum processo concluído ainda'
+                              : 'Nenhum processo em aberto'
+                            : 'Nenhum processo encontrado'}
                       </p>
                       <p className="mt-1 text-sm text-slate-400">
-                        {processos.length === 0 ? 'Cadastre o primeiro processo para começar a acompanhar.' : 'Tente ajustar a busca ou os filtros.'}
+                        {processos.length === 0
+                          ? 'Cadastre o primeiro processo para começar a acompanhar.'
+                          : daVisao.length === 0
+                            ? visao === 'concluidos'
+                              ? 'Quando um processo for marcado como Concluído, ele aparece aqui.'
+                              : 'Todos os processos estão concluídos. Veja a aba Concluídos.'
+                            : 'Tente ajustar a busca ou os filtros.'}
                       </p>
                       {processos.length === 0 && (
                         <button className="btn-primary mt-4" onClick={() => setEditando('novo')}>
@@ -419,15 +509,15 @@ export function Dashboard({ session }: { session: Session }) {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3.5 font-mono text-xs whitespace-nowrap text-slate-600">{p.cnpj || <span className="text-slate-300">—</span>}</td>
-                        <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">{numeroReferencia(p) ? (
-                            <span className="font-mono text-xs">
-                              {p.tipo === 'baixa' && <span className="mr-1 font-sans text-[0.625rem] font-bold text-rose-500">DBE</span>}
-                              {numeroReferencia(p)}
+                        <td className="px-4 py-3.5 font-mono text-xs whitespace-nowrap text-slate-600">
+                          <div>{p.cnpj || <span className="text-slate-300">CNPJ —</span>}</div>
+                          <div className="mt-1 text-slate-500">
+                            <span className={`mr-1 font-sans text-[0.625rem] font-bold ${p.tipo === 'baixa' ? 'text-rose-500' : 'text-brand-500'}`}>
+                              {p.tipo === 'baixa' ? 'DBE' : 'VIAB.'}
                             </span>
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}</td>
+                            {numeroReferencia(p) || <span className="text-slate-300">—</span>}
+                          </div>
+                        </td>
                         <td className="px-4 py-3.5">
                           <Select
                             value={p.status}
@@ -435,6 +525,9 @@ export function Dashboard({ session }: { session: Session }) {
                             opcoes={STATUS_PROCESSO}
                             className={`rounded-full border py-1.5 pl-3 text-xs font-semibold outline-none transition ${CORES_SELECT[p.status]}`}
                           />
+                        </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <FaseAtual processo={p} />
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">
                           {formatarData(p.data_inicio)}
@@ -463,8 +556,15 @@ export function Dashboard({ session }: { session: Session }) {
                                 <NumeroReferencia processo={p} onSalvar={(campo, valor) => atualizarCampo(p, campo, valor)} />
                                 {etapas.map((a, i) => {
                                   const cor = corEtapa(a, p[a.campo])
+                                  const atual = faseAtual(p)?.campo === a.campo
                                   return (
-                                    <div key={a.campo} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                                    <div
+                                      key={a.campo}
+                                      className={`relative rounded-xl border p-3 ${atual ? 'border-brand-300 bg-brand-50/60 ring-2 ring-brand-200' : 'border-slate-100 bg-slate-50/60'}`}
+                                    >
+                                      {atual && (
+                                        <span className="absolute -top-2 right-3 rounded-full bg-brand-600 px-2 py-0.5 text-[0.625rem] font-bold text-white uppercase">Fase atual</span>
+                                      )}
                                       <div className="mb-2 flex items-center gap-2">
                                         <span
                                           className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.625rem] font-bold text-white ${cor === 'ok' ? 'bg-emerald-500' : cor === 'pendente' ? 'bg-amber-400' : 'bg-sky-500'}`}
@@ -523,9 +623,9 @@ export function Dashboard({ session }: { session: Session }) {
               </tbody>
             </table>
           </div>
-          {!carregando && processos.length > 0 && (
+          {!carregando && daVisao.length > 0 && (
             <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
-              Exibindo {filtrados.length} de {processos.length} processo(s)
+              Exibindo {filtrados.length} de {daVisao.length} processo(s) {visao === 'concluidos' ? 'concluído(s)' : 'em aberto'}
             </div>
           )}
         </div>
