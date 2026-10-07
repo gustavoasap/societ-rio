@@ -85,7 +85,7 @@ function DiasEmAberto({ processo: p }: { processo: Processo }) {
     )
   const cor = dias > 15 ? 'bg-rose-50 text-rose-700 ring-rose-200' : dias > 7 ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-slate-100 text-slate-600 ring-slate-200'
   return (
-    <span className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold tabular-nums ring-1 ring-inset ${cor}`} title="Dias corridos desde o início do processo">
+    <span className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${cor}`} title="Dias corridos desde o início do processo">
       {dias === 0 ? 'Aberto hoje' : `${dias} ${dias === 1 ? 'dia' : 'dias'} em aberto`}
     </span>
   )
@@ -119,11 +119,11 @@ function FaseAtual({ processo: p }: { processo: Processo }) {
   const cor = corEtapa(fase, p[fase.campo])
   return (
     <div className="leading-tight" title={`O processo está na fase "${fase.label}": ${labelDe(fase.opcoes, p[fase.campo])}`}>
-      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+      <div className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
         <span className={`h-2 w-2 shrink-0 rounded-full ${cor === 'pendente' ? 'bg-amber-400' : cor === 'indeferido' ? 'bg-rose-500' : 'bg-sky-500'}`} />
         {nomeFase(fase.label)}
       </div>
-      <div className={`mt-0.5 pl-3.5 text-[0.6875rem] font-medium ${cor === 'pendente' ? 'text-amber-700' : cor === 'indeferido' ? 'text-rose-700' : 'text-sky-700'}`}>{labelDe(fase.opcoes, p[fase.campo])}</div>
+      <div className={`mt-0.5 pl-3.5 text-xs font-medium ${cor === 'pendente' ? 'text-amber-700' : cor === 'indeferido' ? 'text-rose-700' : 'text-sky-700'}`}>{labelDe(fase.opcoes, p[fase.campo])}</div>
     </div>
   )
 }
@@ -451,15 +451,15 @@ export function Dashboard({ session }: { session: Session }) {
 
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[57.5rem] text-sm">
+            <table className="w-full min-w-[50rem] text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-[0.6875rem] font-bold tracking-wider text-slate-400 uppercase">
-                  <th className="py-3.5 pr-4 pl-5">Empresa</th>
-                  <th className="px-4 py-3.5">CNPJ / Nº Viabilidade ou DBE</th>
-                  <th className="px-4 py-3.5">Status</th>
-                  <th className="px-4 py-3.5">Fase atual</th>
-                  <th className="px-4 py-3.5">Início</th>
-                  <th className="py-3.5 pr-5 pl-4 text-right">Ações</th>
+                <tr className="border-b border-slate-100 text-left text-xs font-bold tracking-wider text-slate-400 uppercase">
+                  <th className="py-3.5 pr-3 pl-4">Empresa</th>
+                  <th className="px-3 py-3.5">CNPJ / Nº Viabilidade ou DBE</th>
+                  <th className="px-3 py-3.5">Status</th>
+                  <th className="px-3 py-3.5">Fase atual</th>
+                  <th className="px-3 py-3.5">Início</th>
+                  <th className="py-3.5 pr-4 pl-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -512,7 +512,7 @@ export function Dashboard({ session }: { session: Session }) {
                   return (
                     <Fragment key={p.id}>
                       <tr className={`border-b border-slate-100 transition ${aberto ? 'bg-brand-50/40' : 'hover:bg-slate-50/80'}`}>
-                        <td className="py-3.5 pr-4 pl-5">
+                        <td className="py-3.5 pr-3 pl-4">
                           <div className="flex items-center gap-3">
                             <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${T.cor}`} title={labelDe(TIPOS, p.tipo)}>
                               <T.icone className="h-5 w-5" />
@@ -523,12 +523,12 @@ export function Dashboard({ session }: { session: Session }) {
                                 <Badge cor={p.tipo}>{labelDe(TIPOS, p.tipo)}</Badge>
                               </div>
                               {responsavelLegal(p) && (
-                                <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-600" title="Responsável legal">
+                                <div className="mt-0.5 flex items-center gap-1 text-sm text-slate-600" title="Responsável legal">
                                   <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                                   <span className="truncate">{responsavelLegal(p)}</span>
                                 </div>
                               )}
-                              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs whitespace-nowrap text-slate-400">
+                              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.8125rem] whitespace-nowrap text-slate-400">
                                 <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100" title={`${feitos} de ${etapas.length} etapas concluídas`}>
                                   <div
                                     className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-brand-500 to-cyan-400'}`}
@@ -548,7 +548,7 @@ export function Dashboard({ session }: { session: Session }) {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3.5 font-mono text-sm whitespace-nowrap text-slate-700">
+                        <td className="px-3 py-3.5 font-mono text-sm whitespace-nowrap text-slate-700">
                           <div className="font-semibold">{p.cnpj || <span className="font-normal text-slate-300">CNPJ —</span>}</div>
                           <div className="mt-1 text-slate-600">
                             <span className={`mr-1.5 font-sans text-[0.6875rem] font-bold ${p.tipo === 'baixa' ? 'text-rose-500' : 'text-brand-500'}`}>
@@ -557,24 +557,24 @@ export function Dashboard({ session }: { session: Session }) {
                             {numeroReferencia(p) || <span className="text-slate-300">—</span>}
                           </div>
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-3 py-3.5">
                           <div className="w-fit">
                             <Select
                               value={p.status}
                               onChange={(v) => atualizarCampo(p, 'status', v)}
                               opcoes={STATUS_PROCESSO}
-                              className={`rounded-full border py-1.5 pl-3 text-xs font-semibold outline-none transition ${CORES_SELECT[p.status]}`}
+                              className={`rounded-full border py-1.5 pl-3 text-sm font-semibold outline-none transition ${CORES_SELECT[p.status]}`}
                             />
                           </div>
                         </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap">
+                        <td className="px-3 py-3.5 whitespace-nowrap">
                           <FaseAtual processo={p} />
                         </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap text-slate-600">
+                        <td className="px-3 py-3.5 whitespace-nowrap text-slate-600">
                           {formatarData(p.data_inicio)}
                           <DiasEmAberto processo={p} />
                         </td>
-                        <td className="py-3.5 pr-5 pl-4">
+                        <td className="py-3.5 pr-4 pl-3">
                           <div className="flex items-center justify-end gap-1">
                             <button className={`btn-sm btn ${aberto ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`} onClick={() => alternar(p.id)}>
                               {aberto ? 'Recolher' : 'Expandir'}
