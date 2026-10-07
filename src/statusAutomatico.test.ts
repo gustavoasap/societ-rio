@@ -13,12 +13,17 @@ const tudoConcluido = (tipo: TipoProcesso) =>
 describe('statusAutomatico', () => {
   it('mantém o status enquanto nada foi iniciado', () => {
     expect(statusAutomatico(processo('abertura'))).toBe('pendente')
-    expect(statusAutomatico(processo('abertura', { status: 'aguardando_caucao' }))).toBe('aguardando_caucao')
   })
 
   it('passa para Em andamento ao informar o número da viabilidade', () => {
     expect(statusAutomatico(processo('abertura', { numero_viabilidade: 'SPN2633893093' }))).toBe('andamento')
-    expect(statusAutomatico(processo('abertura', { status: 'aguardando_caucao', numero_viabilidade: 'SPN2633893093' }))).toBe('andamento')
+  })
+
+  it('"Ainda não pagou o caução" nunca muda sozinho', () => {
+    const caucao = { status: 'aguardando_caucao' as const }
+    expect(statusAutomatico(processo('abertura', { ...caucao, numero_viabilidade: 'SPN2633893093' }))).toBe('aguardando_caucao')
+    expect(statusAutomatico(processo('abertura', { ...caucao, status_dbe: 'em_analise' }))).toBe('aguardando_caucao')
+    expect(statusAutomatico(processo('baixa', { ...caucao, ...tudoConcluido('baixa') }))).toBe('aguardando_caucao')
   })
 
   it('na baixa, o número DBE também inicia o processo', () => {

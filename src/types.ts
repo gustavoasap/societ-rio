@@ -310,8 +310,10 @@ export function rotuloSocio(indice: number) {
  * - todas as etapas na opção final → Concluído
  * - número da viabilidade/DBE informado ou alguma etapa iniciada → Em andamento
  * Usado só quando o número ou uma etapa muda; o status pode ser trocado à mão depois.
+ * "Ainda não pagou o caução" nunca muda sozinho: só sai dele à mão (para Pendente de Início).
  */
 export function statusAutomatico(p: Processo): StatusProcesso {
+  if (p.status === 'aguardando_caucao') return 'aguardando_caucao'
   const etapas = ACOMPANHAMENTO_POR_TIPO[p.tipo]
   if (etapas.every((e) => p[e.campo] === e.concluido)) return 'concluido'
   const iniciou = Boolean(numeroReferencia(p)) || etapas.some((e) => p[e.campo] !== e.opcoes[0].value)
