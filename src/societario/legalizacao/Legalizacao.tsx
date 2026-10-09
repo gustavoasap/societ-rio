@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { AlertTriangle, BadgeCheck, Building2, CalendarX2, FileSignature, House, LogOut, MapPin, Pencil, Receipt, Search, X } from 'lucide-react'
+import { AlertTriangle, Building2, CalendarX2, FileSignature, House, LogOut, MapPin, Pencil, Receipt, Search, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Link } from '../../lib/rotas'
 import { comRetentativa } from '../../lib/retentar'
 import { formatarData, mascaraCnpj } from '../../lib/format'
-import { Badge } from '../../components/ui'
+import { Badge, Select } from '../../components/ui'
 import { LegalizacaoForm } from './LegalizacaoForm'
 import {
   STATUS_IM,
@@ -13,13 +13,25 @@ import {
   STATUS_PROCURACAO,
   STATUS_TFE,
   corDe,
-  labelDe,
   legalizacaoVazia,
   situacaoValidade,
   type ClienteBase,
   type Legalizacao as RegistroLegalizacao,
   type Tfe,
 } from './tipos'
+
+// Cores das caixas de seleção de status na lista
+const COR_SELECT: Record<string, string> = {
+  pendente: 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300',
+  andamento: 'border-brand-200 bg-brand-50 text-brand-700 hover:border-brand-300',
+  ok: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300',
+  vencida: 'border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300',
+  atrasado: 'border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300',
+  neutro: 'border-slate-200 bg-slate-50 text-slate-600',
+}
+const classeSelect = (cor: string) => `rounded-full border py-1 pl-2.5 text-[0.8125rem] font-semibold outline-none transition ${COR_SELECT[cor] ?? COR_SELECT.neutro}`
+
+type Campo = 'procuracao_status' | 'licenciamento_status' | 'im_status'
 
 type Filtro = '' | 'procuracao' | 'licenca_alerta' | 'im_pendente' | 'tfe_atrasada' | 'sem_ie'
 
@@ -37,7 +49,7 @@ export function Legalizacao({ session }: { session: Session }) {
   const carregar = useCallback(async () => {
     const [cli, leg, tf] = await comRetentativa(() =>
       Promise.all([
-        supabase.from('adm_clientes').select('id, codigo, cnpj, razao_social, nome_fantasia, status, data_abertura').order('razao_social'),
+        supabase.from('adm_clientes').select('id, codigo, cnpj, razao_social, nome_fantasia, status, data_abertura').order('codigo'),
         supabase.from('soc_legalizacao').select('*'),
         supabase.from('soc_legalizacao_tfe').select('*'),
       ]),
@@ -52,6 +64,25 @@ export function Legalizacao({ session }: { session: Session }) {
   useEffect(() => {
     carregar()
   }, [carregar])
+
+  // Mudança de status direto na lista: grava só o campo alterado (cria o registro se ainda não existir)
+  async function salvarCampo(clienteId: string, campo: Campo, valor: string) {
+    setRegistros((m) => new Map(m).set(clienteId, { ...(m.get(clienteId) ?? legalizacaoVazia(clienteId)), [campo]: valor }))
+    const { error } = await supabase.from('soc_legalizacao').upsert({ cliente_id: clienteId, [campo]: valor })
+    if (error) {
+      setErro(error.message)
+      carregar()
+    }
+  }
+
+  async function salvarTfe(clienteId: string, ano: number, status: Tfe['status']) {
+    setTfes((lista) => [...lista.filter((t) => !(t.cliente_id === clienteId && t.ano === ano)), { cliente_id: clienteId, ano, status }])
+    const { error } = await supabase.from('soc_legalizacao_tfe').upsert({ cliente_id: clienteId, ano, status })
+    if (error) {
+      setErro(error.message)
+      carregar()
+    }
+  }
 
   const anoAtual = new Date().getFullYear()
   const registroDe = useCallback((id: string) => registros.get(id) ?? legalizacaoVazia(id), [registros])
@@ -173,29 +204,30 @@ export function Legalizacao({ session }: { session: Session }) {
 
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[62rem] text-sm">
+            <table className="w-full min-w-[64rem] text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs font-bold tracking-wider text-slate-400 uppercase">
-                  <th className="py-3.5 pr-3 pl-4">Empresa</th>
-                  <th className="px-3 py-3.5">Procuração</th>
-                  <th className="px-3 py-3.5">Licenciamento</th>
-                  <th className="px-3 py-3.5">Inscrição Estadual</th>
-                  <th className="px-3 py-3.5">Inscrição Municipal</th>
-                  <th className="px-3 py-3.5">TFE / TFLF {anoAtual}</th>
-                  <th className="py-3.5 pr-4 pl-3 text-right">Ações</th>
+                  <th className="py-3.5 pr-2 pl-4">Cód.</th>
+                  <th className="px-2 py-3.5">Empresa</th>
+                  <th className="px-2 py-3.5">Procuração</th>
+                  <th className="px-2 py-3.5">Licenciamento</th>
+                  <th className="px-2 py-3.5">Inscrição Estadual</th>
+                  <th className="px-2 py-3.5">Inscrição Municipal</th>
+                  <th className="px-2 py-3.5">TFE / TFLF {anoAtual}</th>
+                  <th className="py-3.5 pr-4 pl-2 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {carregando && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-16 text-center text-slate-400">
+                    <td colSpan={8} className="px-4 py-16 text-center text-slate-400">
                       Carregando empresas...
                     </td>
                   </tr>
                 )}
                 {!carregando && filtrados.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-16 text-center text-slate-500">
+                    <td colSpan={8} className="px-4 py-16 text-center text-slate-500">
                       {clientes.length === 0 ? 'Nenhuma empresa na Base de Clientes ainda. Cadastre no Administrativo › Base de Clientes.' : 'Nenhuma empresa encontrada com esses filtros.'}
                     </td>
                   </tr>
@@ -208,34 +240,46 @@ export function Legalizacao({ session }: { session: Session }) {
                   const atrasadas = doCliente.filter((t) => t.status === 'pagamento_atrasado').length
                   return (
                     <tr key={c.id} className="border-b border-slate-100 transition hover:bg-slate-50/80">
-                      <td className="py-3.5 pr-3 pl-4">
+                      <td className="py-3.5 pr-2 pl-4 font-mono text-sm font-bold text-slate-500 tabular-nums">{String(c.codigo).padStart(3, '0')}</td>
+                      <td className="min-w-[13rem] px-2 py-3.5">
                         <div className="flex items-center gap-3">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-                            <BadgeCheck className="h-5 w-5" />
-                          </span>
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-bold text-slate-800">{c.razao_social}</span>
                               {c.status === 'encerrado' && <Badge cor="neutro">Encerrado</Badge>}
                             </div>
-                            <div className="mt-0.5 font-mono text-[0.8125rem] text-slate-500">
-                              {c.cnpj ? mascaraCnpj(c.cnpj) : 'CNPJ não informado'} <span className="font-sans text-slate-400">· cód. {c.codigo}</span>
+                            <div className="mt-0.5 font-mono text-[0.8125rem] whitespace-nowrap text-slate-500">
+                              {c.cnpj ? mascaraCnpj(c.cnpj) : 'CNPJ não informado'}
                             </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3.5">
-                        <Badge cor={corDe(STATUS_PROCURACAO, r.procuracao_status)}>{labelDe(STATUS_PROCURACAO, r.procuracao_status)}</Badge>
+                      <td className="px-2 py-3.5">
+                        <div className="w-fit">
+                          <Select
+                            value={r.procuracao_status}
+                            onChange={(v) => salvarCampo(c.id, 'procuracao_status', v)}
+                            opcoes={STATUS_PROCURACAO}
+                            className={classeSelect(corDe(STATUS_PROCURACAO, r.procuracao_status))}
+                          />
+                        </div>
                       </td>
-                      <td className="px-3 py-3.5">
-                        <Badge cor={corDe(STATUS_LICENCIAMENTO, r.licenciamento_status)}>{labelDe(STATUS_LICENCIAMENTO, r.licenciamento_status)}</Badge>
+                      <td className="px-2 py-3.5">
+                        <div className="w-fit">
+                          <Select
+                            value={r.licenciamento_status}
+                            onChange={(v) => salvarCampo(c.id, 'licenciamento_status', v)}
+                            opcoes={STATUS_LICENCIAMENTO}
+                            className={classeSelect(corDe(STATUS_LICENCIAMENTO, r.licenciamento_status))}
+                          />
+                        </div>
                         <div className={`mt-1 text-[0.8125rem] ${val === 'vencida' ? 'font-bold text-rose-600' : val === 'vence_em_breve' ? 'font-bold text-amber-600' : 'text-slate-500'}`}>
                           {r.licenciamento_validade ? `Validade ${formatarData(r.licenciamento_validade)}` : 'Sem validade informada'}
                           {val === 'vencida' && ' · vencida'}
                           {val === 'vence_em_breve' && ' · vence em breve'}
                         </div>
                       </td>
-                      <td className="px-3 py-3.5">
+                      <td className="px-2 py-3.5">
                         {r.ie_numero || r.ie_uf ? (
                           <>
                             <div className="font-mono text-sm font-semibold text-slate-700">{r.ie_numero || '—'}</div>
@@ -245,14 +289,28 @@ export function Legalizacao({ session }: { session: Session }) {
                           <span className="text-slate-300">Não informada</span>
                         )}
                       </td>
-                      <td className="px-3 py-3.5">
-                        <Badge cor={corDe(STATUS_IM, r.im_status)}>{labelDe(STATUS_IM, r.im_status)}</Badge>
+                      <td className="px-2 py-3.5">
+                        <div className="w-fit">
+                          <Select
+                            value={r.im_status}
+                            onChange={(v) => salvarCampo(c.id, 'im_status', v)}
+                            opcoes={STATUS_IM}
+                            className={classeSelect(corDe(STATUS_IM, r.im_status))}
+                          />
+                        </div>
                         <div className="mt-1 text-[0.8125rem] text-slate-500">
                           {[r.im_municipio && `${r.im_municipio}${r.ie_uf ? `/${r.ie_uf}` : ''}`, r.im_numero && `nº ${r.im_numero}`].filter(Boolean).join(' · ') || '—'}
                         </div>
                       </td>
-                      <td className="px-3 py-3.5">
-                        <Badge cor={corDe(STATUS_TFE, tfeAtual)}>{labelDe(STATUS_TFE, tfeAtual)}</Badge>
+                      <td className="px-2 py-3.5">
+                        <div className="w-fit">
+                          <Select
+                            value={tfeAtual}
+                            onChange={(v) => salvarTfe(c.id, anoAtual, v as Tfe['status'])}
+                            opcoes={STATUS_TFE}
+                            className={classeSelect(corDe(STATUS_TFE, tfeAtual))}
+                          />
+                        </div>
                         {atrasadas > 0 && (
                           <div className="mt-1 flex items-center gap-1 text-[0.8125rem] font-bold text-rose-600">
                             <AlertTriangle className="h-3.5 w-3.5" />
@@ -260,10 +318,10 @@ export function Legalizacao({ session }: { session: Session }) {
                           </div>
                         )}
                       </td>
-                      <td className="py-3.5 pr-4 pl-3 text-right">
-                        <button className="btn-sm btn bg-brand-50 text-brand-700 hover:bg-brand-100" onClick={() => setEditando(c)}>
+                      <td className="py-3.5 pr-4 pl-2 text-right">
+                        <button className="btn-sm btn bg-brand-50 text-brand-700 hover:bg-brand-100" onClick={() => setEditando(c)} title="Abrir a ficha da empresa">
                           <Pencil className="h-3.5 w-3.5" />
-                          Abrir
+                          <span className="hidden min-[1700px]:inline">Abrir</span>
                         </button>
                       </td>
                     </tr>
