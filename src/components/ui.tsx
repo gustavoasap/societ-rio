@@ -152,6 +152,9 @@ export function Modal({
 export const CORES_BADGE: Record<string, { badge: string; ponto: string }> = {
   aguardando_caucao: { badge: 'bg-rose-50 text-rose-700 ring-rose-200', ponto: 'bg-rose-500' },
   indeferido: { badge: 'bg-rose-50 text-rose-700 ring-rose-200', ponto: 'bg-rose-500' },
+  atrasado: { badge: 'bg-rose-50 text-rose-700 ring-rose-200', ponto: 'bg-rose-500' },
+  vencida: { badge: 'bg-rose-50 text-rose-700 ring-rose-200', ponto: 'bg-rose-500' },
+  vence_em_breve: { badge: 'bg-amber-50 text-amber-700 ring-amber-200', ponto: 'bg-amber-500' },
   pendente: { badge: 'bg-amber-50 text-amber-700 ring-amber-200', ponto: 'bg-amber-500' },
   andamento: { badge: 'bg-brand-50 text-brand-700 ring-brand-200', ponto: 'bg-brand-500' },
   analise: { badge: 'bg-sky-50 text-sky-700 ring-sky-200', ponto: 'bg-sky-500' },

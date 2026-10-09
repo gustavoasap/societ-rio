@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { Link, useRota } from '../lib/rotas'
 import { Dashboard } from '../components/Dashboard'
 import { ObjetoSocial } from '../societario/ObjetoSocial'
+import { Legalizacao } from '../societario/legalizacao/Legalizacao'
 import { Clientes } from '../administrativo/Clientes'
 import { Tributario } from '../tributario/components/Tributario'
 import { Admin } from './Admin'
@@ -18,6 +19,7 @@ import { usePortal } from './usePortal'
 const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> = {
   '/societario/processos': Dashboard,
   '/societario/objeto-social': ObjetoSocial,
+  '/societario/legalizacao': Legalizacao,
   '/administrativo/clientes': Clientes,
   '/fiscal/reforma-tributaria': Tributario,
 }
