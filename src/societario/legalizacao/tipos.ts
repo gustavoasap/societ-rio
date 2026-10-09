@@ -1,3 +1,4 @@
+export type StatusProcuracao = 'pendente' | 'ok' | 'vencida'
 export type StatusLicenciamento = 'pendente' | 'andamento' | 'concluido'
 export type StatusIM = 'pendente_liberacao' | 'andamento' | 'liberada'
 export type StatusTfe = 'pendente_liberacao' | 'enviada_pagamento' | 'pagamento_atrasado' | 'pagamento_concluido'
@@ -14,6 +15,7 @@ export interface ClienteBase {
 
 export interface Legalizacao {
   cliente_id: string
+  procuracao_status: StatusProcuracao
   licenciamento_status: StatusLicenciamento
   licenciamento_validade: string | null
   ie_uf: string | null
@@ -31,6 +33,12 @@ export interface Tfe {
 }
 
 type Opcao<T extends string> = { value: T; label: string; cor: string }
+
+export const STATUS_PROCURACAO: Opcao<StatusProcuracao>[] = [
+  { value: 'pendente', label: 'Pendente', cor: 'pendente' },
+  { value: 'ok', label: 'OK', cor: 'ok' },
+  { value: 'vencida', label: 'Vencida', cor: 'vencida' },
+]
 
 export const STATUS_LICENCIAMENTO: Opcao<StatusLicenciamento>[] = [
   { value: 'pendente', label: 'Pendente', cor: 'pendente' },
@@ -83,6 +91,7 @@ export const UFS: { sigla: string; nome: string }[] = [
 
 export const legalizacaoVazia = (cliente_id: string): Legalizacao => ({
   cliente_id,
+  procuracao_status: 'pendente',
   licenciamento_status: 'pendente',
   licenciamento_validade: null,
   ie_uf: null,

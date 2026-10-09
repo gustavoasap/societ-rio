@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BadgeCheck, CalendarClock, FileText, Landmark, MapPin, Receipt, Save, StickyNote } from 'lucide-react'
+import { BadgeCheck, CalendarClock, FileSignature, FileText, Landmark, MapPin, Receipt, Save, StickyNote } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { formatarData, mascaraCnpj } from '../../lib/format'
 import { Badge, Field, Modal, Section, Select } from '../../components/ui'
@@ -7,6 +7,7 @@ import { Documentos } from './Documentos'
 import {
   STATUS_IM,
   STATUS_LICENCIAMENTO,
+  STATUS_PROCURACAO,
   STATUS_TFE,
   UFS,
   anosTfe,
@@ -106,6 +107,14 @@ export function LegalizacaoForm({
         </>
       }
     >
+      <Section icone={FileSignature} cor="violet" title="Procuração">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Status">
+            <Select value={l.procuracao_status} onChange={(v) => set('procuracao_status', v as Legalizacao['procuracao_status'])} opcoes={STATUS_PROCURACAO} />
+          </Field>
+        </div>
+      </Section>
+
       <Section icone={BadgeCheck} cor="emerald" title="Licenciamento">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Status">

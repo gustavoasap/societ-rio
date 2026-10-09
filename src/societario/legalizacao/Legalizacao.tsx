@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { AlertTriangle, BadgeCheck, Building2, CalendarX2, House, LogOut, MapPin, Pencil, Receipt, Search, X } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, Building2, CalendarX2, FileSignature, House, LogOut, MapPin, Pencil, Receipt, Search, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Link } from '../../lib/rotas'
 import { comRetentativa } from '../../lib/retentar'
@@ -10,6 +10,7 @@ import { LegalizacaoForm } from './LegalizacaoForm'
 import {
   STATUS_IM,
   STATUS_LICENCIAMENTO,
+  STATUS_PROCURACAO,
   STATUS_TFE,
   corDe,
   labelDe,
@@ -20,7 +21,7 @@ import {
   type Tfe,
 } from './tipos'
 
-type Filtro = '' | 'licenca_alerta' | 'im_pendente' | 'tfe_atrasada' | 'sem_ie'
+type Filtro = '' | 'procuracao' | 'licenca_alerta' | 'im_pendente' | 'tfe_atrasada' | 'sem_ie'
 
 export function Legalizacao({ session }: { session: Session }) {
   const [clientes, setClientes] = useState<ClienteBase[]>([])
@@ -59,11 +60,12 @@ export function Legalizacao({ session }: { session: Session }) {
   const ativos = useMemo(() => clientes.filter((c) => mostrarEncerrados || c.status !== 'encerrado'), [clientes, mostrarEncerrados])
 
   const alertas = useMemo(() => {
+    const procuracao = ativos.filter((c) => registroDe(c.id).procuracao_status !== 'ok').length
     const licenca = ativos.filter((c) => ['vencida', 'vence_em_breve'].includes(situacaoValidade(registroDe(c.id).licenciamento_validade))).length
     const im = ativos.filter((c) => registroDe(c.id).im_status !== 'liberada').length
     const tfe = ativos.filter((c) => tfesDe(c.id).some((t) => t.status === 'pagamento_atrasado')).length
     const semIe = ativos.filter((c) => !registroDe(c.id).ie_numero).length
-    return { licenca, im, tfe, semIe }
+    return { procuracao, licenca, im, tfe, semIe }
   }, [ativos, registroDe, tfesDe])
 
   const filtrados = useMemo(() => {
@@ -71,6 +73,7 @@ export function Legalizacao({ session }: { session: Session }) {
     const digitos = termo.replace(/\D/g, '')
     return ativos.filter((c) => {
       const r = registroDe(c.id)
+      if (filtro === 'procuracao' && r.procuracao_status === 'ok') return false
       if (filtro === 'licenca_alerta' && !['vencida', 'vence_em_breve'].includes(situacaoValidade(r.licenciamento_validade))) return false
       if (filtro === 'im_pendente' && r.im_status === 'liberada') return false
       if (filtro === 'tfe_atrasada' && !tfesDe(c.id).some((t) => t.status === 'pagamento_atrasado')) return false
@@ -82,6 +85,7 @@ export function Legalizacao({ session }: { session: Session }) {
   }, [ativos, busca, filtro, registroDe, tfesDe])
 
   const cartoes: { id: Filtro; titulo: string; qtd: number; icone: typeof AlertTriangle; cor: string }[] = [
+    { id: 'procuracao', titulo: 'Procuração pendente ou vencida', qtd: alertas.procuracao, icone: FileSignature, cor: 'from-fuchsia-500 to-purple-600' },
     { id: 'licenca_alerta', titulo: 'Licença vencida ou vencendo em 30 dias', qtd: alertas.licenca, icone: CalendarX2, cor: 'from-rose-400 to-pink-600' },
     { id: 'im_pendente', titulo: 'Inscrição municipal não liberada', qtd: alertas.im, icone: MapPin, cor: 'from-violet-500 to-indigo-600' },
     { id: 'tfe_atrasada', titulo: 'TFE/TFLF com pagamento atrasado', qtd: alertas.tfe, icone: Receipt, cor: 'from-amber-400 to-orange-500' },
@@ -119,12 +123,12 @@ export function Legalizacao({ session }: { session: Session }) {
             · Controle Legalização
           </p>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Controle Legalização</h1>
-          <p className="mt-1 text-sm text-white/60">Licenciamento, inscrições estadual e municipal e TFE/TFLF das empresas da Base de Clientes.</p>
+          <p className="mt-1 text-sm text-white/60">Procuração, licenciamento, inscrições estadual e municipal e TFE/TFLF das empresas da Base de Clientes.</p>
         </div>
       </div>
 
       <main className="relative -mt-12 w-full max-w-none space-y-5 pb-10 px-3 sm:px-4 md:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {cartoes.map((c) => {
             const ativo = filtro === c.id
             return (
@@ -169,10 +173,11 @@ export function Legalizacao({ session }: { session: Session }) {
 
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[56rem] text-sm">
+            <table className="w-full min-w-[62rem] text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs font-bold tracking-wider text-slate-400 uppercase">
                   <th className="py-3.5 pr-3 pl-4">Empresa</th>
+                  <th className="px-3 py-3.5">Procuração</th>
                   <th className="px-3 py-3.5">Licenciamento</th>
                   <th className="px-3 py-3.5">Inscrição Estadual</th>
                   <th className="px-3 py-3.5">Inscrição Municipal</th>
@@ -183,14 +188,14 @@ export function Legalizacao({ session }: { session: Session }) {
               <tbody>
                 {carregando && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center text-slate-400">
+                    <td colSpan={7} className="px-4 py-16 text-center text-slate-400">
                       Carregando empresas...
                     </td>
                   </tr>
                 )}
                 {!carregando && filtrados.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-16 text-center text-slate-500">
                       {clientes.length === 0 ? 'Nenhuma empresa na Base de Clientes ainda. Cadastre no Administrativo › Base de Clientes.' : 'Nenhuma empresa encontrada com esses filtros.'}
                     </td>
                   </tr>
@@ -218,6 +223,9 @@ export function Legalizacao({ session }: { session: Session }) {
                             </div>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <Badge cor={corDe(STATUS_PROCURACAO, r.procuracao_status)}>{labelDe(STATUS_PROCURACAO, r.procuracao_status)}</Badge>
                       </td>
                       <td className="px-3 py-3.5">
                         <Badge cor={corDe(STATUS_LICENCIAMENTO, r.licenciamento_status)}>{labelDe(STATUS_LICENCIAMENTO, r.licenciamento_status)}</Badge>
