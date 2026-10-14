@@ -237,3 +237,34 @@ export function faturasPorMes(cartoes: Conta[], lancamentos: Lancamento[], meses
     return { mes, porCartao: m, total: somar(fs.map((f) => f.total)), aPagar: somar(fs.map((f) => Math.max(0, somar([f.total, -f.pago])))) }
   })
 }
+
+// ---------------------------------------------------------------- agrupamento da fatura
+
+export type Agrupamento = 'data' | 'categoria' | 'pessoa' | 'natureza'
+export type Ordem = 'data' | 'valor'
+
+export interface GrupoItens {
+  /** id da categoria/pessoa/natureza ('' = sem categoria / eu) */
+  chave: string
+  itens: Lancamento[]
+  total: number
+}
+
+const valorNaFatura = (l: Lancamento) => (l.tipo === 'receita' ? -l.valor : l.valor)
+
+/**
+ * Itens da fatura agrupados (por categoria, pessoa ou classificação) e ordenados.
+ * Grupos do maior para o menor total; dentro do grupo, por data ou por valor.
+ * "data" devolve um único grupo com tudo.
+ */
+export function agruparItens(itens: Lancamento[], por: Agrupamento, ordem: Ordem, categorias: Map<string, Categoria>): GrupoItens[] {
+  const ordenar = (ls: Lancamento[]) =>
+    [...ls].sort((a, b) => (ordem === 'valor' ? valorNaFatura(b) - valorNaFatura(a) : 0) || a.data.localeCompare(b.data) || a.descricao.localeCompare(b.descricao))
+  if (por === 'data') return [{ chave: '', itens: ordenar(itens), total: somar(itens.map(valorNaFatura)) }]
+  const chave = (l: Lancamento) => (por === 'categoria' ? (l.categoria_id ?? '') : por === 'pessoa' ? (l.pessoa_id ?? '') : naturezaDe(l, categorias))
+  const mapa = new Map<string, Lancamento[]>()
+  for (const l of itens) mapa.set(chave(l), [...(mapa.get(chave(l)) ?? []), l])
+  return [...mapa.entries()]
+    .map(([k, ls]) => ({ chave: k, itens: ordenar(ls), total: somar(ls.map(valorNaFatura)) }))
+    .sort((a, b) => b.total - a.total || a.chave.localeCompare(b.chave))
+}

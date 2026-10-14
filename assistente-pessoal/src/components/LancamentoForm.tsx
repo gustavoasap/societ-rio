@@ -1,12 +1,12 @@
-import { useState, type FormEvent } from 'react'
-import { CreditCard, Plus, Repeat, Trash2 } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
+import { CalendarX, CreditCard, Plus, Repeat, Trash2 } from 'lucide-react'
 import { useApp, type InicialLancamento } from '../contexto'
 import { hoje, type ModoDiaUtil } from '../lib/datas'
-import { atualizarDaquiEmDiante, excluir, excluirDaquiEmDiante, gerarRecorrencias, inserirVarios, salvar } from '../lib/dados'
+import { atualizarDaquiEmDiante, avisarMudanca, excluir, excluirDaquiEmDiante, gerarRecorrencias, inserirVarios, salvar } from '../lib/dados'
 import { datasDaFatura, faturaDe, gerarParcelas } from '../lib/financas'
 import { dataBR, dataValida, mesAbreviado, moeda } from '../lib/formato'
 import { supabase } from '../lib/supabase'
-import { NATUREZAS, rotuloDe, type Lancamento, type Natureza, type TipoLancamento } from '../tipos'
+import { NATUREZAS, rotuloDe, type Lancamento, type Natureza, type Recorrencia, type TipoLancamento } from '../tipos'
 import { CampoDia } from './CampoDia'
 import { CategoriaForm } from './CategoriaForm'
 import { SeletorPessoa } from './SeletorPessoa'
@@ -45,6 +45,23 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [novaCat, setNovaCat] = useState(false)
+  // editando um mês de uma recorrência: dá para definir até quando ela vai
+  const [rec, setRec] = useState<Pick<Recorrencia, 'id' | 'inicio' | 'fim' | 'intervalo_meses'> | null>(null)
+  const [fimRec, setFimRec] = useState('')
+  const recId = edicao?.recorrencia_id
+  useEffect(() => {
+    if (!recId) return
+    supabase
+      .from('pes_recorrencias')
+      .select('id, inicio, fim, intervalo_meses')
+      .eq('id', recId)
+      .maybeSingle()
+      .then(({ data: r }) => {
+        if (!r) return
+        setRec(r)
+        setFimRec(r.fim ?? '')
+      })
+  }, [recId])
 
   const conta = contas.find((c) => c.id === contaId)
   const ehCartao = conta?.tipo === 'cartao'
@@ -68,6 +85,9 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
     const desc = descricao.trim() || (tipo === 'transferencia' ? 'Transferência' : (cat?.nome ?? ''))
     if (!desc) return setErro('Informe uma descrição.')
     if (repeticao === 'recorrente' && (!diaRec || diaRec < 1 || diaRec > (modoRec ? 23 : 31))) return setErro(modoRec ? 'Informe qual dia útil (de 1 a 23).' : 'Informe o dia do mês.')
+    const mudouFim = !!rec && fimRec !== (rec.fim ?? '')
+    if (mudouFim && fimRec && !dataValida(fimRec)) return setErro('Informe a data completa do fim da repetição.')
+    if (mudouFim && fimRec && fimRec < rec!.inicio) return setErro(`O fim não pode ser antes do início da repetição (${dataBR(rec!.inicio)}).`)
     if (repeticao === 'parcelado' && (totalParcelas < 2 || parcelaAtual < 1 || parcelaAtual > totalParcelas)) return setErro('Confira a parcela atual e o total de parcelas.')
 
     const transf = tipo === 'transferencia'
@@ -104,6 +124,17 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
           await atualizarDaquiEmDiante(edicao, { ...comum, descricao: desc, valor })
           await salvar('pes_lancamentos', edicao.id, { data, pago: pagoFinal })
         } else await salvar('pes_lancamentos', edicao.id, { ...comum, descricao: desc, valor, data, pago: pagoFinal })
+        if (mudouFim && rec) {
+          const r = await supabase.from('pes_recorrencias').update({ fim: fimRec || null, ativa: true }).eq('id', rec.id)
+          if (r.error) throw new Error(r.error.message)
+          if (fimRec) {
+            // os meses depois do fim deixam de existir
+            const d = await supabase.from('pes_lancamentos').delete().eq('recorrencia_id', rec.id).gt('data', fimRec)
+            if (d.error) throw new Error(d.error.message)
+          }
+          await gerarRecorrencias()
+          avisarMudanca()
+        }
       } else if (repeticao === 'recorrente' && !transf) {
         await salvar('pes_recorrencias', null, {
           tipo,
@@ -240,6 +271,31 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
               <input className="input" type="date" value={data} onChange={(e) => mudarData(e.target.value)} required />
             </Campo>
           </div>
+
+          {rec && (
+            <div className="space-y-2 rounded-xl bg-azul-50 p-3">
+              <p className="flex items-start gap-2 text-xs text-azul-900">
+                <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Despesa que se repete {rec.intervalo_meses === 12 ? 'todo ano' : rec.intervalo_meses > 1 ? `a cada ${rec.intervalo_meses} meses` : 'todo mês'}, desde {dataBR(rec.inicio)}.{' '}
+                  {rec.fim ? `Termina em ${dataBR(rec.fim)}.` : 'Sem data para terminar.'}
+                </span>
+              </p>
+              <div className="grid grid-cols-2 items-end gap-3">
+                <Campo label="Termina em (vazio = sem fim)">
+                  <input className="input" type="date" value={fimRec} min={rec.inicio} onChange={(e) => setFimRec(e.target.value)} />
+                </Campo>
+                <button type="button" className="btn-secondary btn-sm mb-1.5" onClick={() => setFimRec(edicao!.data)}>
+                  <CalendarX className="h-3.5 w-3.5" /> Encerrar neste mês
+                </button>
+              </div>
+              {rec && fimRec !== (rec.fim ?? '') && (
+                <p className="text-xs font-semibold text-azul-900">
+                  {fimRec && dataValida(fimRec) ? `Ao salvar, os lançamentos depois de ${dataBR(fimRec)} serão apagados e não serão mais criados.` : !fimRec ? 'Ao salvar, a repetição volta a não ter fim.' : 'Informe a data completa.'}
+                </p>
+              )}
+            </div>
+          )}
 
           {repeticao === 'parcelado' && (
             <div className="space-y-3 rounded-xl bg-azul-50 p-3">
