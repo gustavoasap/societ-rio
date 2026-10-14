@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CalendarDays, CircleCheck, CreditCard, Pencil, Plus, Wallet } from 'lucide-react'
-import { ItensDaFatura } from '../components/ItensDaFatura'
+import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Cabecalho, Carregando, Erro, Progresso, Vazio } from '../components/ui'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
@@ -157,11 +157,15 @@ function CartaoBloco({
           {f && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
               <div className="min-w-0">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-800 first-letter:uppercase">Fatura de {mesPorExtenso(f.mes)}</h3>
                   {status && <span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold ${status.cls}`}>{status.rotulo}</span>}
                 </div>
-                <ItensDaFatura itens={f.itens} />
+                <div className="divide-y divide-slate-100">
+                  {f.itens.map((l) => (
+                    <LinhaLancamento key={l.id} l={l} mostrarData />
+                  ))}
+                </div>
               </div>
               <aside className="space-y-3 rounded-2xl bg-slate-50 p-4 text-sm">
                 <div>
