@@ -69,6 +69,12 @@ export interface Plano {
   provisaoAnuais: number
   rendaMinima: number
   rendaIdeal: number
+  /** renda para cobrir todas as despesas com a margem de folga escolhida */
+  rendaNecessaria: number
+  /** idem, contando também o que deve ser guardado (investimentos + metas) */
+  rendaNecessariaComGuardar: number
+  /** folga que a renda atual dá sobre as despesas (0,25 = 25%); null sem despesas */
+  folgaAtual: number | null
   reserva: { alvo: number; confortavel: number; atual: number; falta: number; aporte: number; meses: number }
   guardar: number
   investir: number
@@ -179,6 +185,9 @@ export function montarPlano(o: {
     provisaoAnuais,
     rendaMinima: custoEssencial,
     rendaIdeal: pct < 1 ? Math.ceil(((custoTotal + metasTotal) / (1 - pct)) * 100) / 100 : custoTotal,
+    rendaNecessaria: Math.ceil(custoTotal * (1 + o.config.margem_folga / 100) * 100) / 100,
+    rendaNecessariaComGuardar: Math.ceil(somar([custoTotal, guardar, metasTotal]) * (1 + o.config.margem_folga / 100) * 100) / 100,
+    folgaAtual: custoTotal > 0 ? somar([renda.total, -custoTotal]) / custoTotal : null,
     reserva: {
       alvo,
       confortavel,

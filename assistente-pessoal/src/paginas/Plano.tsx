@@ -49,6 +49,16 @@ export function Plano() {
         <Grande rotulo="Renda ideal" valor={plano.rendaIdeal} sub={`Manter o padrão + metas + investir ${config.pct_investimento}%`} icone={<Sparkles className="h-4 w-4 text-amber-500" />} />
       </div>
 
+      <RendaNecessaria
+        despesas={plano.custoTotal}
+        guardar={somar([plano.guardar, plano.metasTotal])}
+        renda={plano.renda.total}
+        margem={config.margem_folga}
+        necessaria={plano.rendaNecessaria}
+        comGuardar={plano.rendaNecessariaComGuardar}
+        folgaAtual={plano.folgaAtual}
+      />
+
       {/* ------------------------------------------------ separar todo mês */}
       <section className="cartao">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
@@ -326,5 +336,111 @@ function Aviso({ tom, icone, children }: { tom: 'azul' | 'amarelo'; icone: React
       <span className="mt-0.5 shrink-0">{icone}</span>
       <span>{children}</span>
     </div>
+  )
+}
+
+/** Quanto preciso ganhar por mês para cobrir todas as despesas com a folga que eu escolher. */
+function RendaNecessaria({
+  despesas,
+  guardar,
+  renda,
+  margem,
+  necessaria,
+  comGuardar,
+  folgaAtual,
+}: {
+  despesas: number
+  guardar: number
+  renda: number
+  margem: number
+  necessaria: number
+  comGuardar: number
+  folgaAtual: number | null
+}) {
+  const [texto, setTexto] = useState(String(margem))
+  const diferenca = somar([renda, -necessaria])
+  const aplicar = (v: number) => {
+    const n = Math.max(0, Math.min(300, Math.round(v)))
+    setTexto(String(n))
+    if (n !== margem) salvarConfig({ margem_folga: n })
+  }
+  return (
+    <section className="cartao border-azul-200 ring-1 ring-azul-100">
+      <h2 className="mb-1 flex items-center gap-2 text-base font-extrabold text-slate-900">
+        <Target className="h-5 w-5 text-azul-600" /> Renda necessária
+      </h2>
+      <p className="mb-4 text-sm text-slate-500">Quanto você precisa ganhar por mês para cobrir todas as suas despesas e ainda ter uma margem de folga, que você define.</p>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+        <div className="space-y-3">
+          <div>
+            <div className="mb-1 text-xs font-semibold text-slate-600">Margem de folga sobre as despesas</div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <Segmentado
+                  valor={['10', '20', '30', '50'].includes(texto) ? texto : ''}
+                  onChange={(v) => aplicar(Number(v))}
+                  opcoes={['10', '20', '30', '50'].map((v) => ({ value: v, label: `${v}%` }))}
+                />
+              </div>
+              <label className="relative w-full shrink-0 sm:w-24">
+                <input
+                  className="input pr-7 text-right tabular-nums"
+                  inputMode="numeric"
+                  value={texto}
+                  onChange={(e) => setTexto(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                  onBlur={() => aplicar(Number(texto || 0))}
+                  onKeyDown={(e) => e.key === 'Enter' && aplicar(Number(texto || 0))}
+                  aria-label="Margem de folga em %"
+                />
+                <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-slate-400">%</span>
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">Ou digite outro valor (ex.: 25) e saia do campo para salvar.</p>
+          </div>
+          <div className="space-y-1 rounded-xl bg-slate-50 p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-600">Despesas por mês (custo de vida)</span>
+              <b className="tabular-nums">{moeda(despesas)}</b>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">(+) Margem de {margem}%</span>
+              <b className="tabular-nums">{moeda(somar([necessaria, -despesas]))}</b>
+            </div>
+            <div className="flex justify-between border-t border-slate-200 pt-1 text-base">
+              <span className="font-bold text-slate-800">(=) Renda necessária</span>
+              <b className="text-azul-800 tabular-nums">{moeda(necessaria)}</b>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-2xl bg-gradient-to-br from-azul-700 to-azul-900 p-4 text-white">
+            <div className="text-xs font-semibold text-white/70">Você precisa ganhar por mês</div>
+            <div className="text-3xl font-extrabold tracking-tight tabular-nums">{moeda(necessaria)}</div>
+            <div className="mt-1 text-xs text-white/70">
+              para pagar tudo e sobrar {margem}% de folga · contando também o que quer guardar ({moeda(guardar)}/mês): <b className="text-white">{moeda(comGuardar)}</b>
+            </div>
+          </div>
+          {renda > 0 ? (
+            <div className={`rounded-xl px-4 py-3 text-sm ${diferenca >= 0 ? 'bg-emerald-50 text-emerald-900' : 'bg-rose-50 text-rose-900'}`}>
+              Sua renda hoje é <b>{moeda(renda)}</b>
+              {folgaAtual !== null && <> ({folgaAtual >= 0 ? 'folga' : 'déficit'} de <b>{percentual(Math.abs(folgaAtual))}</b> sobre as despesas)</>}.{' '}
+              {diferenca >= 0 ? (
+                <>
+                  Ela cobre a renda necessária e ainda sobram <b>{moeda(diferenca)}</b>.
+                </>
+              ) : (
+                <>
+                  Faltam <b>{moeda(-diferenca)}</b> por mês para chegar à margem de {margem}%: aumente a renda ou corte despesas.
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-xl bg-azul-50 px-4 py-3 text-sm text-azul-900">Cadastre sua renda em Fixos e salário para comparar com a renda necessária.</p>
+          )}
+        </div>
+      </div>
+    </section>
   )
 }

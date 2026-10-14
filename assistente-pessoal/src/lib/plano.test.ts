@@ -102,7 +102,7 @@ describe('plano financeiro', () => {
       { id: 'm', nome: 'Viagem', descricao: null, valor_alvo: 12000, prazo: '2027-09-30', cor: 'azul', icone: 'plane', concluida: false, criado_em: '' },
     ],
     aportes: [],
-    config: { meses_reserva: 6, pct_investimento: 20 },
+    config: { meses_reserva: 6, pct_investimento: 20, margem_folga: 25 },
     saldoReserva: 10000,
     hoje: '2026-10-02',
   })
@@ -128,6 +128,14 @@ describe('plano financeiro', () => {
     expect(plano.reserva.aporte).toBe(1616.67)
     expect(plano.investir).toBe(443.33)
     expect(plano.reserva.meses).toBe(12)
+  })
+  it('renda necessária para cobrir as despesas com a margem de folga escolhida', () => {
+    // despesas 5.850 + 25% de folga = 7.312,50
+    expect(plano.rendaNecessaria).toBe(7312.5)
+    // + guardar 2.060 + metas 1.000 = 8.910 × 1,25 = 11.137,50
+    expect(plano.rendaNecessariaComGuardar).toBe(11137.5)
+    // renda 10.300 sobre despesas 5.850 = 76% de folga
+    expect(plano.folgaAtual).toBeCloseTo(0.7607, 3)
   })
   it('metas e o que sobra livre', () => {
     // a meta "Reserva de emergência" não entra de novo: a reserva já tem a sua caixinha

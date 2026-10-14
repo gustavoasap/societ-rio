@@ -121,3 +121,25 @@ describe('DRE', () => {
     expect(somar(dre.despesaTotal)).toBe(8500)
   })
 })
+
+describe('faturas mês a mês', () => {
+  it('fecha dia 26 e vence dia 3: compras de 26/09 a 25/10 caem na fatura que vence em 03/11', async () => {
+    const { faturasPorMes, datasDaFatura } = await import('./financas')
+    const nubank: Conta = { id: 'n', nome: 'Nubank', tipo: 'cartao', instituicao: null, saldo_inicial: 0, limite: null, cor: 'roxo', ativa: true, ordem: 0, dia_fechamento: 26, dia_vencimento: 3, reserva: false }
+    const outro: Conta = { ...nubank, id: 'i', nome: 'Itaú', dia_fechamento: 1, dia_vencimento: 10 }
+    const ls = [
+      lanc({ conta_id: 'n', valor: 100, data: '2026-09-25' }), // fecha 26/09 → vence 03/10
+      lanc({ conta_id: 'n', valor: 200, data: '2026-09-26' }), // fecha 26/10 → vence 03/11
+      lanc({ conta_id: 'n', valor: 300, data: '2026-10-25' }), // fecha 26/10 → vence 03/11
+      lanc({ conta_id: 'i', valor: 50, data: '2026-10-15' }), // fecha 01/11 → vence 10/11
+      lanc({ tipo: 'transferencia', conta_id: 'b', conta_destino_id: 'n', valor: 100, data: '2026-10-02' }),
+    ]
+    const linhas = faturasPorMes([nubank, outro], ls, ['2026-10', '2026-11'])
+    expect(linhas.map((l) => [l.mes, l.total, l.aPagar])).toEqual([
+      ['2026-10', 100, 0],
+      ['2026-11', 550, 550],
+    ])
+    expect(linhas[1].porCartao.get('n')?.total).toBe(500)
+    expect(datasDaFatura('2026-11', 26, 3)).toEqual({ fechamento: '2026-10-26', vencimento: '2026-11-03' })
+  })
+})

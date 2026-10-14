@@ -123,8 +123,8 @@ export async function buscarRecorrencias() {
 }
 
 export async function buscarConfig(): Promise<Config> {
-  const d = ok(await supabase.from('pes_config').select('meses_reserva, pct_investimento').maybeSingle()) as Config | null
-  return { meses_reserva: Number(d?.meses_reserva ?? 6), pct_investimento: Number(d?.pct_investimento ?? 20) }
+  const d = ok(await supabase.from('pes_config').select('meses_reserva, pct_investimento, margem_folga').maybeSingle()) as Config | null
+  return { meses_reserva: Number(d?.meses_reserva ?? 6), pct_investimento: Number(d?.pct_investimento ?? 20), margem_folga: Number(d?.margem_folga ?? 20) }
 }
 
 export async function salvarConfig(c: Partial<Config>) {

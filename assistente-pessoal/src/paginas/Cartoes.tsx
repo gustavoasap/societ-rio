@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { CircleCheck, CreditCard, Pencil, Plus, Wallet } from 'lucide-react'
+import { CalendarDays, CircleCheck, CreditCard, Pencil, Plus, Wallet } from 'lucide-react'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Cabecalho, Carregando, Erro, Progresso, Vazio } from '../components/ui'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
-import { hoje, primeiroDia, somarMesesAoMes, ultimoDia } from '../lib/datas'
+import { hoje, mesAtual, primeiroDia, somarDias, somarMesesAoMes, ultimoDia } from '../lib/datas'
 import { buscarLancamentos, useDados, type ContaComSaldo } from '../lib/dados'
-import { faturasDoCartao, type Fatura } from '../lib/financas'
+import { datasDaFatura, faturasDoCartao, faturasPorMes, type Fatura } from '../lib/financas'
 import { dataBR, mesAbreviado, mesPorExtenso, moeda } from '../lib/formato'
 import { ContaForm } from './Contas'
 
@@ -18,6 +18,7 @@ export function Cartoes() {
   const inicio = primeiroDia(somarMesesAoMes(hj.slice(0, 7), -4))
   const fim = ultimoDia(somarMesesAoMes(hj.slice(0, 7), 14))
   const lanc = useDados(() => buscarLancamentos(inicio, fim), [inicio, fim])
+  const [mesSel, setMesSel] = useState<string | null>(null)
 
   return (
     <div className="space-y-5">
@@ -41,14 +42,31 @@ export function Cartoes() {
       ) : lanc.carregando ? (
         <Carregando />
       ) : (
-        cartoes.map((c) => <CartaoBloco key={c.id} cartao={c} lancamentos={lanc.dados ?? []} onEditar={() => setEdit(c)} />)
+        <>
+          <FaturasMesAMes cartoes={cartoes} lancamentos={lanc.dados ?? []} mesSel={mesSel} onSel={setMesSel} />
+          {cartoes.map((c) => (
+            <CartaoBloco key={c.id} cartao={c} lancamentos={lanc.dados ?? []} onEditar={() => setEdit(c)} sel={mesSel} setSel={setMesSel} />
+          ))}
+        </>
       )}
       {edit && <ContaForm inicial={edit === 'novo' ? null : edit} tipoPadrao="cartao" onClose={() => setEdit(null)} />}
     </div>
   )
 }
 
-function CartaoBloco({ cartao: c, lancamentos, onEditar }: { cartao: ContaComSaldo; lancamentos: Parameters<typeof faturasDoCartao>[1]; onEditar: () => void }) {
+function CartaoBloco({
+  cartao: c,
+  lancamentos,
+  onEditar,
+  sel,
+  setSel,
+}: {
+  cartao: ContaComSaldo
+  lancamentos: Parameters<typeof faturasDoCartao>[1]
+  onEditar: () => void
+  sel: string | null
+  setSel: (m: string) => void
+}) {
   const { contas, pessoas, nome, abrirLancamento } = useApp()
   const hj = hoje()
   const faturas = faturasDoCartao(c, lancamentos)
@@ -56,7 +74,6 @@ function CartaoBloco({ cartao: c, lancamentos, onEditar }: { cartao: ContaComSal
     0,
     faturas.findIndex((f) => (f.vencimento ?? ultimoDia(f.mes)) >= hj),
   )
-  const [sel, setSel] = useState<string | null>(null)
   const f: Fatura | undefined = faturas.find((x) => x.mes === sel) ?? faturas[atualIdx]
   const devido = Math.max(0, -c.saldo)
   const futuras = somar(faturas.filter((x) => f && x.mes > f.mes).map((x) => x.total))
@@ -187,6 +204,102 @@ function CartaoBloco({ cartao: c, lancamentos, onEditar }: { cartao: ContaComSal
           )}
         </>
       )}
+    </section>
+  )
+}
+
+/** Tabela das faturas de todos os cartões, mês a mês, com fechamento, vencimento e total. */
+function FaturasMesAMes({
+  cartoes,
+  lancamentos,
+  mesSel,
+  onSel,
+}: {
+  cartoes: ContaComSaldo[]
+  lancamentos: Parameters<typeof faturasDoCartao>[1]
+  mesSel: string | null
+  onSel: (m: string) => void
+}) {
+  const atual = mesAtual()
+  const meses = Array.from({ length: 15 }, (_, i) => somarMesesAoMes(atual, i - 2))
+  const linhas = faturasPorMes(cartoes, lancamentos, meses).filter((l) => l.total !== 0 || (l.mes >= atual && l.mes <= somarMesesAoMes(atual, 3)))
+  const exemplo = cartoes.find((c) => c.dia_fechamento && c.dia_vencimento)
+  const ex = exemplo ? datasDaFatura(somarMesesAoMes(atual, 1), exemplo.dia_fechamento, exemplo.dia_vencimento) : null
+  const varios = cartoes.length > 1
+  const doMes = linhas.find((l) => l.mes === atual)
+
+  return (
+    <section className="cartao">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+          <CalendarDays className="h-5 w-5 text-violet-600" /> Faturas mês a mês
+        </h2>
+        <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
+          Vence em {mesPorExtenso(atual).split(' de ')[0]}: {moeda(doMes?.total ?? 0)}
+        </span>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">
+        O mês da fatura é o mês em que ela <b>vence</b> (quando você paga).
+        {exemplo && ex?.fechamento && ex.vencimento && (
+          <>
+            {' '}
+            No {exemplo.nome}, a fatura de {mesPorExtenso(somarMesesAoMes(atual, 1)).split(' de ')[0]} junta as compras de {dataBR(somarDias(datasDaFatura(atual, exemplo.dia_fechamento, exemplo.dia_vencimento).fechamento!, 0))} a {dataBR(somarDias(ex.fechamento, -1))}, fecha em {dataBR(ex.fechamento)} e vence em {dataBR(ex.vencimento)}.
+          </>
+        )}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[30rem] text-sm tabular-nums">
+          <thead>
+            <tr className="text-xs text-slate-500">
+              <th className="py-1.5 text-left font-semibold">Fatura de</th>
+              {!varios && <th className="py-1.5 text-left font-semibold">Compras de / até</th>}
+              <th className="py-1.5 text-left font-semibold">Vencimento</th>
+              {varios && cartoes.map((c) => <th key={c.id} className="py-1.5 text-right font-semibold">{c.nome}</th>)}
+              <th className="py-1.5 text-right font-semibold">{varios ? 'Total' : 'Valor'}</th>
+              <th className="py-1.5 text-right font-semibold">Situação</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {linhas.map((l) => {
+              const c0 = cartoes[0]
+              const d = datasDaFatura(l.mes, c0.dia_fechamento, c0.dia_vencimento)
+              const anterior = datasDaFatura(somarMesesAoMes(l.mes, -1), c0.dia_fechamento, c0.dia_vencimento).fechamento
+              const venceu = d.vencimento ? d.vencimento < hoje() : l.mes < atual
+              const situacao = l.total <= 0 ? '—' : l.aPagar <= 0.009 ? 'Paga' : venceu ? 'Vencida' : d.fechamento && d.fechamento <= hoje() ? 'Fechada' : 'Aberta'
+              const cor = situacao === 'Paga' ? 'text-emerald-700' : situacao === 'Vencida' ? 'text-rose-600' : situacao === 'Fechada' ? 'text-amber-700' : 'text-azul-700'
+              return (
+                <tr
+                  key={l.mes}
+                  onClick={() => onSel(l.mes)}
+                  className={`cursor-pointer hover:bg-slate-50 ${l.mes === mesSel ? 'bg-violet-50' : ''} ${l.mes === atual ? 'font-semibold' : ''}`}
+                >
+                  <td className="py-2 text-slate-800 first-letter:uppercase">
+                    {mesPorExtenso(l.mes)}
+                    {l.mes === atual && <span className="ml-1.5 rounded-full bg-azul-100 px-1.5 text-[0.625rem] font-bold text-azul-700">este mês</span>}
+                  </td>
+                  {!varios && <td className="py-2 text-xs text-slate-500">{anterior && d.fechamento ? `${dataBR(anterior)} a ${dataBR(somarDias(d.fechamento, -1))}` : '—'}</td>}
+                  <td className="py-2 text-slate-600">{varios ? mesAbreviado(l.mes) : d.vencimento ? dataBR(d.vencimento) : '—'}</td>
+                  {varios &&
+                    cartoes.map((c) => (
+                      <td key={c.id} className="py-2 text-right text-slate-700">
+                        {l.porCartao.get(c.id) ? moeda(l.porCartao.get(c.id)!.total) : '—'}
+                      </td>
+                    ))}
+                  <td className="py-2 text-right font-bold text-slate-900">{moeda(l.total)}</td>
+                  <td className={`py-2 text-right text-xs font-bold ${cor}`}>{situacao}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {lancamentos.every((l) => !cartoes.some((c) => c.id === l.conta_id)) && (
+        <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Ainda não há compras nos cartões. Em <b>Novo lançamento</b>, escolha a despesa e em “Pago com” selecione o cartão (💳). Parcelada? Use “Parcelada” e informe a parcela atual (ex.: 4 de 10): cada parcela cai
+          na fatura certa dos próximos meses.
+        </p>
+      )}
+      <p className="mt-2 text-xs text-slate-400">Toque em um mês para ver as compras daquela fatura logo abaixo.</p>
     </section>
   )
 }

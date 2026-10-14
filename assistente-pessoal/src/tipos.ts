@@ -159,6 +159,8 @@ export const PRIORIDADES: { value: Prioridade; label: string }[] = [
 export interface Config {
   meses_reserva: number
   pct_investimento: number
+  /** % de folga acima das despesas para a renda necessária */
+  margem_folga: number
 }
 
 export const FREQUENCIAS: { value: number; label: string; curto: string }[] = [

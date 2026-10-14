@@ -4,12 +4,21 @@ import { Bolinha, Cabecalho, Campo, CampoValor, Erro, Modal, Selecao, Vazio } fr
 import { CORES, corDe, ICONE_CONTA } from '../components/visual'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
-import { excluir, salvar, type ContaComSaldo } from '../lib/dados'
-import { moeda } from '../lib/formato'
-import { rotuloDe, TIPOS_CONTA, type TipoConta } from '../tipos'
+import { buscarLancamentos, excluir, salvar, useDados, type ContaComSaldo } from '../lib/dados'
+import { mesAtual, primeiroDia, somarMesesAoMes, ultimoDia } from '../lib/datas'
+import { faturasPorMes } from '../lib/financas'
+import { Link } from '../lib/rotas'
+import { dataBR, mesAbreviado, mesPorExtenso, moeda } from '../lib/formato'
+import { rotuloDe, TIPOS_CONTA, type Lancamento, type TipoConta } from '../tipos'
 
 export function Contas() {
   const { contas, abrirLancamento } = useApp()
+  const mes = mesAtual()
+  const temCartao = contas.some((c) => c.tipo === 'cartao')
+  const lanc = useDados(
+    () => (temCartao ? buscarLancamentos(primeiroDia(somarMesesAoMes(mes, -3)), ultimoDia(somarMesesAoMes(mes, 3))) : Promise.resolve([])),
+    [mes, temCartao],
+  )
   const [edit, setEdit] = useState<ContaComSaldo | 'nova' | null>(null)
   const ativas = contas.filter((c) => c.ativa)
   const inativas = contas.filter((c) => !c.ativa)
@@ -73,9 +82,14 @@ export function Contas() {
                   </button>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500">{cartao ? 'Fatura em aberto' : 'Saldo'}</div>
-                  <div className={`text-xl font-extrabold tabular-nums ${c.saldo < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{moeda(cartao ? Math.abs(c.saldo) : c.saldo)}</div>
-                  {cartao && c.limite ? <div className="text-xs text-slate-400">Limite disponível: {moeda(somar([c.limite, c.saldo]))}</div> : null}
+                  {cartao ? (
+                    <ResumoCartao cartao={c} lancamentos={lanc.dados ?? []} />
+                  ) : (
+                    <>
+                      <div className="text-xs text-slate-500">Saldo</div>
+                      <div className={`text-xl font-extrabold tabular-nums ${c.saldo < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{moeda(c.saldo)}</div>
+                    </>
+                  )}
                 </div>
               </div>
             )
@@ -238,5 +252,37 @@ export function ContaForm({ inicial, onClose, tipoPadrao = 'corrente' }: { inici
         <Erro>{erro}</Erro>
       </form>
     </Modal>
+  )
+}
+
+/** Fatura que vence neste mês, a próxima e o total devido do cartão. */
+function ResumoCartao({ cartao: c, lancamentos }: { cartao: ContaComSaldo; lancamentos: Lancamento[] }) {
+  const mes = mesAtual()
+  const [atual, proxima] = faturasPorMes([c], lancamentos, [mes, somarMesesAoMes(mes, 1)])
+  const fAtual = atual.porCartao.get(c.id)
+  const fProx = proxima.porCartao.get(c.id)
+  const devido = Math.max(0, -c.saldo)
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-end justify-between gap-2">
+        <div>
+          <div className="text-xs text-slate-500">Fatura de {mesPorExtenso(mes).split(' de ')[0]}{fAtual?.vencimento ? ` · vence ${dataBR(fAtual.vencimento)}` : ''}</div>
+          <div className="text-xl font-extrabold text-slate-900 tabular-nums">{moeda(atual.total)}</div>
+        </div>
+        {atual.total > 0 && <span className={`text-xs font-bold ${atual.aPagar <= 0.009 ? 'text-emerald-700' : 'text-amber-700'}`}>{atual.aPagar <= 0.009 ? 'Paga' : `A pagar ${moeda(atual.aPagar)}`}</span>}
+      </div>
+      <div className="flex justify-between text-xs text-slate-500">
+        <span>Próxima ({mesAbreviado(proxima.mes)}{fProx?.vencimento ? `, vence ${dataBR(fProx.vencimento)}` : ''})</span>
+        <b className="text-slate-700 tabular-nums">{moeda(proxima.total)}</b>
+      </div>
+      <div className="flex justify-between text-xs text-slate-400">
+        <span>Total devido no cartão</span>
+        <span className="tabular-nums">{moeda(devido)}</span>
+      </div>
+      {c.limite ? <div className="text-xs text-slate-400">Limite disponível: {moeda(somar([c.limite, c.saldo]))}</div> : null}
+      <Link para="/cartoes" className="inline-block text-xs font-semibold text-azul-600 hover:underline">
+        Ver faturas mês a mês →
+      </Link>
+    </div>
   )
 }
