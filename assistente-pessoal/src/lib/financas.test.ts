@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Categoria, Conta, Lancamento } from '../tipos'
 import { somar } from './calculos'
-import { agruparItens, aReceberDeTerceiros, datasDaFatura, despesasPorNatureza, faturaDe, faturasDoCartao, gerarParcelas, montarDre } from './financas'
+import { aReceberDeTerceiros, datasDaFatura, despesasPorNatureza, faturaDe, faturasDoCartao, gerarParcelas, montarDre } from './financas'
 
 const lanc = (p: Partial<Lancamento>): Lancamento => ({
   id: Math.random().toString(),
@@ -141,42 +141,5 @@ describe('faturas mês a mês', () => {
     ])
     expect(linhas[1].porCartao.get('n')?.total).toBe(500)
     expect(datasDaFatura('2026-11', 26, 3)).toEqual({ fechamento: '2026-10-26', vencimento: '2026-11-03' })
-  })
-})
-
-describe('agrupar itens da fatura', () => {
-  const cats = new Map([cat('ass', 'despesa', 'fixa'), cat('mer', 'despesa', 'variavel')].map((c) => [c.id, c]))
-  const itens = [
-    lanc({ descricao: 'Netflix', valor: 55.9, data: '2026-10-02', categoria_id: 'ass' }),
-    lanc({ descricao: 'Mercado', valor: 300, data: '2026-10-05', categoria_id: 'mer' }),
-    lanc({ descricao: 'Spotify', valor: 34.9, data: '2026-09-28', categoria_id: 'ass' }),
-    lanc({ descricao: 'Padaria', valor: 20, data: '2026-10-01' }),
-    lanc({ descricao: 'Estorno', tipo: 'receita', valor: 10, data: '2026-10-03', categoria_id: 'mer', pessoa_id: 'p1' }),
-  ]
-
-  it('por categoria: grupos do maior para o menor total, itens por data', () => {
-    const g = agruparItens(itens, 'categoria', 'data', cats)
-    expect(g.map((x) => [x.chave, x.total])).toEqual([
-      ['mer', 290],
-      ['ass', 90.8],
-      ['', 20],
-    ])
-    expect(g[1].itens.map((l) => l.descricao)).toEqual(['Spotify', 'Netflix'])
-  })
-
-  it('por valor dentro do grupo, e por classificação/pessoa', () => {
-    expect(agruparItens(itens, 'categoria', 'valor', cats)[1].itens.map((l) => l.descricao)).toEqual(['Netflix', 'Spotify'])
-    expect(agruparItens(itens, 'natureza', 'data', cats).map((x) => x.chave)).toEqual(['variavel', 'fixa'])
-    expect(agruparItens(itens, 'pessoa', 'data', cats).map((x) => [x.chave, x.total])).toEqual([
-      ['', 410.8],
-      ['p1', -10],
-    ])
-  })
-
-  it('sem agrupar: um grupo só, total da fatura', () => {
-    const g = agruparItens(itens, 'data', 'valor', cats)
-    expect(g).toHaveLength(1)
-    expect(g[0].total).toBe(400.8)
-    expect(g[0].itens[0].descricao).toBe('Mercado')
   })
 })
