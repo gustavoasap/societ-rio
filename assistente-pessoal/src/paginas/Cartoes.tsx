@@ -161,7 +161,7 @@ function CartaoBloco({
                   <h3 className="text-sm font-bold text-slate-800 first-letter:uppercase">Fatura de {mesPorExtenso(f.mes)}</h3>
                   {status && <span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold ${status.cls}`}>{status.rotulo}</span>}
                 </div>
-                <ItensDaFatura key={f.mes} itens={f.itens} total={f.total} />
+                <ItensDaFatura itens={f.itens} />
               </div>
               <aside className="space-y-3 rounded-2xl bg-slate-50 p-4 text-sm">
                 <div>
