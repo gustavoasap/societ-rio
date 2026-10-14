@@ -222,11 +222,18 @@ function FaturasMesAMes({
 }) {
   const atual = mesAtual()
   const meses = Array.from({ length: 15 }, (_, i) => somarMesesAoMes(atual, i - 2))
-  const linhas = faturasPorMes(cartoes, lancamentos, meses).filter((l) => l.total !== 0 || (l.mes >= atual && l.mes <= somarMesesAoMes(atual, 3)))
+  const hj = hoje()
+  // vencimento do mês (pelo 1º cartão com dias cadastrados; sem dias, o fim do mês)
+  const ref = cartoes.find((c) => c.dia_fechamento && c.dia_vencimento) ?? cartoes[0]
+  const vencDe = (mes: string) => datasDaFatura(mes, ref.dia_fechamento, ref.dia_vencimento).vencimento ?? ultimoDia(mes)
+  // fatura sem valor que já venceu não interessa; das futuras, mostra as próximas 4 mesmo zeradas
+  const futurasVazias = new Set(meses.filter((m) => vencDe(m) >= hj).slice(0, 4))
+  const linhas = faturasPorMes(cartoes, lancamentos, meses).filter((l) => l.total !== 0 || futurasVazias.has(l.mes))
+  // a próxima a pagar: a primeira que ainda não venceu (ou vencida com saldo em aberto)
+  const proxima = linhas.find((l) => vencDe(l.mes) >= hj) ?? linhas.at(-1)
   const exemplo = cartoes.find((c) => c.dia_fechamento && c.dia_vencimento)
   const ex = exemplo ? datasDaFatura(somarMesesAoMes(atual, 1), exemplo.dia_fechamento, exemplo.dia_vencimento) : null
   const varios = cartoes.length > 1
-  const doMes = linhas.find((l) => l.mes === atual)
 
   return (
     <section className="cartao">
@@ -235,7 +242,7 @@ function FaturasMesAMes({
           <CalendarDays className="h-5 w-5 text-violet-600" /> Faturas mês a mês
         </h2>
         <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
-          Vence em {mesPorExtenso(atual).split(' de ')[0]}: {moeda(doMes?.total ?? 0)}
+          Próxima fatura{proxima ? ` (vence ${dataBR(vencDe(proxima.mes))})` : ''}: {moeda(proxima?.total ?? 0)}
         </span>
       </div>
       <p className="mb-3 text-xs text-slate-500">
@@ -264,18 +271,18 @@ function FaturasMesAMes({
               const c0 = cartoes[0]
               const d = datasDaFatura(l.mes, c0.dia_fechamento, c0.dia_vencimento)
               const anterior = datasDaFatura(somarMesesAoMes(l.mes, -1), c0.dia_fechamento, c0.dia_vencimento).fechamento
-              const venceu = d.vencimento ? d.vencimento < hoje() : l.mes < atual
+              const venceu = vencDe(l.mes) < hj
               const situacao = l.total <= 0 ? '—' : l.aPagar <= 0.009 ? 'Paga' : venceu ? 'Vencida' : d.fechamento && d.fechamento <= hoje() ? 'Fechada' : 'Aberta'
               const cor = situacao === 'Paga' ? 'text-emerald-700' : situacao === 'Vencida' ? 'text-rose-600' : situacao === 'Fechada' ? 'text-amber-700' : 'text-azul-700'
               return (
                 <tr
                   key={l.mes}
                   onClick={() => onSel(l.mes)}
-                  className={`cursor-pointer hover:bg-slate-50 ${l.mes === mesSel ? 'bg-violet-50' : ''} ${l.mes === atual ? 'font-semibold' : ''}`}
+                  className={`cursor-pointer hover:bg-slate-50 ${l.mes === mesSel ? 'bg-violet-50' : ''} ${l.mes === proxima?.mes ? 'font-semibold' : ''}`}
                 >
                   <td className="py-2 text-slate-800 first-letter:uppercase">
                     {mesPorExtenso(l.mes)}
-                    {l.mes === atual && <span className="ml-1.5 rounded-full bg-azul-100 px-1.5 text-[0.625rem] font-bold text-azul-700">este mês</span>}
+                    {l.mes === proxima?.mes && <span className="ml-1.5 rounded-full bg-azul-100 px-1.5 text-[0.625rem] font-bold text-azul-700">próxima a pagar</span>}
                   </td>
                   {!varios && <td className="py-2 text-xs text-slate-500">{anterior && d.fechamento ? `${dataBR(anterior)} a ${dataBR(somarDias(d.fechamento, -1))}` : '—'}</td>}
                   <td className="py-2 text-slate-600">{varios ? mesAbreviado(l.mes) : d.vencimento ? dataBR(d.vencimento) : '—'}</td>
