@@ -40,22 +40,37 @@ export function dataBR(iso: string | null | undefined) {
   return `${d}/${m}/${a}`
 }
 
+/** Mês válido de 1 a 12 em "AAAA-MM..."; durante a digitação de uma data o valor pode vir incompleto. */
+function partesMes(mes: string | null | undefined): [number, number] | null {
+  const [a, m] = (mes ?? '').split('-').map(Number)
+  return Number.isInteger(a) && a > 0 && Number.isInteger(m) && m >= 1 && m <= 12 ? [a, m] : null
+}
+
 /** "2026-09" → "setembro de 2026" */
 export function mesPorExtenso(mes: string) {
-  const [a, m] = mes.split('-').map(Number)
-  return `${MESES[m - 1]} de ${a}`
+  const p = partesMes(mes)
+  return p ? `${MESES[p[1] - 1]} de ${p[0]}` : '—'
 }
 
 /** "2026-09" → "set/26" */
 export function mesAbreviado(mes: string) {
-  const [a, m] = mes.split('-').map(Number)
-  return `${MESES[m - 1].slice(0, 3)}/${String(a).slice(2)}`
+  const p = partesMes(mes)
+  return p ? `${MESES[p[1] - 1].slice(0, 3)}/${String(p[0]).slice(2)}` : '—'
 }
 
 /** "2026-09-28" → "seg, 28 de setembro" */
 export function diaPorExtenso(iso: string) {
+  if (!dataValida(iso)) return '—'
   const [a, m, d] = iso.split('-').map(Number)
   const dt = new Date(a, m - 1, d)
   const semana = dt.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
   return `${semana}, ${d} de ${MESES[m - 1]}`
+}
+
+/** Data completa e plausível (AAAA-MM-DD, ano de 1900 a 2199) — o campo de data passa por valores incompletos enquanto se digita. */
+export function dataValida(iso: string | null | undefined): iso is string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false
+  const [a, m, d] = iso.split('-').map(Number)
+  if (a < 1900 || a > 2199 || m < 1 || m > 12 || d < 1) return false
+  return d <= new Date(a, m, 0).getDate()
 }

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Aporte, Lancamento, Meta } from '../tipos'
 import { contasEmAberto, despesasPorCategoria, gerarRepeticao, progressoMeta, resumo, somar } from './calculos'
 import { mesesRestantes, somarMeses, ultimoDia } from './datas'
-import { lerValor } from './formato'
+import { dataValida, diaPorExtenso, lerValor, mesAbreviado, mesPorExtenso } from './formato'
+import { faturaDe } from './financas'
 
 const lanc = (p: Partial<Lancamento>): Lancamento => ({
   id: Math.random().toString(),
@@ -156,5 +157,23 @@ describe('dias úteis', () => {
     const { dataDaRecorrencia } = await import('./datas')
     expect(dataDaRecorrencia('2026-02', 31, null)).toBe('2026-02-28')
     expect(dataDaRecorrencia('2026-10', 5, 'seg_sab')).toBe('2026-10-06')
+  })
+})
+
+describe('datas digitadas pela metade (campo de data do lançamento)', () => {
+  it('não quebra o "cai na fatura de..." enquanto a data está incompleta', () => {
+    for (const d of ['', '0002-01-01', '2026-1', '2026-13-01']) expect(() => mesAbreviado(faturaDe(d, 26, 3))).not.toThrow()
+    expect(mesAbreviado('')).toBe('—')
+    expect(mesPorExtenso('2026-1x')).toBe('—')
+    expect(diaPorExtenso('2026-02-30')).toBe('—')
+  })
+
+  it('dataValida só aceita data completa e plausível', () => {
+    expect(dataValida('2026-10-14')).toBe(true)
+    expect(dataValida('2028-02-29')).toBe(true)
+    expect(dataValida('2026-02-29')).toBe(false)
+    expect(dataValida('0002-10-14')).toBe(false)
+    expect(dataValida('')).toBe(false)
+    expect(dataValida(null)).toBe(false)
   })
 })
