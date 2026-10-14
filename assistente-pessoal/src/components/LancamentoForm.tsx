@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from 'react'
-import { CreditCard, Repeat, Trash2 } from 'lucide-react'
+import { CreditCard, Plus, Repeat, Trash2 } from 'lucide-react'
 import { useApp, type InicialLancamento } from '../contexto'
 import { hoje, type ModoDiaUtil } from '../lib/datas'
 import { atualizarDaquiEmDiante, excluir, excluirDaquiEmDiante, gerarRecorrencias, inserirVarios, salvar } from '../lib/dados'
 import { datasDaFatura, faturaDe, gerarParcelas } from '../lib/financas'
-import { dataBR, mesAbreviado, moeda } from '../lib/formato'
+import { dataBR, dataValida, mesAbreviado, moeda } from '../lib/formato'
 import { supabase } from '../lib/supabase'
 import { NATUREZAS, rotuloDe, type Lancamento, type Natureza, type TipoLancamento } from '../tipos'
 import { CampoDia } from './CampoDia'
+import { CategoriaForm } from './CategoriaForm'
 import { SeletorPessoa } from './SeletorPessoa'
 import { Campo, CampoValor, Erro, Modal, Segmentado, Selecao } from './ui'
 
@@ -43,6 +44,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   const [aplicarProximos, setAplicarProximos] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
+  const [novaCat, setNovaCat] = useState(false)
 
   const conta = contas.find((c) => c.id === contaId)
   const ehCartao = conta?.tipo === 'cartao'
@@ -59,6 +61,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   async function gravar(e: FormEvent) {
     e.preventDefault()
     setErro(null)
+    if (!dataValida(data)) return setErro('Informe uma data completa (dia/mês/ano).')
     if (!valor || valor <= 0) return setErro('Informe um valor maior que zero.')
     if (!contaId) return setErro('Cadastre uma conta ou cartão primeiro (menu Contas).')
     if (tipo === 'transferencia' && (!destinoId || destinoId === contaId)) return setErro('Escolha a conta de destino (diferente da de origem).')
@@ -166,209 +169,217 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
 
   const opcoesContas = ativas.map((c) => ({ value: c.id, label: c.tipo === 'cartao' ? `💳 ${c.nome}` : c.nome }))
   const rotuloPago = tipo === 'receita' ? 'Já recebi' : tipo === 'despesa' ? 'Já paguei' : 'Já transferi'
-  const fatura = ehCartao && conta ? faturaDe(data, conta.dia_fechamento, conta.dia_vencimento) : null
+  const okData = dataValida(data)
+  const fatura = ehCartao && conta && okData ? faturaDe(data, conta.dia_fechamento, conta.dia_vencimento) : null
   const venc = fatura && conta ? datasDaFatura(fatura, conta.dia_fechamento, conta.dia_vencimento).vencimento : null
   const previa =
-    repeticao === 'parcelado' && valor && totalParcelas >= 2 && parcelaAtual >= 1 && parcelaAtual <= totalParcelas
+    repeticao === 'parcelado' && okData && valor && totalParcelas >= 2 && parcelaAtual >= 1 && parcelaAtual <= totalParcelas
       ? gerarParcelas({ valor, valorEhTotal, data, atual: parcelaAtual, total: totalParcelas })
       : null
 
   return (
-    <Modal
-      titulo={edicao ? 'Editar lançamento' : 'Novo lançamento'}
-      onClose={onClose}
-      rodape={
-        <>
-          {edicao && (
-            <div className="mr-auto flex gap-1">
-              <button type="button" className="btn-danger btn-sm" onClick={() => apagar(false)}>
-                <Trash2 className="h-3.5 w-3.5" /> Excluir
-              </button>
-              {sequencia && (
-                <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={() => apagar(true)}>
-                  Este e os próximos
+    <>
+      <Modal
+        titulo={edicao ? 'Editar lançamento' : 'Novo lançamento'}
+        onClose={onClose}
+        rodape={
+          <>
+            {edicao && (
+              <div className="mr-auto flex gap-1">
+                <button type="button" className="btn-danger btn-sm" onClick={() => apagar(false)}>
+                  <Trash2 className="h-3.5 w-3.5" /> Excluir
                 </button>
+                {sequencia && (
+                  <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={() => apagar(true)}>
+                    Este e os próximos
+                  </button>
+                )}
+              </div>
+            )}
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Cancelar
+            </button>
+            <button className="btn-primary" form="form-lancamento" disabled={salvando}>
+              {salvando ? 'Salvando...' : 'Salvar'}
+            </button>
+          </>
+        }
+      >
+        <form id="form-lancamento" onSubmit={gravar} className="space-y-4">
+          <Segmentado
+            valor={tipo}
+            onChange={(t) => {
+              setTipo(t)
+              setCategoriaId('')
+              if (t === 'transferencia' && repeticao !== 'nao') setRepeticao('nao')
+            }}
+            opcoes={[
+              { value: 'despesa', label: 'Despesa', ativo: 'text-rose-600' },
+              { value: 'receita', label: 'Receita', ativo: 'text-emerald-600' },
+              { value: 'transferencia', label: 'Transferência' },
+            ]}
+          />
+
+          {!edicao && tipo !== 'transferencia' && (
+            <Segmentado
+              valor={repeticao}
+              onChange={setRepeticao}
+              opcoes={[
+                { value: 'nao', label: 'Única' },
+                { value: 'parcelado', label: 'Parcelada' },
+                { value: 'recorrente', label: 'Repetir' },
+              ]}
+            />
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label={repeticao === 'parcelado' ? (valorEhTotal ? 'Valor total da compra' : 'Valor da parcela') : 'Valor'}>
+              <CampoValor valor={valor} onChange={setValor} autoFocus={!edicao && !inicial.valor} />
+            </Campo>
+            <Campo label={repeticao === 'parcelado' ? 'Data da parcela atual' : repeticao === 'recorrente' ? 'Começa em' : ehCartao ? 'Data da compra' : 'Data'}>
+              <input className="input" type="date" value={data} onChange={(e) => mudarData(e.target.value)} required />
+            </Campo>
+          </div>
+
+          {repeticao === 'parcelado' && (
+            <div className="space-y-3 rounded-xl bg-azul-50 p-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Campo label="Parcela atual">
+                  <input className="input" type="number" min={1} max={totalParcelas} value={parcelaAtual} onChange={(e) => setParcelaAtual(Number(e.target.value))} />
+                </Campo>
+                <Campo label="Total de parcelas">
+                  <input className="input" type="number" min={2} max={120} value={totalParcelas} onChange={(e) => setTotalParcelas(Number(e.target.value))} />
+                </Campo>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" className="h-4 w-4 accent-azul-600" checked={valorEhTotal} onChange={(e) => setValorEhTotal(e.target.checked)} />
+                O valor informado é o total da compra (dividir pelas parcelas)
+              </label>
+              {previa && (
+                <p className="text-xs text-azul-900">
+                  Vai lançar <b>{previa.length}</b> {previa.length === 1 ? 'parcela' : 'parcelas'} ({previa[0].parcela}/{previa[0].parcelas} a {previa.at(-1)!.parcela}/{previa.at(-1)!.parcelas}) de{' '}
+                  <b>{moeda(previa.at(-1)!.valor)}</b>, de {mesAbreviado(previa[0].data.slice(0, 7))} a {mesAbreviado(previa.at(-1)!.data.slice(0, 7))}.
+                </p>
               )}
             </div>
           )}
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Cancelar
-          </button>
-          <button className="btn-primary" form="form-lancamento" disabled={salvando}>
-            {salvando ? 'Salvando...' : 'Salvar'}
-          </button>
-        </>
-      }
-    >
-      <form id="form-lancamento" onSubmit={gravar} className="space-y-4">
-        <Segmentado
-          valor={tipo}
-          onChange={(t) => {
-            setTipo(t)
-            setCategoriaId('')
-            if (t === 'transferencia' && repeticao !== 'nao') setRepeticao('nao')
-          }}
-          opcoes={[
-            { value: 'despesa', label: 'Despesa', ativo: 'text-rose-600' },
-            { value: 'receita', label: 'Receita', ativo: 'text-emerald-600' },
-            { value: 'transferencia', label: 'Transferência' },
-          ]}
-        />
 
-        {!edicao && tipo !== 'transferencia' && (
-          <Segmentado
-            valor={repeticao}
-            onChange={setRepeticao}
-            opcoes={[
-              { value: 'nao', label: 'Única' },
-              { value: 'parcelado', label: 'Parcelada' },
-              { value: 'recorrente', label: 'Repetir' },
-            ]}
-          />
-        )}
-
-        <div className="grid grid-cols-2 gap-3">
-          <Campo label={repeticao === 'parcelado' ? (valorEhTotal ? 'Valor total da compra' : 'Valor da parcela') : 'Valor'}>
-            <CampoValor valor={valor} onChange={setValor} autoFocus={!edicao && !inicial.valor} />
-          </Campo>
-          <Campo label={repeticao === 'parcelado' ? 'Data da parcela atual' : repeticao === 'recorrente' ? 'Começa em' : ehCartao ? 'Data da compra' : 'Data'}>
-            <input className="input" type="date" value={data} onChange={(e) => mudarData(e.target.value)} required />
-          </Campo>
-        </div>
-
-        {repeticao === 'parcelado' && (
-          <div className="space-y-3 rounded-xl bg-azul-50 p-3">
-            <div className="grid grid-cols-2 gap-3">
-              <Campo label="Parcela atual">
-                <input className="input" type="number" min={1} max={totalParcelas} value={parcelaAtual} onChange={(e) => setParcelaAtual(Number(e.target.value))} />
-              </Campo>
-              <Campo label="Total de parcelas">
-                <input className="input" type="number" min={2} max={120} value={totalParcelas} onChange={(e) => setTotalParcelas(Number(e.target.value))} />
-              </Campo>
-            </div>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" className="h-4 w-4 accent-azul-600" checked={valorEhTotal} onChange={(e) => setValorEhTotal(e.target.checked)} />
-              O valor informado é o total da compra (dividir pelas parcelas)
-            </label>
-            {previa && (
-              <p className="text-xs text-azul-900">
-                Vai lançar <b>{previa.length}</b> {previa.length === 1 ? 'parcela' : 'parcelas'} ({previa[0].parcela}/{previa[0].parcelas} a {previa.at(-1)!.parcela}/{previa.at(-1)!.parcelas}) de{' '}
-                <b>{moeda(previa.at(-1)!.valor)}</b>, de {mesAbreviado(previa[0].data.slice(0, 7))} a {mesAbreviado(previa.at(-1)!.data.slice(0, 7))}.
+          {repeticao === 'recorrente' && (
+            <div className="space-y-3 rounded-xl bg-azul-50 p-3">
+              <p className="flex items-start gap-2 text-xs text-azul-900">
+                <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Repete a partir de {dataBR(data)}. Os lançamentos vão sendo criados sozinhos (sempre até o mês seguinte). Ideal para salário, aluguel, assinaturas e despesas anuais como IPVA e IPTU.
               </p>
-            )}
-          </div>
-        )}
-
-        {repeticao === 'recorrente' && (
-          <div className="space-y-3 rounded-xl bg-azul-50 p-3">
-            <p className="flex items-start gap-2 text-xs text-azul-900">
-              <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Repete a partir de {dataBR(data)}. Os lançamentos vão sendo criados sozinhos (sempre até o mês seguinte). Ideal para salário, aluguel, assinaturas e despesas anuais como IPVA e IPTU.
-            </p>
-            <CampoDia dia={diaRec} setDia={setDiaRec} modo={modoRec} setModo={setModoRec} aPartirDe={data} intervalo={intervaloRec} setIntervalo={setIntervaloRec} valor={valor} />
-            <div className="grid grid-cols-2 items-end gap-3">
-              <Campo label="Até (opcional)">
-                <input className="input" type="date" value={fim} onChange={(e) => setFim(e.target.value)} />
-              </Campo>
-              {!ehCartao && (
-                <label className="flex cursor-pointer items-center gap-2 pb-3 text-sm text-slate-700">
-                  <input type="checkbox" className="h-4 w-4 accent-azul-600" checked={autoPago} onChange={(e) => setAutoPago(e.target.checked)} />
-                  {tipo === 'receita' ? 'Cai sozinho na conta' : 'Débito automático'}
-                </label>
-              )}
+              <CampoDia dia={diaRec} setDia={setDiaRec} modo={modoRec} setModo={setModoRec} aPartirDe={data} intervalo={intervaloRec} setIntervalo={setIntervaloRec} valor={valor} />
+              <div className="grid grid-cols-2 items-end gap-3">
+                <Campo label="Até (opcional)">
+                  <input className="input" type="date" value={fim} onChange={(e) => setFim(e.target.value)} />
+                </Campo>
+                {!ehCartao && (
+                  <label className="flex cursor-pointer items-center gap-2 pb-3 text-sm text-slate-700">
+                    <input type="checkbox" className="h-4 w-4 accent-azul-600" checked={autoPago} onChange={(e) => setAutoPago(e.target.checked)} />
+                    {tipo === 'receita' ? 'Cai sozinho na conta' : 'Débito automático'}
+                  </label>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <Campo label="Descrição">
-          <input
-            className="input"
-            value={descricao}
-            onChange={(e) => setDescricao(e.target.value)}
-            placeholder={tipo === 'transferencia' ? 'Transferência' : tipo === 'receita' ? 'Ex.: Pró-labore ASAP' : 'Ex.: Supermercado, aluguel, Netflix'}
-          />
-        </Campo>
+          <Campo label="Descrição">
+            <input
+              className="input"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              placeholder={tipo === 'transferencia' ? 'Transferência' : tipo === 'receita' ? 'Ex.: Pró-labore ASAP' : 'Ex.: Supermercado, aluguel, Netflix'}
+            />
+          </Campo>
 
-        {tipo === 'transferencia' ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Campo label="De">
-              <Selecao value={contaId} onChange={setContaId} opcoes={opcoesContas} />
-            </Campo>
-            <Campo label="Para">
-              <Selecao value={destinoId} onChange={setDestinoId} opcoes={opcoesContas.filter((o) => o.value !== contaId)} vazio="Escolha..." />
-            </Campo>
-          </div>
-        ) : (
-          <>
+          {tipo === 'transferencia' ? (
             <div className="grid grid-cols-2 gap-3">
-              <Campo label="Categoria">
-                <Selecao value={categoriaId} onChange={setCategoriaId} opcoes={cats.map((c) => ({ value: c.id, label: c.nome }))} vazio="Sem categoria" />
-              </Campo>
-              <Campo label={tipo === 'receita' ? 'Entra em' : 'Pago com'}>
+              <Campo label="De">
                 <Selecao value={contaId} onChange={setContaId} opcoes={opcoesContas} />
               </Campo>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Campo label="Classificação">
-                <Selecao
-                  value={natureza}
-                  onChange={(v) => setNatureza(v as Natureza | '')}
-                  vazio={`${rotuloDe(NATUREZAS, cat?.natureza ?? 'variavel')} (padrão)`}
-                  opcoes={NATUREZAS}
-                />
+              <Campo label="Para">
+                <Selecao value={destinoId} onChange={setDestinoId} opcoes={opcoesContas.filter((o) => o.value !== contaId)} vazio="Escolha..." />
               </Campo>
-              {tipo === 'despesa' && (
-                <Campo label="Responsável">
-                  <SeletorPessoa valor={pessoaId} onChange={setPessoaId} />
-                </Campo>
-              )}
             </div>
-          </>
-        )}
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Campo label="Categoria">
+                  <Selecao value={categoriaId} onChange={setCategoriaId} opcoes={cats.map((c) => ({ value: c.id, label: c.nome }))} vazio="Sem categoria" />
+                  <button type="button" className="mt-1 inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-azul-600 hover:underline" onClick={() => setNovaCat(true)}>
+                    <Plus className="h-3 w-3" /> Nova categoria
+                  </button>
+                </Campo>
+                <Campo label={tipo === 'receita' ? 'Entra em' : 'Pago com'}>
+                  <Selecao value={contaId} onChange={setContaId} opcoes={opcoesContas} />
+                </Campo>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Campo label="Classificação">
+                  <Selecao
+                    value={natureza}
+                    onChange={(v) => setNatureza(v as Natureza | '')}
+                    vazio={`${rotuloDe(NATUREZAS, cat?.natureza ?? 'variavel')} (padrão)`}
+                    opcoes={NATUREZAS}
+                  />
+                </Campo>
+                {tipo === 'despesa' && (
+                  <Campo label="Responsável">
+                    <SeletorPessoa valor={pessoaId} onChange={setPessoaId} />
+                  </Campo>
+                )}
+              </div>
+            </>
+          )}
 
-        {tipo === 'despesa' && pessoaId && (
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
-            <input type="checkbox" className="h-5 w-5 accent-amber-600" checked={reembolsado} onChange={(e) => setReembolsado(e.target.checked)} />
-            Essa pessoa já me pagou esse valor
-          </label>
-        )}
+          {tipo === 'despesa' && pessoaId && (
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+              <input type="checkbox" className="h-5 w-5 accent-amber-600" checked={reembolsado} onChange={(e) => setReembolsado(e.target.checked)} />
+              Essa pessoa já me pagou esse valor
+            </label>
+          )}
 
-        {ehCartao && tipo !== 'transferencia' ? (
-          <div className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-3 text-sm text-violet-900">
-            <CreditCard className="h-4 w-4 shrink-0" />
-            {fatura && (conta?.dia_fechamento ? `Cai na fatura de ${mesAbreviado(fatura)}${venc ? ` (vence ${dataBR(venc)})` : ''}.` : 'Entra na fatura do cartão.')}
-            {!conta?.dia_fechamento && <span className="text-xs text-violet-700"> Cadastre o dia de fechamento em Cartões para calcular a fatura.</span>}
-          </div>
-        ) : (
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-3.5 py-3">
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-azul-600"
-              checked={pago}
-              onChange={(e) => {
-                setPago(e.target.checked)
-                setPagoMexido(true)
-              }}
-            />
-            <span className="text-sm font-semibold text-slate-700">{repeticao === 'nao' ? rotuloPago : `${rotuloPago} (a 1ª)`}</span>
-            {!pago && <span className="ml-auto text-xs text-amber-600">fica “a {tipo === 'receita' ? 'receber' : 'pagar'}”</span>}
-          </label>
-        )}
+          {ehCartao && tipo !== 'transferencia' ? (
+            <div className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-3 text-sm text-violet-900">
+              <CreditCard className="h-4 w-4 shrink-0" />
+              {fatura && (conta?.dia_fechamento ? `Cai na fatura de ${mesAbreviado(fatura)}${venc ? ` (vence ${dataBR(venc)})` : ''}.` : 'Entra na fatura do cartão.')}
+              {!conta?.dia_fechamento && <span className="text-xs text-violet-700"> Cadastre o dia de fechamento em Cartões para calcular a fatura.</span>}
+            </div>
+          ) : (
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-3.5 py-3">
+              <input
+                type="checkbox"
+                className="h-5 w-5 accent-azul-600"
+                checked={pago}
+                onChange={(e) => {
+                  setPago(e.target.checked)
+                  setPagoMexido(true)
+                }}
+              />
+              <span className="text-sm font-semibold text-slate-700">{repeticao === 'nao' ? rotuloPago : `${rotuloPago} (a 1ª)`}</span>
+              {!pago && <span className="ml-auto text-xs text-amber-600">fica “a {tipo === 'receita' ? 'receber' : 'pagar'}”</span>}
+            </label>
+          )}
 
-        {sequencia && (
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl bg-azul-50 px-3.5 py-3 text-sm text-azul-800">
-            <input type="checkbox" className="h-5 w-5 accent-azul-600" checked={aplicarProximos} onChange={(e) => setAplicarProximos(e.target.checked)} />
-            {edicao?.recorrencia_id
-              ? 'Aplicar também aos próximos meses (muda a recorrência, ex.: reajuste de salário ou aluguel)'
-              : `Aplicar descrição, valor, conta e categoria às próximas parcelas${edicao?.parcelas ? ` (esta é a ${edicao.parcela}/${edicao.parcelas})` : ''}`}
-          </label>
-        )}
+          {sequencia && (
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl bg-azul-50 px-3.5 py-3 text-sm text-azul-800">
+              <input type="checkbox" className="h-5 w-5 accent-azul-600" checked={aplicarProximos} onChange={(e) => setAplicarProximos(e.target.checked)} />
+              {edicao?.recorrencia_id
+                ? 'Aplicar também aos próximos meses (muda a recorrência, ex.: reajuste de salário ou aluguel)'
+                : `Aplicar descrição, valor, conta e categoria às próximas parcelas${edicao?.parcelas ? ` (esta é a ${edicao.parcela}/${edicao.parcelas})` : ''}`}
+            </label>
+          )}
 
-        <Campo label="Observação">
-          <textarea className="input min-h-16" value={observacao} onChange={(e) => setObservacao(e.target.value)} />
-        </Campo>
-        <Erro>{erro}</Erro>
-      </form>
-    </Modal>
+          <Campo label="Observação">
+            <textarea className="input min-h-16" value={observacao} onChange={(e) => setObservacao(e.target.value)} />
+          </Campo>
+          <Erro>{erro}</Erro>
+        </form>
+      </Modal>
+      {/* fora do <form> do lançamento: o formulário da categoria não pode ficar aninhado nele */}
+      {novaCat && tipo !== 'transferencia' && <CategoriaForm inicial={null} tipoPadrao={tipo} onClose={() => setNovaCat(false)} onSalva={(c) => setCategoriaId(c.id)} />}
+    </>
   )
 }

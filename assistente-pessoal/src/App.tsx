@@ -5,6 +5,7 @@ import { Contexto, type ContextoApp, type InicialLancamento } from './contexto'
 import { Layout } from './components/Layout'
 import { LancamentoForm } from './components/LancamentoForm'
 import { Login } from './components/Login'
+import { ProtecaoErro } from './components/ProtecaoErro'
 import { Carregando } from './components/ui'
 import { buscarCategorias, buscarContas, buscarPessoas, gerarRecorrencias, useDados } from './lib/dados'
 import { Link, useRota } from './lib/rotas'
@@ -140,9 +141,13 @@ function AreaDoDono({ session }: { session: Session }) {
               : `Não foi possível carregar os dados: ${erro}`}
           </p>
         )}
-        {pagina}
+        <ProtecaoErro key={rota}>{pagina}</ProtecaoErro>
       </Layout>
-      {form && <LancamentoForm key={'id' in form ? form.id : 'novo'} inicial={form} onClose={() => setForm(null)} />}
+      {form && (
+        <ProtecaoErro onFechar={() => setForm(null)}>
+          <LancamentoForm key={'id' in form ? form.id : 'novo'} inicial={form} onClose={() => setForm(null)} />
+        </ProtecaoErro>
+      )}
     </Contexto.Provider>
   )
 }
@@ -189,5 +194,9 @@ export default function App() {
   if (!session) return <Login />
   if (dono === null) return <Carregando />
   if (!dono) return <SemAcesso />
-  return <AreaDoDono session={session} />
+  return (
+    <ProtecaoErro>
+      <AreaDoDono session={session} />
+    </ProtecaoErro>
+  )
 }
