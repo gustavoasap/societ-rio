@@ -214,3 +214,26 @@ export function aReceberDeTerceiros(lancamentos: Lancamento[]) {
   }
   return mapa
 }
+
+export interface LinhaFaturas {
+  /** mês do vencimento ("AAAA-MM") */
+  mes: string
+  /** fatura de cada cartão nesse mês (ausente = sem compras) */
+  porCartao: Map<string, Fatura>
+  total: number
+  aPagar: number
+}
+
+/** Faturas de todos os cartões, mês a mês (pelo mês do vencimento), nos meses pedidos. */
+export function faturasPorMes(cartoes: Conta[], lancamentos: Lancamento[], meses: string[]): LinhaFaturas[] {
+  const porCartao = new Map(cartoes.map((c) => [c.id, new Map(faturasDoCartao(c, lancamentos).map((f) => [f.mes, f]))]))
+  return meses.map((mes) => {
+    const m = new Map<string, Fatura>()
+    for (const c of cartoes) {
+      const f = porCartao.get(c.id)?.get(mes)
+      if (f) m.set(c.id, f)
+    }
+    const fs = [...m.values()]
+    return { mes, porCartao: m, total: somar(fs.map((f) => f.total)), aPagar: somar(fs.map((f) => Math.max(0, somar([f.total, -f.pago])))) }
+  })
+}
