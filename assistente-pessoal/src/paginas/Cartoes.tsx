@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { CalendarDays, CircleCheck, CreditCard, Pencil, Plus, Wallet } from 'lucide-react'
+import { CalendarDays, ChartPie, CircleCheck, CreditCard, Pencil, Plus, Wallet } from 'lucide-react'
 import { LinhaLancamento } from '../components/LinhaLancamento'
-import { Cabecalho, Carregando, Erro, Progresso, Vazio } from '../components/ui'
+import { Bolinha, Cabecalho, Carregando, Erro, Modal, Progresso, Vazio } from '../components/ui'
+import { corDe, iconeDe } from '../components/visual'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
 import { hoje, mesAtual, primeiroDia, somarDias, somarMesesAoMes, ultimoDia } from '../lib/datas'
 import { buscarLancamentos, useDados, type ContaComSaldo } from '../lib/dados'
 import { datasDaFatura, faturasDoCartao, faturasPorMes, type Fatura } from '../lib/financas'
-import { dataBR, mesAbreviado, mesPorExtenso, moeda } from '../lib/formato'
+import { dataBR, mesAbreviado, mesPorExtenso, moeda, percentual } from '../lib/formato'
 import { ContaForm } from './Contas'
 
 export function Cartoes() {
@@ -68,6 +69,7 @@ function CartaoBloco({
   setSel: (m: string) => void
 }) {
   const { contas, pessoas, nome, abrirLancamento } = useApp()
+  const [resumo, setResumo] = useState(false)
   const hj = hoje()
   const faturas = faturasDoCartao(c, lancamentos)
   const atualIdx = Math.max(
@@ -198,13 +200,60 @@ function CartaoBloco({
                     <Wallet className="h-4 w-4" /> Pagar fatura
                   </button>
                 )}
+                <button className="btn-secondary w-full whitespace-nowrap" onClick={() => setResumo(true)}>
+                  <ChartPie className="h-4 w-4" /> Resumo por categoria
+                </button>
                 {futuras > 0 && <p className="text-xs text-slate-500">Já comprometido nas próximas faturas: <b>{moeda(futuras)}</b></p>}
               </aside>
             </div>
           )}
         </>
       )}
+      {resumo && f && <ResumoPorCategoria cartao={c.nome} fatura={f} onClose={() => setResumo(false)} />}
     </section>
+  )
+}
+
+/** Quanto cada categoria pesa na fatura do mês selecionado. */
+function ResumoPorCategoria({ cartao, fatura, onClose }: { cartao: string; fatura: Fatura; onClose: () => void }) {
+  const { categorias } = useApp()
+  const porCat = new Map<string, { total: number; qtd: number }>()
+  for (const l of fatura.itens) {
+    const k = l.categoria_id ?? ''
+    const x = porCat.get(k) ?? { total: 0, qtd: 0 }
+    porCat.set(k, { total: somar([x.total, l.tipo === 'receita' ? -l.valor : l.valor]), qtd: x.qtd + 1 })
+  }
+  const linhas = [...porCat.entries()].sort(([, a], [, b]) => b.total - a.total)
+
+  return (
+    <Modal titulo={`Resumo por categoria · ${cartao} ${mesAbreviado(fatura.mes)}`} onClose={onClose}>
+      <div className="space-y-3">
+        {linhas.map(([id, x]) => {
+          const cat = categorias.find((k) => k.id === id)
+          const cor = corDe(cat?.cor ?? 'cinza')
+          return (
+            <div key={id || '-'} className="flex items-center gap-3">
+              <Bolinha icone={iconeDe(cat?.icone)} fundo={cor.fundo} texto={cor.texto} tamanho="h-9 w-9" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2 text-sm">
+                  <span className="truncate font-semibold text-slate-800">{cat?.nome ?? 'Sem categoria'}</span>
+                  <span className="shrink-0 font-bold text-slate-900 tabular-nums">{moeda(x.total)}</span>
+                </div>
+                <Progresso fracao={fatura.total > 0 ? x.total / fatura.total : 0} cor={cor.barra} />
+                <div className="mt-0.5 text-xs text-slate-500">
+                  {x.qtd} {x.qtd === 1 ? 'lançamento' : 'lançamentos'}
+                  {fatura.total > 0 && x.total > 0 ? ` · ${percentual(x.total / fatura.total)} da fatura` : ''}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+        <div className="flex justify-between border-t border-slate-200 pt-3 text-sm font-bold text-slate-900">
+          <span>Total da fatura</span>
+          <span className="tabular-nums">{moeda(fatura.total)}</span>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
