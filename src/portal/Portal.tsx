@@ -6,6 +6,7 @@ import { Link, useRota } from '../lib/rotas'
 import { Dashboard } from '../components/Dashboard'
 import { ObjetoSocial } from '../societario/ObjetoSocial'
 import { Legalizacao } from '../societario/legalizacao/Legalizacao'
+import { Anotacoes } from '../societario/Anotacoes'
 import { Clientes } from '../administrativo/Clientes'
 import { Tributario } from '../tributario/components/Tributario'
 import { Admin } from './Admin'
@@ -20,6 +21,7 @@ const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> 
   '/societario/processos': Dashboard,
   '/societario/objeto-social': ObjetoSocial,
   '/societario/legalizacao': Legalizacao,
+  '/societario/anotacoes': Anotacoes,
   '/administrativo/clientes': Clientes,
   '/fiscal/reforma-tributaria': Tributario,
 }
