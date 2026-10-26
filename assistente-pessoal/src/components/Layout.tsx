@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ArrowLeftRight, ChartColumn, Compass, ChartPie, CreditCard, Ellipsis, FileSpreadsheet, Flag, House, Landmark, LogOut, Plus, Repeat, Settings, Target, Users, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, ChartColumn, Compass, ChartPie, CreditCard, Ellipsis, FileSpreadsheet, Flag, House, Landmark, LogOut, Plus, Repeat, Scale, Settings, Target, Users, X, type LucideIcon } from 'lucide-react'
 import { useApp } from '../contexto'
 import { Link, useRota } from '../lib/rotas'
 import { supabase } from '../lib/supabase'
@@ -21,6 +21,7 @@ const ITENS: Item[] = [
   { para: '/cartoes', label: 'Cartões', icone: CreditCard, grupo: 'Movimento' },
   { para: '/terceiros', label: 'A receber de terceiros', icone: Users, grupo: 'Movimento' },
   { para: '/contas', label: 'Contas', icone: Landmark, grupo: 'Movimento' },
+  { para: '/conciliacao', label: 'Conciliação bancária', icone: Scale, grupo: 'Movimento' },
   { para: '/orcamento', label: 'Orçamento', icone: ChartPie, grupo: 'Planejamento' },
   { para: '/metas', label: 'Metas', icone: Target, grupo: 'Planejamento' },
   { para: '/objetivos', label: 'Objetivos', icone: Flag, grupo: 'Planejamento' },

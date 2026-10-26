@@ -12,6 +12,7 @@ import { Link, useRota } from './lib/rotas'
 import { supabase, supabaseConfigurado } from './lib/supabase'
 import { Ajustes } from './paginas/Ajustes'
 import { Cartoes } from './paginas/Cartoes'
+import { Conciliacao } from './paginas/Conciliacao'
 import { Dashboard } from './paginas/Dashboard'
 import { DrePagina } from './paginas/Dre'
 import { Recorrentes } from './paginas/Recorrentes'
@@ -111,6 +112,7 @@ function AreaDoDono({ session }: { session: Session }) {
     '/cartoes': () => <Cartoes />,
     '/terceiros': () => <Terceiros />,
     '/contas': () => <Contas />,
+    '/conciliacao': () => <Conciliacao />,
     '/orcamento': () => <Orcamento />,
     '/metas': () => <Metas />,
     '/objetivos': () => <Objetivos />,
