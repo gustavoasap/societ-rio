@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Aporte, Categoria, Config, Conta, Etapa, Lancamento, Meta, Objetivo, Pessoa, Recorrencia } from '../tipos'
+import type { LinhaExtrato } from './extrato'
 import { supabase } from './supabase'
 
 // Qualquer gravação avisa as telas abertas para recarregarem os dados.
@@ -132,6 +133,54 @@ export async function salvarConfig(c: Partial<Config>) {
   avisarMudanca()
 }
 
+// ---------------------------------------------------------------- conciliação bancária
+
+export async function buscarExtrato(contaId: string, inicio: string, fim: string) {
+  const r = await supabase.from('pes_extrato').select('*').eq('conta_id', contaId).gte('data', inicio).lte('data', fim).order('data').order('criado_em')
+  return num(ok(r) as LinhaExtrato[], ['valor'])
+}
+
+/** Todas as chaves já importadas da conta (identificador do banco ou data|valor|descrição). */
+export async function buscarChavesExtrato(contaId: string) {
+  const r = await supabase.from('pes_extrato').select('data, valor, descricao, fitid').eq('conta_id', contaId).limit(20000)
+  return num(ok(r) as Pick<LinhaExtrato, 'data' | 'valor' | 'descricao' | 'fitid'>[], ['valor'])
+}
+
+/** Saldo informado pelo banco mais recente até `ate`. */
+export async function buscarSaldoExtrato(contaId: string, inicio: string, ate: string) {
+  const r = await supabase.from('pes_extrato_saldos').select('data, saldo').eq('conta_id', contaId).gte('data', inicio).lte('data', ate).order('data', { ascending: false }).limit(1).maybeSingle()
+  const d = ok(r) as { data: string; saldo: number } | null
+  return d ? { data: d.data, saldo: Number(d.saldo) } : null
+}
+
+export async function salvarSaldoExtrato(contaId: string, data: string, saldo: number) {
+  ok(await supabase.from('pes_extrato_saldos').upsert({ conta_id: contaId, data, saldo }))
+  avisarMudanca()
+}
+
+/** Saldo da conta no app ao fim do dia `data` (saldo inicial + o que foi pago/recebido até lá). */
+export async function saldoNaData(contaId: string, saldoInicial: number, data: string) {
+  let total = Math.round(saldoInicial * 100)
+  for (let de = 0; ; de += 1000) {
+    const r = ok(
+      await supabase
+        .from('pes_lancamentos')
+        .select('tipo, valor, conta_id, conta_destino_id')
+        .or(`conta_id.eq.${contaId},conta_destino_id.eq.${contaId}`)
+        .eq('pago', true)
+        .lte('data', data)
+        .order('id')
+        .range(de, de + 999),
+    ) as Pick<Lancamento, 'tipo' | 'valor' | 'conta_id' | 'conta_destino_id'>[]
+    for (const l of r) {
+      const v = Math.round(Number(l.valor) * 100)
+      total += l.conta_destino_id === contaId ? v : l.tipo === 'receita' ? v : -v
+    }
+    if (r.length < 1000) break
+  }
+  return total / 100
+}
+
 /** Despesas em nome de outras pessoas ainda não reembolsadas. */
 export async function buscarDeTerceiros() {
   const r = await supabase.from('pes_lancamentos').select('*').not('pessoa_id', 'is', null).eq('reembolsado', false).eq('tipo', 'despesa').order('data').limit(5000)
@@ -148,7 +197,7 @@ export async function gerarRecorrencias() {
 
 // ---------------------------------------------------------------- gravação
 
-type Tabela = 'pes_contas' | 'pes_categorias' | 'pes_lancamentos' | 'pes_metas' | 'pes_meta_aportes' | 'pes_objetivos' | 'pes_etapas' | 'pes_pessoas' | 'pes_recorrencias'
+type Tabela = 'pes_extrato' | 'pes_contas' | 'pes_categorias' | 'pes_lancamentos' | 'pes_metas' | 'pes_meta_aportes' | 'pes_objetivos' | 'pes_etapas' | 'pes_pessoas' | 'pes_recorrencias'
 
 export async function salvar<T extends object>(tabela: Tabela, id: string | null | undefined, valores: T) {
   const r = id ? await supabase.from(tabela).update(valores).eq('id', id).select().single() : await supabase.from(tabela).insert(valores).select().single()
