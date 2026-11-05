@@ -8,6 +8,7 @@ import { ObjetoSocial } from '../societario/ObjetoSocial'
 import { Legalizacao } from '../societario/legalizacao/Legalizacao'
 import { Anotacoes } from '../societario/Anotacoes'
 import { Clientes } from '../administrativo/Clientes'
+import { Crm } from '../administrativo/crm/Crm'
 import { Tributario } from '../tributario/components/Tributario'
 import { Admin } from './Admin'
 import { DepartamentoForm, ModuloForm } from './Formularios'
@@ -23,6 +24,7 @@ const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> 
   '/societario/legalizacao': Legalizacao,
   '/societario/anotacoes': Anotacoes,
   '/administrativo/clientes': Clientes,
+  '/administrativo/crm': Crm,
   '/fiscal/reforma-tributaria': Tributario,
 }
 
