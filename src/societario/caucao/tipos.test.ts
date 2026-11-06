@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { unzipSync, strFromU8 } from 'fflate'
 import { lerXlsx } from '../../tributario/importacao/xlsx'
-import { gerarXlsx, serialData } from '../../lib/planilha'
-import { resultado, totalizar, valorResponsavel, type Caucao } from './tipos'
+import { gerarXlsx, gerarXlsxAbas, serialData } from '../../lib/planilha'
+import { conciliarMes, limitesMes, resultado, totalizar, valorResponsavel, type Caucao } from './tipos'
 
 const c = (o: Partial<Caucao>) => ({ valor_caucao: null, taxa_junta: null, valor_certificado: null, ...o }) as Caucao
 
@@ -44,4 +44,48 @@ describe('planilha xlsx', () => {
     expect(sheet).toContain('<c r="B3" s="5">')
   })
   it('série de data do Excel', () => expect(serialData('1900-03-01')).toBe(61))
+})
+
+describe('conciliação mensal', () => {
+  const base = { cliente: 'X', junta_uf: 'SP', data_recebimento: null, data_pagamento_taxa: null, data_pagamento_certificado: null, data_apropriacao: null }
+  const a = c({ ...base, id: 'a', cliente: 'Alfa', valor_caucao: 1000, data_recebimento: '2026-09-20', taxa_junta: 218.99, data_pagamento_taxa: '2026-10-02', valor_certificado: 180, data_pagamento_certificado: '2026-10-05' })
+  const b = c({ ...base, id: 'b', cliente: 'Beta', valor_caucao: 300, data_recebimento: '2026-10-10', taxa_junta: 281.08, data_pagamento_taxa: null, valor_certificado: 180, data_pagamento_certificado: '2026-11-03' })
+
+  it('setembro: só o recebimento', () => {
+    const r = conciliarMes([a, b], '2026-09')
+    expect(r.linhas).toHaveLength(1)
+    expect(r.totais).toMatchObject({ saldoAnterior: 0, creditos: 1000, saldoFinal: 1000 })
+  })
+  it('outubro: saldo anterior + recebimento − pagamentos', () => {
+    const r = conciliarMes([a, b], '2026-10')
+    expect(r.totais).toMatchObject({ saldoAnterior: 1000, creditos: 300, taxa: -218.99, certificado: -180, saldoFinal: 901.01 })
+    expect(r.lancamentos.map((l) => l.tipo)).toEqual(['taxa', 'certificado', 'caucao'])
+    expect(r.semData).toBe(1)
+  })
+  it('apropriação zera o saldo do cliente', () => {
+    const fechado = { ...a, data_apropriacao: '2026-11-30' }
+    const r = conciliarMes([fechado], '2026-11')
+    expect(r.linhas[0]).toMatchObject({ saldoAnterior: 601.01, apropriacao: -601.01, saldoFinal: 0 })
+    expect(conciliarMes([fechado], '2026-12').linhas).toHaveLength(0)
+  })
+  it('prejuízo apropriado entra a crédito', () => {
+    const p = c({ ...base, id: 'p', valor_caucao: 300, data_recebimento: '2026-10-01', taxa_junta: 281.08, data_pagamento_taxa: '2026-10-02', valor_certificado: 180, data_pagamento_certificado: '2026-10-03', data_apropriacao: '2026-10-31' })
+    const r = conciliarMes([p], '2026-10')
+    expect(r.totais).toMatchObject({ apropriacao: 161.08, saldoFinal: 0 })
+  })
+  it('limites do mês', () => expect(limitesMes('2028-02')).toEqual({ inicio: '2028-02-01', fim: '2028-02-29' }))
+})
+
+describe('planilha com várias abas', () => {
+  it('gera duas abas com filtro próprio', () => {
+    const arq = gerarXlsxAbas([
+      { aba: 'Resumo 10/2026', colunas: [{ titulo: 'A' }], linhas: [['x']] },
+      { aba: 'Lançamentos', colunas: [{ titulo: 'B', tipo: 'moeda' }], linhas: [[1], [2]] },
+    ])
+    const z = unzipSync(arq)
+    expect(Object.keys(z)).toContain('xl/worksheets/sheet2.xml')
+    const wb = strFromU8(z['xl/workbook.xml'])
+    expect(wb).toContain('<sheet name="Resumo 10 2026" sheetId="1" r:id="rId1"/>')
+    expect(wb).toContain("'Lançamentos'!$A$1:$A$3")
+  })
 })

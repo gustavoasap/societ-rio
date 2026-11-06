@@ -106,8 +106,17 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`
 
-/** Monta o arquivo .xlsx (uma aba). `total` vira a última linha, em negrito. */
-export function gerarXlsx({ aba, colunas, linhas, total }: { aba: string; colunas: ColunaPlanilha[]; linhas: ValorCelula[][]; total?: ValorCelula[] }) {
+export interface AbaPlanilha {
+  aba: string
+  colunas: ColunaPlanilha[]
+  linhas: ValorCelula[][]
+  /** Última linha, em negrito. */
+  total?: ValorCelula[]
+}
+
+const nomeDaAba = (aba: string) => aba.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31)
+
+function planilhaXml({ colunas, linhas, total }: AbaPlanilha) {
   const tipos = colunas.map((c) => c.tipo ?? 'texto')
   const ultima = letraColuna(colunas.length - 1)
   const linhaXml = (r: number, vals: ValorCelula[], negrito = false) =>
@@ -117,47 +126,56 @@ export function gerarXlsx({ aba, colunas, linhas, total }: { aba: string; coluna
         return celula(`${letraColuna(i)}${r}`, tipos[i], val)
       })
       .join('')}</row>`
-
   const cab = `<row r="1" ht="30" customHeight="1">${colunas.map((c, i) => `<c r="${letraColuna(i)}1" t="inlineStr" s="${XF.cabecalho}"><is><t>${esc(c.titulo)}</t></is></c>`).join('')}</row>`
   const corpo = linhas.map((l, i) => linhaXml(i + 2, l)).join('')
   const rodape = total ? linhaXml(linhas.length + 2, total, true) : ''
-  const fimFiltro = linhas.length + 1
-
-  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+  const filtro = `A1:${ultima}${Math.max(2, linhas.length + 1)}`
+  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
 <sheetFormatPr defaultRowHeight="15"/>
 <cols>${colunas.map((c, i) => `<col min="${i + 1}" max="${i + 1}" width="${c.largura ?? Math.max(12, c.titulo.length + 4)}" customWidth="1"/>`).join('')}</cols>
 <sheetData>${cab}${corpo}${rodape}</sheetData>
-<autoFilter ref="A1:${ultima}${fimFiltro}"/>
+<autoFilter ref="${filtro}"/>
 </worksheet>`
+  return { xml, filtro }
+}
 
-  const nomeAba = esc(aba.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31))
+/** Monta o arquivo .xlsx com uma ou mais abas. */
+export function gerarXlsxAbas(abas: AbaPlanilha[]) {
+  const geradas = abas.map((a, i) => ({ ...planilhaXml(a), nome: esc(nomeDaAba(a.aba)), n: i + 1 }))
   const arquivos: Record<string, Uint8Array> = {
     '[Content_Types].xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+${geradas.map((g) => `<Override PartName="/xl/worksheets/sheet${g.n}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('\n')}
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 </Types>`),
     '_rels/.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
     'xl/workbook.xml': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheets><sheet name="${nomeAba}" sheetId="1" r:id="rId1"/></sheets>
-<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'${nomeAba.replace(/'/g, "''")}'!$A$1:$${ultima}$${fimFiltro}</definedName></definedNames>
+<sheets>${geradas.map((g) => `<sheet name="${g.nome}" sheetId="${g.n}" r:id="rId${g.n}"/>`).join('')}</sheets>
+<definedNames>${geradas
+      .map((g) => `<definedName name="_xlnm._FilterDatabase" localSheetId="${g.n - 1}" hidden="1">'${g.nome.replace(/'/g, "''")}'!${g.filtro.replace(/([A-Z]+)(\d+)/g, '$$$1$$$2')}</definedName>`)
+      .join('')}</definedNames>
 </workbook>`),
     'xl/_rels/workbook.xml.rels': strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+${geradas.map((g) => `<Relationship Id="rId${g.n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${g.n}.xml"/>`).join('\n')}
+<Relationship Id="rId${geradas.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`),
     'xl/styles.xml': strToU8(STYLES),
-    'xl/worksheets/sheet1.xml': strToU8(sheet),
   }
+  for (const g of geradas) arquivos[`xl/worksheets/sheet${g.n}.xml`] = strToU8(g.xml)
   return zipSync(arquivos, { level: 6 })
+}
+
+/** Monta o arquivo .xlsx (uma aba). `total` vira a última linha, em negrito. */
+export function gerarXlsx(aba: AbaPlanilha) {
+  return gerarXlsxAbas([aba])
 }
 
 export function baixarArquivo(nome: string, dados: BlobPart, tipo: string) {

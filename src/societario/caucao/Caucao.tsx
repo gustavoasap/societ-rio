@@ -1,6 +1,20 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { FileSpreadsheet, FileText, Handshake, House, Landmark, LogOut, Plus, Search, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
+import {
+  CalendarRange,
+  FileSpreadsheet,
+  FileText,
+  Handshake,
+  House,
+  Landmark,
+  List,
+  LogOut,
+  Plus,
+  Search,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Link } from '../../lib/rotas'
 import { comRetentativa } from '../../lib/retentar'
@@ -10,6 +24,7 @@ import { Select } from '../../components/ui'
 import { Parceiros } from '../../components/Parceiros'
 import type { Parceiro } from '../../types'
 import { CaucaoForm } from './CaucaoForm'
+import { Conciliacao } from './Conciliacao'
 import { Juntas } from './Juntas'
 import { labelCobertura, resultado, totalizar, type Caucao as CaucaoT, type Junta } from './tipos'
 
@@ -21,7 +36,10 @@ const hoje = () => {
 function Resultado({ valor, grande = false }: { valor: number; grande?: boolean }) {
   const cor = valor > 0 ? 'text-emerald-700' : valor < 0 ? 'text-rose-600' : 'text-slate-400'
   return (
-    <span className={`font-bold whitespace-nowrap tabular-nums ${cor} ${grande ? 'text-lg sm:text-2xl' : ''}`} title={valor > 0 ? 'Lucro' : valor < 0 ? 'Prejuízo' : 'Zerado'}>
+    <span
+      className={`font-bold whitespace-nowrap tabular-nums ${cor} ${grande ? 'text-lg sm:text-2xl' : ''}`}
+      title={valor > 0 ? 'Lucro' : valor < 0 ? 'Prejuízo' : 'Zerado'}
+    >
       {formatarMoeda(valor)}
     </span>
   )
@@ -56,6 +74,7 @@ export function Caucao({ session }: { session: Session }) {
   const [de, setDe] = useState('')
   const [ate, setAte] = useState('')
 
+  const [aba, setAba] = useState<'clientes' | 'mensal'>('clientes')
   const [editando, setEditando] = useState<CaucaoT | 'novo' | null>(null)
   const [verJuntas, setVerJuntas] = useState(false)
   const [verParceiros, setVerParceiros] = useState(false)
@@ -74,11 +93,18 @@ export function Caucao({ session }: { session: Session }) {
     setErro(falha ? falha.message : null)
     const num = (v: unknown) => (v === null || v === undefined ? null : Number(v))
     setCaucoes(
-      ((c.data as CaucaoT[]) ?? []).map((x) => ({ ...x, valor_caucao: num(x.valor_caucao), taxa_junta: num(x.taxa_junta), valor_certificado: num(x.valor_certificado) })),
+      ((c.data as CaucaoT[]) ?? []).map((x) => ({
+        ...x,
+        valor_caucao: num(x.valor_caucao),
+        taxa_junta: num(x.taxa_junta),
+        valor_certificado: num(x.valor_certificado),
+      })),
     )
     setParceiros((p.data as Parceiro[]) ?? [])
     setJuntas(((j.data as Junta[]) ?? []).map((x) => ({ ...x, taxa: Number(x.taxa) })))
-    const nomes = [...((proc.data as { razao_social: string | null }[]) ?? []), ...((cli.data as { razao_social: string | null }[]) ?? [])].map((x) => x.razao_social?.trim()).filter(Boolean) as string[]
+    const nomes = [...((proc.data as { razao_social: string | null }[]) ?? []), ...((cli.data as { razao_social: string | null }[]) ?? [])]
+      .map((x) => x.razao_social?.trim())
+      .filter(Boolean) as string[]
     setSugestoes([...new Set(nomes)].sort((a, b) => a.localeCompare(b, 'pt-BR')))
     setCarregando(false)
   }, [])
@@ -88,24 +114,36 @@ export function Caucao({ session }: { session: Session }) {
   }, [carregar])
 
   const nomeParceiro = useCallback((id: string | null) => parceiros.find((p) => p.id === id)?.nome ?? '', [parceiros])
-  const nomeResponsavel = useCallback((c: CaucaoT) => (c.responsavel_tipo === 'cliente' ? 'Próprio cliente' : `Parceiro: ${nomeParceiro(c.responsavel_parceiro_id) || '—'}`), [nomeParceiro])
+  const nomeResponsavel = useCallback(
+    (c: CaucaoT) => (c.responsavel_tipo === 'cliente' ? 'Próprio cliente' : `Parceiro: ${nomeParceiro(c.responsavel_parceiro_id) || '—'}`),
+    [nomeParceiro],
+  )
   const nomeJunta = useCallback((uf: string | null) => (uf ? `${uf} · ${juntas.find((j) => j.uf === uf)?.nome ?? ''}`.replace(/ · $/, '') : ''), [juntas])
 
-  const lista = useMemo(() => {
+  const base = useMemo(() => {
     const t = busca.trim().toLowerCase()
     return caucoes.filter((c) => {
       if (fParceiro && (fParceiro === 'nenhum' ? c.parceiro_id : c.parceiro_id !== fParceiro)) return false
       if (fResp && (fResp === 'cliente' ? c.responsavel_tipo !== 'cliente' : c.responsavel_parceiro_id !== fResp)) return false
       if (fJunta && (fJunta === 'nenhuma' ? c.junta_uf : c.junta_uf !== fJunta)) return false
-      const r = resultado(c)
-      if (fResultado === 'lucro' && r <= 0) return false
-      if (fResultado === 'prejuizo' && r >= 0) return false
-      if (de && (!c.data_recebimento || c.data_recebimento < de)) return false
-      if (ate && (!c.data_recebimento || c.data_recebimento > ate)) return false
       if (!t) return true
       return [c.cliente, nomeParceiro(c.parceiro_id), c.observacoes].filter(Boolean).join(' ').toLowerCase().includes(t)
     })
-  }, [caucoes, busca, fParceiro, fResp, fJunta, fResultado, de, ate, nomeParceiro])
+  }, [caucoes, busca, fParceiro, fResp, fJunta, nomeParceiro])
+
+  // O período (data de recebimento) só vale para a lista; a conciliação tem o seletor de mês
+  const lista = useMemo(
+    () =>
+      base
+        .filter((c) => {
+          const r = resultado(c)
+          if (fResultado === 'lucro' && r <= 0) return false
+          if (fResultado === 'prejuizo' && r >= 0) return false
+          return true
+        })
+        .filter((c) => !(de && (!c.data_recebimento || c.data_recebimento < de)) && !(ate && (!c.data_recebimento || c.data_recebimento > ate))),
+    [base, de, ate, fResultado],
+  )
 
   const tot = useMemo(() => totalizar(lista), [lista])
 
@@ -140,15 +178,41 @@ export function Caucao({ session }: { session: Session }) {
       c.data_pagamento_taxa,
       c.valor_certificado,
       c.data_pagamento_certificado,
-      { valor: r, destaque: r > 0 ? 'positivo' : r < 0 ? 'negativo' : undefined },
+      {
+        valor: r,
+        destaque: r > 0 ? 'positivo' : r < 0 ? 'negativo' : undefined,
+      },
       r > 0 ? 'Lucro' : r < 0 ? 'Prejuízo' : 'Zerado',
       c.observacoes,
     ]
   }
 
   function exportarExcel() {
-    const total: ValorCelula[] = [`Total (${lista.length} clientes)`, '', '', '', tot.caucao, null, '', tot.taxa, null, tot.certificado, null, { valor: tot.resultado, destaque: tot.resultado >= 0 ? 'positivo' : 'negativo' }, tot.resultado > 0 ? 'Lucro' : tot.resultado < 0 ? 'Prejuízo' : '', '']
-    const arq = gerarXlsx({ aba: 'Acompanhamento de Caução', colunas: COLUNAS, linhas: lista.map(linhaRelatorio), total })
+    const total: ValorCelula[] = [
+      `Total (${lista.length} clientes)`,
+      '',
+      '',
+      '',
+      tot.caucao,
+      null,
+      '',
+      tot.taxa,
+      null,
+      tot.certificado,
+      null,
+      {
+        valor: tot.resultado,
+        destaque: tot.resultado >= 0 ? 'positivo' : 'negativo',
+      },
+      tot.resultado > 0 ? 'Lucro' : tot.resultado < 0 ? 'Prejuízo' : '',
+      '',
+    ]
+    const arq = gerarXlsx({
+      aba: 'Acompanhamento de Caução',
+      colunas: COLUNAS,
+      linhas: lista.map(linhaRelatorio),
+      total,
+    })
     baixarArquivo(`acompanhamento-caucao-${hoje()}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
   }
 
@@ -164,7 +228,10 @@ export function Caucao({ session }: { session: Session }) {
     baixarArquivo(`acompanhamento-caucao-${hoje()}.csv`, '﻿' + csv, 'text/csv;charset=utf-8')
   }
 
-  const opcoesParceiros = parceiros.map((p) => ({ value: p.id, label: p.nome }))
+  const opcoesParceiros = parceiros.map((p) => ({
+    value: p.id,
+    label: p.nome,
+  }))
   const filtrando = !!(busca || fParceiro || fResp || fJunta || fResultado || de || ate)
 
   return (
@@ -186,7 +253,7 @@ export function Caucao({ session }: { session: Session }) {
             </button>
           </div>
         </header>
-        <div className="relative flex w-full max-w-none flex-wrap items-end justify-between gap-4 px-3 pt-4 pb-8 sm:px-4 md:px-6 lg:px-8">
+        <div className="relative flex w-full max-w-none flex-wrap items-end justify-between gap-4 px-3 pt-4 pb-6 sm:px-4 md:px-6 lg:px-8">
           <div>
             <p className="text-sm font-medium text-cyan-300">
               <Link para="/" className="hover:underline">
@@ -216,126 +283,221 @@ export function Caucao({ session }: { session: Session }) {
             </button>
           </div>
         </div>
+        <nav className="relative flex w-full max-w-none gap-1 overflow-x-auto px-3 sm:px-4 md:px-6 lg:px-8" role="tablist">
+          {(
+            [
+              { id: 'clientes', label: 'Clientes', icone: List },
+              {
+                id: 'mensal',
+                label: 'Conciliação mensal',
+                icone: CalendarRange,
+              },
+            ] as const
+          ).map(({ id, label, icone: I }) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={aba === id}
+              onClick={() => setAba(id)}
+              className={`flex cursor-pointer items-center gap-2 rounded-t-xl px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition ${aba === id ? 'bg-[#f3f6fc] text-slate-900' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}
+            >
+              <I className="h-4 w-4" />
+              {label}
+            </button>
+          ))}
+        </nav>
       </div>
 
       <main className="w-full max-w-none space-y-5 px-3 py-6 sm:px-4 md:px-6 lg:px-8">
         {erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Kpi icone={Wallet} rotulo="Cauções recebidos" detalhe={`${lista.length} cliente(s)${filtrando ? ' no filtro' : ''}`}>
-            {formatarMoeda(tot.caucao)}
-          </Kpi>
-          <Kpi icone={Landmark} rotulo="Taxas da junta">{formatarMoeda(tot.taxa)}</Kpi>
-          <Kpi icone={FileText} rotulo="Certificados digitais">{formatarMoeda(tot.certificado)}</Kpi>
-          <Kpi icone={tot.resultado < 0 ? TrendingDown : TrendingUp} rotulo={tot.resultado < 0 ? 'Prejuízo total' : 'Lucro total'} detalhe="caução − taxa − certificado">
-            <Resultado valor={tot.resultado} grande />
-          </Kpi>
-          <Kpi icone={TrendingUp} rotulo="Lucro × prejuízo" detalhe="quantidade de clientes">
-            <span className="text-emerald-700">{tot.comLucro}</span>
-            <span className="mx-1.5 text-slate-300">×</span>
-            <span className="text-rose-600">{tot.comPrejuizo}</span>
-          </Kpi>
-        </div>
+        {aba === 'clientes' && (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <Kpi icone={Wallet} rotulo="Cauções recebidos" detalhe={`${lista.length} cliente(s)${filtrando ? ' no filtro' : ''}`}>
+              {formatarMoeda(tot.caucao)}
+            </Kpi>
+            <Kpi icone={Landmark} rotulo="Taxas da junta">
+              {formatarMoeda(tot.taxa)}
+            </Kpi>
+            <Kpi icone={FileText} rotulo="Certificados digitais">
+              {formatarMoeda(tot.certificado)}
+            </Kpi>
+            <Kpi
+              icone={tot.resultado < 0 ? TrendingDown : TrendingUp}
+              rotulo={tot.resultado < 0 ? 'Prejuízo total' : 'Lucro total'}
+              detalhe="caução − taxa − certificado"
+            >
+              <Resultado valor={tot.resultado} grande />
+            </Kpi>
+            <Kpi icone={TrendingUp} rotulo="Lucro × prejuízo" detalhe="quantidade de clientes">
+              <span className="text-emerald-700">{tot.comLucro}</span>
+              <span className="mx-1.5 text-slate-300">×</span>
+              <span className="text-rose-600">{tot.comPrejuizo}</span>
+            </Kpi>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
           <div className="relative min-w-56 flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input id="busca-caucao" className="input pl-10" placeholder="Buscar cliente, parceiro ou observação" value={busca} onChange={(e) => setBusca(e.target.value)} />
+            <input
+              id="busca-caucao"
+              className="input pl-10"
+              placeholder="Buscar cliente, parceiro ou observação"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
           </div>
-          <Select value={fParceiro} onChange={setFParceiro} opcoes={[...opcoesParceiros, { value: 'nenhum', label: 'Sem parceiro' }]} vazio="Parceiro: todos" className="input w-auto" />
-          <Select value={fResp} onChange={setFResp} opcoes={[{ value: 'cliente', label: 'Próprio cliente' }, ...opcoesParceiros]} vazio="Responsável: todos" className="input w-auto" />
-          <Select value={fJunta} onChange={setFJunta} opcoes={[...juntas.map((j) => ({ value: j.uf, label: j.uf })), { value: 'nenhuma', label: 'Sem junta' }]} vazio="Junta: todas" className="input w-auto" />
-          <Select value={fResultado} onChange={setFResultado} opcoes={[{ value: 'lucro', label: 'Com lucro' }, { value: 'prejuizo', label: 'Com prejuízo' }]} vazio="Resultado: todos" className="input w-auto" />
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500" title="Período pela data de recebimento do caução">
-            Recebido de
-            <input type="date" className="input w-auto py-2" value={de} onChange={(e) => setDe(e.target.value)} />
-            até
-            <input type="date" className="input w-auto py-2" value={ate} onChange={(e) => setAte(e.target.value)} />
-          </div>
-          <div className="ml-auto flex gap-2">
-            <button className="btn-primary from-emerald-500 to-emerald-600 shadow-emerald-500/20" onClick={exportarExcel} disabled={!lista.length} title="Relatório em Excel (.xlsx) com os filtros aplicados">
-              <FileSpreadsheet className="h-4 w-4" />
-              Excel
-            </button>
-            <button className="btn-secondary" onClick={exportarCsv} disabled={!lista.length} title="Relatório em CSV com os filtros aplicados">
-              CSV
-            </button>
-          </div>
+          <Select
+            value={fParceiro}
+            onChange={setFParceiro}
+            opcoes={[...opcoesParceiros, { value: 'nenhum', label: 'Sem parceiro' }]}
+            vazio="Parceiro: todos"
+            className="input w-auto"
+          />
+          <Select
+            value={fResp}
+            onChange={setFResp}
+            opcoes={[{ value: 'cliente', label: 'Próprio cliente' }, ...opcoesParceiros]}
+            vazio="Responsável: todos"
+            className="input w-auto"
+          />
+          <Select
+            value={fJunta}
+            onChange={setFJunta}
+            opcoes={[...juntas.map((j) => ({ value: j.uf, label: j.uf })), { value: 'nenhuma', label: 'Sem junta' }]}
+            vazio="Junta: todas"
+            className="input w-auto"
+          />
+          {aba === 'clientes' && (
+            <Select
+              value={fResultado}
+              onChange={setFResultado}
+              opcoes={[
+                { value: 'lucro', label: 'Com lucro' },
+                { value: 'prejuizo', label: 'Com prejuízo' },
+              ]}
+              vazio="Resultado: todos"
+              className="input w-auto"
+            />
+          )}
+          {aba === 'clientes' && (
+            <>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500" title="Período pela data de recebimento do caução">
+                Recebido de
+                <input type="date" className="input w-auto py-2" value={de} onChange={(e) => setDe(e.target.value)} />
+                até
+                <input type="date" className="input w-auto py-2" value={ate} onChange={(e) => setAte(e.target.value)} />
+              </div>
+              <div className="ml-auto flex gap-2">
+                <button
+                  className="btn-primary from-emerald-500 to-emerald-600 shadow-emerald-500/20"
+                  onClick={exportarExcel}
+                  disabled={!lista.length}
+                  title="Relatório em Excel (.xlsx) com os filtros aplicados"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Excel
+                </button>
+                <button className="btn-secondary" onClick={exportarCsv} disabled={!lista.length} title="Relatório em CSV com os filtros aplicados">
+                  CSV
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[0.8125rem]">
-              <thead className="border-b border-slate-100 text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
-                <tr>
-                  <th className="py-3 pr-3 pl-5">Cliente</th>
-                  <th className="px-3 py-3">Indicação · responsável</th>
-                  <th className="px-3 py-3">Cobertura</th>
-                  <th className="px-3 py-3 text-right">Caução</th>
-                  <th className="px-3 py-3 text-right">Taxa da junta</th>
-                  <th className="px-3 py-3 text-right">Certificado</th>
-                  <th className="py-3 pr-5 pl-3 text-right">Lucro / prejuízo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {lista.map((c) => (
-                  <tr key={c.id} className="cursor-pointer transition hover:bg-slate-50/70" onClick={() => setEditando(c)}>
-                    <td className="min-w-52 py-3 pr-3 pl-5">
-                      <div className="font-semibold text-slate-900">{c.cliente}</div>
-                      {c.observacoes && <div className="max-w-80 truncate text-xs text-slate-400">{c.observacoes}</div>}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="whitespace-nowrap text-slate-700">{nomeParceiro(c.parceiro_id) || <span className="text-slate-300">Sem parceiro</span>}</div>
-                      <div className="text-xs whitespace-nowrap text-slate-400">Caução: {nomeResponsavel(c)}</div>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${c.cobertura_meses ? 'bg-brand-50 text-brand-700 ring-brand-200' : 'bg-slate-100 text-slate-500 ring-slate-200'}`}>
-                        {labelCobertura(c.cobertura_meses)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-right whitespace-nowrap">
-                      <div className="font-semibold text-slate-800 tabular-nums">{c.valor_caucao !== null ? formatarMoeda(c.valor_caucao) : <span className="text-slate-300">—</span>}</div>
-                      <div className="text-xs text-slate-400">{c.data_recebimento ? `Recebido ${formatarData(c.data_recebimento)}` : 'Não recebido'}</div>
-                    </td>
-                    <td className="px-3 py-3 text-right whitespace-nowrap">
-                      <div className="text-slate-700 tabular-nums">
-                        {c.junta_uf && <span className="mr-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[0.6875rem] font-bold text-slate-600">{c.junta_uf}</span>}
-                        {c.taxa_junta !== null ? formatarMoeda(c.taxa_junta) : <span className="text-slate-300">—</span>}
-                      </div>
-                      <div className="text-xs text-slate-400">{c.data_pagamento_taxa ? `Pago ${formatarData(c.data_pagamento_taxa)}` : 'Não paga'}</div>
-                    </td>
-                    <td className="px-3 py-3 text-right whitespace-nowrap">
-                      <div className="text-slate-700 tabular-nums">{c.valor_certificado !== null ? formatarMoeda(c.valor_certificado) : <span className="text-slate-300">—</span>}</div>
-                      <div className="text-xs text-slate-400">{c.data_pagamento_certificado ? `Pago ${formatarData(c.data_pagamento_certificado)}` : 'Não pago'}</div>
-                    </td>
-                    <td className="py-3 pr-5 pl-3 text-right text-sm">
-                      <Resultado valor={resultado(c)} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              {lista.length > 0 && (
-                <tfoot className="border-t-2 border-slate-200 bg-slate-50/80 font-bold text-slate-800">
+        {aba === 'mensal' ? (
+          <Conciliacao caucoes={base} filtrados={!!(busca || fParceiro || fResp || fJunta)} nomeParceiro={nomeParceiro} />
+        ) : (
+          <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[0.8125rem]">
+                <thead className="border-b border-slate-100 text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
                   <tr>
-                    <td className="py-3 pr-3 pl-5" colSpan={3}>
-                      Total · {lista.length} cliente(s)
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.caucao)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.taxa)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.certificado)}</td>
-                    <td className="py-3 pr-5 pl-3 text-right text-sm">
-                      <Resultado valor={tot.resultado} />
-                    </td>
+                    <th className="py-3 pr-3 pl-5">Cliente</th>
+                    <th className="px-3 py-3">Indicação · responsável</th>
+                    <th className="px-3 py-3">Cobertura</th>
+                    <th className="px-3 py-3 text-right">Caução</th>
+                    <th className="px-3 py-3 text-right">Taxa da junta</th>
+                    <th className="px-3 py-3 text-right">Certificado</th>
+                    <th className="py-3 pr-5 pl-3 text-right">Lucro / prejuízo</th>
                   </tr>
-                </tfoot>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {lista.map((c) => (
+                    <tr key={c.id} className="cursor-pointer transition hover:bg-slate-50/70" onClick={() => setEditando(c)}>
+                      <td className="min-w-52 py-3 pr-3 pl-5">
+                        <div className="font-semibold text-slate-900">{c.cliente}</div>
+                        {c.observacoes && <div className="max-w-80 truncate text-xs text-slate-400">{c.observacoes}</div>}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="whitespace-nowrap text-slate-700">
+                          {nomeParceiro(c.parceiro_id) || <span className="text-slate-300">Sem parceiro</span>}
+                        </div>
+                        <div className="text-xs whitespace-nowrap text-slate-400">Caução: {nomeResponsavel(c)}</div>
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${c.cobertura_meses ? 'bg-brand-50 text-brand-700 ring-brand-200' : 'bg-slate-100 text-slate-500 ring-slate-200'}`}
+                        >
+                          {labelCobertura(c.cobertura_meses)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <div className="font-semibold text-slate-800 tabular-nums">
+                          {c.valor_caucao !== null ? formatarMoeda(c.valor_caucao) : <span className="text-slate-300">—</span>}
+                        </div>
+                        <div className="text-xs text-slate-400">{c.data_recebimento ? `Recebido ${formatarData(c.data_recebimento)}` : 'Não recebido'}</div>
+                      </td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <div className="text-slate-700 tabular-nums">
+                          {c.junta_uf && (
+                            <span className="mr-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[0.6875rem] font-bold text-slate-600">{c.junta_uf}</span>
+                          )}
+                          {c.taxa_junta !== null ? formatarMoeda(c.taxa_junta) : <span className="text-slate-300">—</span>}
+                        </div>
+                        <div className="text-xs text-slate-400">{c.data_pagamento_taxa ? `Pago ${formatarData(c.data_pagamento_taxa)}` : 'Não paga'}</div>
+                      </td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <div className="text-slate-700 tabular-nums">
+                          {c.valor_certificado !== null ? formatarMoeda(c.valor_certificado) : <span className="text-slate-300">—</span>}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {c.data_pagamento_certificado ? `Pago ${formatarData(c.data_pagamento_certificado)}` : 'Não pago'}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-5 pl-3 text-right text-sm">
+                        <Resultado valor={resultado(c)} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {lista.length > 0 && (
+                  <tfoot className="border-t-2 border-slate-200 bg-slate-50/80 font-bold text-slate-800">
+                    <tr>
+                      <td className="py-3 pr-3 pl-5" colSpan={3}>
+                        Total · {lista.length} cliente(s)
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.caucao)}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.taxa)}</td>
+                      <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.certificado)}</td>
+                      <td className="py-3 pr-5 pl-3 text-right text-sm">
+                        <Resultado valor={tot.resultado} />
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+              {!carregando && lista.length === 0 && (
+                <p className="p-10 text-center text-sm text-slate-400">
+                  {caucoes.length ? 'Nenhum caução encontrado com esses filtros.' : 'Nenhum caução cadastrado. Clique em "Novo caução" para começar.'}
+                </p>
               )}
-            </table>
-            {!carregando && lista.length === 0 && (
-              <p className="p-10 text-center text-sm text-slate-400">{caucoes.length ? 'Nenhum caução encontrado com esses filtros.' : 'Nenhum caução cadastrado. Clique em "Novo caução" para começar.'}</p>
-            )}
-            {carregando && <p className="p-10 text-center text-sm text-slate-400">Carregando...</p>}
+              {carregando && <p className="p-10 text-center text-sm text-slate-400">Carregando...</p>}
+            </div>
           </div>
-        </div>
+        )}
       </main>
 
       {editando && (

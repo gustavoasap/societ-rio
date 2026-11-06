@@ -39,9 +39,14 @@ export function CaucaoForm({
     data_pagamento_taxa: caucao?.data_pagamento_taxa ?? '',
     valor_certificado: brl(caucao?.valor_certificado),
     data_pagamento_certificado: caucao?.data_pagamento_certificado ?? '',
+    data_apropriacao: caucao?.data_apropriacao ?? '',
     observacoes: caucao?.observacoes ?? '',
   }))
-  const [novaJunta, setNovaJunta] = useState<{ uf: string; nome: string; taxa: string } | null>(null)
+  const [novaJunta, setNovaJunta] = useState<{
+    uf: string
+    nome: string
+    taxa: string
+  } | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }))
@@ -56,7 +61,11 @@ export function CaucaoForm({
   function escolherJunta(uf: string) {
     if (uf === NOVA_JUNTA) return setNovaJunta({ uf: '', nome: '', taxa: '' })
     const j = juntas.find((x) => x.uf === uf)
-    setF((x) => ({ ...x, junta_uf: uf, taxa_junta: j ? brl(j.taxa) : x.taxa_junta }))
+    setF((x) => ({
+      ...x,
+      junta_uf: uf,
+      taxa_junta: j ? brl(j.taxa) : x.taxa_junta,
+    }))
   }
 
   async function criarJunta() {
@@ -64,12 +73,20 @@ export function CaucaoForm({
     const r = await salvarJunta(novaJunta, null)
     if (r.erro || !r.junta) return setErro(r.erro ?? 'Não foi possível cadastrar a junta.')
     setErro(null)
-    setF((x) => ({ ...x, junta_uf: r.junta!.uf, taxa_junta: brl(r.junta!.taxa) }))
+    setF((x) => ({
+      ...x,
+      junta_uf: r.junta!.uf,
+      taxa_junta: brl(r.junta!.taxa),
+    }))
     setNovaJunta(null)
     onJuntaCriada()
   }
 
-  const parcial = { valor_caucao: lerNumeroBR(f.valor_caucao), taxa_junta: lerNumeroBR(f.taxa_junta), valor_certificado: lerNumeroBR(f.valor_certificado) }
+  const parcial = {
+    valor_caucao: lerNumeroBR(f.valor_caucao),
+    taxa_junta: lerNumeroBR(f.taxa_junta),
+    valor_certificado: lerNumeroBR(f.valor_certificado),
+  }
   const res = resultado(parcial)
 
   async function salvar(e: FormEvent) {
@@ -88,6 +105,7 @@ export function CaucaoForm({
       junta_uf: f.junta_uf || null,
       data_pagamento_taxa: f.data_pagamento_taxa || null,
       data_pagamento_certificado: f.data_pagamento_certificado || null,
+      data_apropriacao: f.data_apropriacao || null,
       observacoes: f.observacoes.trim() || null,
     }
     const { error } = caucao ? await supabase.from('soc_caucoes').update(dados).eq('id', caucao.id) : await supabase.from('soc_caucoes').insert(dados)
@@ -103,7 +121,10 @@ export function CaucaoForm({
     onSalvo()
   }
 
-  const opcoesParceiros = parceiros.map((p) => ({ value: p.id, label: p.nome }))
+  const opcoesParceiros = parceiros.map((p) => ({
+    value: p.id,
+    label: p.nome,
+  }))
 
   return (
     <Modal
@@ -133,7 +154,14 @@ export function CaucaoForm({
       <form id="form-caucao" onSubmit={salvar} className="space-y-4">
         <div className="grid gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70 sm:grid-cols-2">
           <Field label="Nome do cliente *" className="sm:col-span-2">
-            <input id="caucao-cliente" className="input" list="sugestoes-clientes" value={f.cliente} onChange={(e) => set('cliente', e.target.value)} autoFocus={!caucao} />
+            <input
+              id="caucao-cliente"
+              className="input"
+              list="sugestoes-clientes"
+              value={f.cliente}
+              onChange={(e) => set('cliente', e.target.value)}
+              autoFocus={!caucao}
+            />
             <datalist id="sugestoes-clientes">
               {sugestoes.map((s) => (
                 <option key={s} value={s} />
@@ -144,7 +172,17 @@ export function CaucaoForm({
             <Select value={f.parceiro_id} onChange={(v) => set('parceiro_id', v)} opcoes={opcoesParceiros} vazio="Sem parceiro" />
           </Field>
           <Field label="Responsável pelo caução">
-            <Select value={f.responsavel} onChange={(v) => set('responsavel', v)} opcoes={[{ value: 'cliente', label: 'Próprio cliente' }, ...opcoesParceiros.map((p) => ({ ...p, label: `Parceiro: ${p.label}` }))]} />
+            <Select
+              value={f.responsavel}
+              onChange={(v) => set('responsavel', v)}
+              opcoes={[
+                { value: 'cliente', label: 'Próprio cliente' },
+                ...opcoesParceiros.map((p) => ({
+                  ...p,
+                  label: `Parceiro: ${p.label}`,
+                })),
+              ]}
+            />
           </Field>
           <Field label="Cobertura de contabilidade">
             <Select value={f.cobertura} onChange={(v) => set('cobertura', v)} opcoes={COBERTURAS} />
@@ -165,7 +203,13 @@ export function CaucaoForm({
             <Select
               value={f.junta_uf}
               onChange={escolherJunta}
-              opcoes={[...juntas.map((j) => ({ value: j.uf, label: `${j.uf} · ${j.nome} (${formatarMoeda(j.taxa)})` })), { value: NOVA_JUNTA, label: '+ Cadastrar outro estado...' }]}
+              opcoes={[
+                ...juntas.map((j) => ({
+                  value: j.uf,
+                  label: `${j.uf} · ${j.nome} (${formatarMoeda(j.taxa)})`,
+                })),
+                { value: NOVA_JUNTA, label: '+ Cadastrar outro estado...' },
+              ]}
               vazio="Selecione"
             />
           </Field>
@@ -180,10 +224,26 @@ export function CaucaoForm({
           {novaJunta && (
             <div className="grid grid-cols-[4.5rem_1fr_8rem_auto] items-end gap-2 rounded-xl bg-brand-50/60 p-3 ring-1 ring-brand-100 sm:col-span-2">
               <Field label="UF">
-                <input className="input uppercase" maxLength={2} autoFocus value={novaJunta.uf} onChange={(e) => setNovaJunta({ ...novaJunta, uf: e.target.value.replace(/[^a-z]/gi, '').toUpperCase() })} />
+                <input
+                  className="input uppercase"
+                  maxLength={2}
+                  autoFocus
+                  value={novaJunta.uf}
+                  onChange={(e) =>
+                    setNovaJunta({
+                      ...novaJunta,
+                      uf: e.target.value.replace(/[^a-z]/gi, '').toUpperCase(),
+                    })
+                  }
+                />
               </Field>
               <Field label="Nome da junta">
-                <input className="input" placeholder="Ex.: JUCERJA" value={novaJunta.nome} onChange={(e) => setNovaJunta({ ...novaJunta, nome: e.target.value })} />
+                <input
+                  className="input"
+                  placeholder="Ex.: JUCERJA"
+                  value={novaJunta.nome}
+                  onChange={(e) => setNovaJunta({ ...novaJunta, nome: e.target.value })}
+                />
               </Field>
               <Field label="Taxa">
                 <input
@@ -191,7 +251,12 @@ export function CaucaoForm({
                   placeholder="R$ 0,00"
                   value={novaJunta.taxa}
                   onChange={(e) => setNovaJunta({ ...novaJunta, taxa: e.target.value })}
-                  onBlur={(e) => setNovaJunta({ ...novaJunta, taxa: moedaDigitada(e.target.value) })}
+                  onBlur={(e) =>
+                    setNovaJunta({
+                      ...novaJunta,
+                      taxa: moedaDigitada(e.target.value),
+                    })
+                  }
                 />
               </Field>
               <div className="flex gap-1">
@@ -215,11 +280,29 @@ export function CaucaoForm({
           </Field>
         </div>
 
-        <div className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3 ring-1 ${res > 0 ? 'bg-emerald-50 ring-emerald-200' : res < 0 ? 'bg-rose-50 ring-rose-200' : 'bg-white ring-slate-200/70'}`}>
+        <div
+          className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3 ring-1 ${res > 0 ? 'bg-emerald-50 ring-emerald-200' : res < 0 ? 'bg-rose-50 ring-rose-200' : 'bg-white ring-slate-200/70'}`}
+        >
           <div className="text-sm text-slate-600">
-            <b className="text-slate-800">{res < 0 ? 'Prejuízo' : 'Lucro'}</b> = Caução {formatarMoeda(parcial.valor_caucao ?? 0)} − Taxa {formatarMoeda(parcial.taxa_junta ?? 0)} − Certificado {formatarMoeda(parcial.valor_certificado ?? 0)}
+            <b className="text-slate-800">{res < 0 ? 'Prejuízo' : 'Lucro'}</b> = Caução {formatarMoeda(parcial.valor_caucao ?? 0)} − Taxa{' '}
+            {formatarMoeda(parcial.taxa_junta ?? 0)} − Certificado {formatarMoeda(parcial.valor_certificado ?? 0)}
           </div>
-          <div className={`text-xl font-extrabold tabular-nums ${res > 0 ? 'text-emerald-700' : res < 0 ? 'text-rose-600' : 'text-slate-500'}`}>{formatarMoeda(res)}</div>
+          <div className={`text-xl font-extrabold tabular-nums ${res > 0 ? 'text-emerald-700' : res < 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+            {formatarMoeda(res)}
+          </div>
+        </div>
+
+        <div className="grid items-end gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70 sm:grid-cols-[1fr_12rem]">
+          <div className="text-sm">
+            <b className="text-slate-800">Baixa do saldo na contabilidade</b>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Data em que o saldo que sobrou ({res < 0 ? 'prejuízo' : 'lucro'} de {formatarMoeda(Math.abs(res))}) saiu da conta Adiantamento de Clientes -
+              Caução para o resultado. Deixe em branco enquanto o saldo continuar na conta.
+            </p>
+          </div>
+          <Field label="Data da baixa">
+            <input id="caucao-apropriacao" type="date" className="input" value={f.data_apropriacao} onChange={(e) => set('data_apropriacao', e.target.value)} />
+          </Field>
         </div>
 
         <Field label="Observações">
