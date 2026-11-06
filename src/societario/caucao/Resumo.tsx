@@ -230,12 +230,12 @@ export function Resumo({
               <div className="mb-1 font-bold text-slate-700">Lançamento sugerido</div>
               {at.lucro > 0 && (
                 <div>
-                  D — Adiantamento de Clientes - Caução · C — Receita (caução) · <b className="tabular-nums">{formatarMoeda(at.lucro)}</b>
+                  D — 2.1.1.45.0001 Adiantamento de Clientes · C — 3.1.2.04.002 Receita · <b className="tabular-nums">{formatarMoeda(at.lucro)}</b>
                 </div>
               )}
               {at.prejuizo < 0 && (
                 <div>
-                  D — Despesa / perda com caução · C — Adiantamento de Clientes - Caução · <b className="tabular-nums">{formatarMoeda(-at.prejuizo)}</b>
+                  D — Despesa / perda com caução · C — 2.1.1.45.0001 Adiantamento de Clientes · <b className="tabular-nums">{formatarMoeda(-at.prejuizo)}</b>
                 </div>
               )}
             </div>
