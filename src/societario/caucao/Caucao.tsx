@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import type { Session } from '@supabase/supabase-js'
 import {
   CalendarRange,
+  ClipboardList,
   CalendarCheck,
   FileSpreadsheet,
   FileText,
@@ -27,6 +28,7 @@ import type { Parceiro } from '../../types'
 import { CaucaoForm } from './CaucaoForm'
 import { Conciliacao } from './Conciliacao'
 import { Juntas } from './Juntas'
+import { Resumo } from './Resumo'
 import { RecebimentoLote } from './RecebimentoLote'
 import { labelCobertura, resultado, totalizar, type Caucao as CaucaoT, type Junta } from './tipos'
 
@@ -76,7 +78,7 @@ export function Caucao({ session }: { session: Session }) {
   const [de, setDe] = useState('')
   const [ate, setAte] = useState('')
 
-  const [aba, setAba] = useState<'clientes' | 'mensal'>('clientes')
+  const [aba, setAba] = useState<'clientes' | 'mensal' | 'resumo'>('clientes')
   const [editando, setEditando] = useState<CaucaoT | 'novo' | null>(null)
   const [verJuntas, setVerJuntas] = useState(false)
   const [verParceiros, setVerParceiros] = useState(false)
@@ -300,6 +302,7 @@ export function Caucao({ session }: { session: Session }) {
                 label: 'Conciliação mensal',
                 icone: CalendarRange,
               },
+              { id: 'resumo', label: 'Resumo', icone: ClipboardList },
             ] as const
           ).map(({ id, label, icone: I }) => (
             <button
@@ -423,7 +426,9 @@ export function Caucao({ session }: { session: Session }) {
           )}
         </div>
 
-        {aba === 'mensal' ? (
+        {aba === 'resumo' ? (
+          <Resumo caucoes={base} filtrados={!!(busca || fParceiro || fResp || fJunta)} nomeParceiro={nomeParceiro} onChanged={carregar} />
+        ) : aba === 'mensal' ? (
           <Conciliacao caucoes={base} filtrados={!!(busca || fParceiro || fResp || fJunta)} nomeParceiro={nomeParceiro} />
         ) : (
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">

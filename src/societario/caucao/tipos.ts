@@ -137,6 +137,11 @@ const r2 = (v: number) => Math.round(v * 100) / 100
 
 export function conciliarMes(caucoes: Caucao[], mes: string): Conciliacao {
   const { inicio, fim } = limitesMes(mes)
+  return conciliarPeriodo(caucoes, inicio, fim)
+}
+
+/** Conciliação de um período qualquer (datas AAAA-MM-DD, inclusive). */
+export function conciliarPeriodo(caucoes: Caucao[], inicio: string, fim: string): Conciliacao {
   const linhas: LinhaConciliacao[] = []
   const lancamentos: Movimento[] = []
   let semData = 0
@@ -147,7 +152,15 @@ export function conciliarMes(caucoes: Caucao[], mes: string): Conciliacao {
     const saldoAnterior = r2(mov.filter((x) => x.data < inicio).reduce((s, x) => s + x.valor, 0))
     if (!doMes.length && !saldoAnterior) continue
     const soma = (t: TipoMovimento) => r2(doMes.filter((x) => x.tipo === t).reduce((s, x) => s + x.valor, 0))
-    const l = { caucao: c, saldoAnterior, creditos: soma('caucao'), taxa: soma('taxa'), certificado: soma('certificado'), apropriacao: soma('apropriacao'), saldoFinal: 0 }
+    const l = {
+      caucao: c,
+      saldoAnterior,
+      creditos: soma('caucao'),
+      taxa: soma('taxa'),
+      certificado: soma('certificado'),
+      apropriacao: soma('apropriacao'),
+      saldoFinal: 0,
+    }
     l.saldoFinal = r2(l.saldoAnterior + l.creditos + l.taxa + l.certificado + l.apropriacao)
     linhas.push(l)
     lancamentos.push(...doMes)
@@ -158,7 +171,89 @@ export function conciliarMes(caucoes: Caucao[], mes: string): Conciliacao {
   return {
     linhas,
     lancamentos,
-    totais: { saldoAnterior: tot('saldoAnterior'), creditos: tot('creditos'), taxa: tot('taxa'), certificado: tot('certificado'), apropriacao: tot('apropriacao'), saldoFinal: tot('saldoFinal') },
+    totais: {
+      saldoAnterior: tot('saldoAnterior'),
+      creditos: tot('creditos'),
+      taxa: tot('taxa'),
+      certificado: tot('certificado'),
+      apropriacao: tot('apropriacao'),
+      saldoFinal: tot('saldoFinal'),
+    },
     semData,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Resumo do período: o que "sobra" de cada caução vai para receita (ou prejuízo).
+// Um caução está "concluído" quando foi recebido e a taxa da junta e o certificado
+// foram pagos (use valor 0 quando um deles não se aplica). A data de conclusão é a
+// mais recente das três; é ela que define o mês em que o saldo pode ir para receita.
+// ---------------------------------------------------------------------------
+
+export function dataConclusao(c: Caucao): string | null {
+  if (c.valor_caucao === null || !c.data_recebimento) return null
+  const taxa = c.taxa_junta === 0 ? c.data_recebimento : c.taxa_junta !== null ? c.data_pagamento_taxa : null
+  const cert = c.valor_certificado === 0 ? c.data_recebimento : c.valor_certificado !== null ? c.data_pagamento_certificado : null
+  if (!taxa || !cert) return null
+  return [c.data_recebimento, taxa, cert].sort().at(-1)!
+}
+
+export type SituacaoReceita = 'a_transferir' | 'transferido'
+
+export interface ItemReceita {
+  caucao: Caucao
+  conclusao: string
+  /** Concluído antes do início do período e ainda não transferido. */
+  anterior: boolean
+  situacao: SituacaoReceita
+  /** Lucro (+) ou prejuízo (−) do cliente. */
+  valor: number
+}
+
+export interface ResumoReceita {
+  movimento: Conciliacao
+  itens: ItemReceita[]
+  aTransferir: { lucro: number; prejuizo: number; liquido: number; doPeriodo: number; anteriores: number; qtd: number }
+  transferido: { lucro: number; prejuizo: number; liquido: number; qtd: number }
+  /** Recebidos que ainda aguardam pagamento da taxa ou do certificado. */
+  aguardando: { qtd: number; saldo: number }
+}
+
+export function resumirPeriodo(caucoes: Caucao[], inicio: string, fim: string): ResumoReceita {
+  const itens: ItemReceita[] = []
+  const aguardando = { qtd: 0, saldo: 0 }
+  for (const c of caucoes) {
+    const conclusao = dataConclusao(c)
+    if (!conclusao) {
+      if (c.data_recebimento && c.data_recebimento <= fim && !c.data_apropriacao) {
+        aguardando.qtd++
+        aguardando.saldo += movimentos(c)
+          .filter((m) => m.data <= fim)
+          .reduce((s, m) => s + m.valor, 0)
+      }
+      continue
+    }
+    if (conclusao > fim) continue
+    if (c.data_apropriacao && c.data_apropriacao < inicio) continue // já transferido antes
+    const transferido = !!c.data_apropriacao && c.data_apropriacao <= fim
+    itens.push({ caucao: c, conclusao, anterior: conclusao < inicio, situacao: transferido ? 'transferido' : 'a_transferir', valor: resultado(c) })
+  }
+  itens.sort((a, b) => a.caucao.cliente.localeCompare(b.caucao.cliente, 'pt-BR'))
+  const soma = (l: ItemReceita[], f: (i: ItemReceita) => boolean) => r2(l.filter(f).reduce((s, i) => s + i.valor, 0))
+  const at = itens.filter((i) => i.situacao === 'a_transferir')
+  const tr = itens.filter((i) => i.situacao === 'transferido')
+  return {
+    movimento: conciliarPeriodo(caucoes, inicio, fim),
+    itens,
+    aTransferir: {
+      lucro: soma(at, (i) => i.valor > 0),
+      prejuizo: soma(at, (i) => i.valor < 0),
+      liquido: soma(at, () => true),
+      doPeriodo: soma(at, (i) => !i.anterior),
+      anteriores: soma(at, (i) => i.anterior),
+      qtd: at.length,
+    },
+    transferido: { lucro: soma(tr, (i) => i.valor > 0), prejuizo: soma(tr, (i) => i.valor < 0), liquido: soma(tr, () => true), qtd: tr.length },
+    aguardando: { qtd: aguardando.qtd, saldo: r2(aguardando.saldo) },
   }
 }

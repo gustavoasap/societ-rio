@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { unzipSync, strFromU8 } from 'fflate'
 import { lerXlsx } from '../../tributario/importacao/xlsx'
 import { gerarXlsx, gerarXlsxAbas, serialData } from '../../lib/planilha'
-import { conciliarMes, limitesMes, resultado, totalizar, valorResponsavel, type Caucao } from './tipos'
+import { conciliarMes, dataConclusao, resumirPeriodo, limitesMes, resultado, totalizar, valorResponsavel, type Caucao } from './tipos'
 
 const c = (o: Partial<Caucao>) => ({ valor_caucao: null, taxa_junta: null, valor_certificado: null, ...o }) as Caucao
 
@@ -48,8 +48,28 @@ describe('planilha xlsx', () => {
 
 describe('conciliação mensal', () => {
   const base = { cliente: 'X', junta_uf: 'SP', data_recebimento: null, data_pagamento_taxa: null, data_pagamento_certificado: null, data_apropriacao: null }
-  const a = c({ ...base, id: 'a', cliente: 'Alfa', valor_caucao: 1000, data_recebimento: '2026-09-20', taxa_junta: 218.99, data_pagamento_taxa: '2026-10-02', valor_certificado: 180, data_pagamento_certificado: '2026-10-05' })
-  const b = c({ ...base, id: 'b', cliente: 'Beta', valor_caucao: 300, data_recebimento: '2026-10-10', taxa_junta: 281.08, data_pagamento_taxa: null, valor_certificado: 180, data_pagamento_certificado: '2026-11-03' })
+  const a = c({
+    ...base,
+    id: 'a',
+    cliente: 'Alfa',
+    valor_caucao: 1000,
+    data_recebimento: '2026-09-20',
+    taxa_junta: 218.99,
+    data_pagamento_taxa: '2026-10-02',
+    valor_certificado: 180,
+    data_pagamento_certificado: '2026-10-05',
+  })
+  const b = c({
+    ...base,
+    id: 'b',
+    cliente: 'Beta',
+    valor_caucao: 300,
+    data_recebimento: '2026-10-10',
+    taxa_junta: 281.08,
+    data_pagamento_taxa: null,
+    valor_certificado: 180,
+    data_pagamento_certificado: '2026-11-03',
+  })
 
   it('setembro: só o recebimento', () => {
     const r = conciliarMes([a, b], '2026-09')
@@ -69,7 +89,17 @@ describe('conciliação mensal', () => {
     expect(conciliarMes([fechado], '2026-12').linhas).toHaveLength(0)
   })
   it('prejuízo apropriado entra a crédito', () => {
-    const p = c({ ...base, id: 'p', valor_caucao: 300, data_recebimento: '2026-10-01', taxa_junta: 281.08, data_pagamento_taxa: '2026-10-02', valor_certificado: 180, data_pagamento_certificado: '2026-10-03', data_apropriacao: '2026-10-31' })
+    const p = c({
+      ...base,
+      id: 'p',
+      valor_caucao: 300,
+      data_recebimento: '2026-10-01',
+      taxa_junta: 281.08,
+      data_pagamento_taxa: '2026-10-02',
+      valor_certificado: 180,
+      data_pagamento_certificado: '2026-10-03',
+      data_apropriacao: '2026-10-31',
+    })
     const r = conciliarMes([p], '2026-10')
     expect(r.totais).toMatchObject({ apropriacao: 161.08, saldoFinal: 0 })
   })
@@ -87,5 +117,72 @@ describe('planilha com várias abas', () => {
     const wb = strFromU8(z['xl/workbook.xml'])
     expect(wb).toContain('<sheet name="Resumo 10 2026" sheetId="1" r:id="rId1"/>')
     expect(wb).toContain("'Lançamentos'!$A$1:$A$3")
+  })
+})
+
+describe('resumo do período (receita)', () => {
+  const base = { junta_uf: 'SP', data_recebimento: null, data_pagamento_taxa: null, data_pagamento_certificado: null, data_apropriacao: null }
+  const lucro = c({
+    ...base,
+    id: 'l',
+    cliente: 'Lucro',
+    valor_caucao: 1000,
+    data_recebimento: '2026-10-01',
+    taxa_junta: 218.99,
+    data_pagamento_taxa: '2026-10-03',
+    valor_certificado: 180,
+    data_pagamento_certificado: '2026-11-04',
+  })
+  const prej = c({
+    ...base,
+    id: 'p',
+    cliente: 'Prejuízo',
+    valor_caucao: 300,
+    data_recebimento: '2026-11-01',
+    taxa_junta: 281.08,
+    data_pagamento_taxa: '2026-11-02',
+    valor_certificado: 180,
+    data_pagamento_certificado: '2026-11-03',
+  })
+  const semCert = c({
+    ...base,
+    id: 's',
+    cliente: 'Sem certificado',
+    valor_caucao: 500,
+    data_recebimento: '2026-11-01',
+    taxa_junta: 218.99,
+    data_pagamento_taxa: '2026-11-02',
+    valor_certificado: 0,
+  })
+  const aguard = c({
+    ...base,
+    id: 'a',
+    cliente: 'Aguardando',
+    valor_caucao: 800,
+    data_recebimento: '2026-11-01',
+    taxa_junta: 218.99,
+    data_pagamento_taxa: '2026-11-02',
+    valor_certificado: null,
+  })
+  const antigo = c({ ...base, id: 'o', cliente: 'Antigo', valor_caucao: 400, data_recebimento: '2026-09-01', taxa_junta: 0, valor_certificado: 0 })
+  const feito = { ...antigo, id: 'f', cliente: 'Já feito', data_apropriacao: '2026-09-30' }
+
+  it('data de conclusão', () => {
+    expect(dataConclusao(lucro)).toBe('2026-11-04')
+    expect(dataConclusao(semCert)).toBe('2026-11-02')
+    expect(dataConclusao(aguard)).toBeNull()
+  })
+  it('novembro', () => {
+    const r = resumirPeriodo([lucro, prej, semCert, aguard, antigo, feito], '2026-11-01', '2026-11-30')
+    expect(r.itens.map((i) => i.caucao.cliente)).toEqual(['Antigo', 'Lucro', 'Prejuízo', 'Sem certificado'])
+    expect(r.aTransferir).toMatchObject({ lucro: 601.01 + 281.01 + 400, prejuizo: -161.08, qtd: 4, anteriores: 400 })
+    expect(r.aTransferir.liquido).toBeCloseTo(1120.94)
+    expect(r.aguardando).toMatchObject({ qtd: 1, saldo: 581.01 })
+  })
+  it('transferido no período sai do "a transferir"', () => {
+    const r = resumirPeriodo([{ ...lucro, data_apropriacao: '2026-11-30' }], '2026-11-01', '2026-11-30')
+    expect(r.aTransferir.qtd).toBe(0)
+    expect(r.transferido).toMatchObject({ qtd: 1, liquido: 601.01 })
+    expect(r.movimento.totais.saldoFinal).toBe(0)
   })
 })
