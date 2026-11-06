@@ -7,6 +7,7 @@ import { Dashboard } from '../components/Dashboard'
 import { ObjetoSocial } from '../societario/ObjetoSocial'
 import { Legalizacao } from '../societario/legalizacao/Legalizacao'
 import { Anotacoes } from '../societario/Anotacoes'
+import { Caucao } from '../societario/caucao/Caucao'
 import { Clientes } from '../administrativo/Clientes'
 import { Crm } from '../administrativo/crm/Crm'
 import { Tributario } from '../tributario/components/Tributario'
@@ -23,6 +24,7 @@ const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> 
   '/societario/objeto-social': ObjetoSocial,
   '/societario/legalizacao': Legalizacao,
   '/societario/anotacoes': Anotacoes,
+  '/societario/caucao': Caucao,
   '/administrativo/clientes': Clientes,
   '/administrativo/crm': Crm,
   '/fiscal/reforma-tributaria': Tributario,
