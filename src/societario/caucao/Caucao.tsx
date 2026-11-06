@@ -16,6 +16,8 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { Link } from '../../lib/rotas'
@@ -30,11 +32,18 @@ import { Conciliacao } from './Conciliacao'
 import { Juntas } from './Juntas'
 import { Resumo } from './Resumo'
 import { RecebimentoLote } from './RecebimentoLote'
-import { labelCobertura, resultado, totalizar, type Caucao as CaucaoT, type Junta } from './tipos'
+import { conciliarMes, labelCobertura, resultado, totalizar, type Caucao as CaucaoT, type Junta } from './tipos'
+import { CampoData, CampoMes } from '../../components/CampoData'
 
 const hoje = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const somarMes = (mes: string, n: number) => {
+  const [a, m] = mes.split('-').map(Number)
+  const d = new Date(a, m - 1 + n, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 function Resultado({ valor, grande = false }: { valor: number; grande?: boolean }) {
@@ -76,6 +85,12 @@ export function Caucao({ session }: { session: Session }) {
   const [fJunta, setFJunta] = useState('')
   const [fResultado, setFResultado] = useState('')
   const [de, setDe] = useState('')
+  // Visão da lista: todo o período ou um mês (igual às abas mensais da planilha)
+  const [visao, setVisao] = useState<'tudo' | 'mes'>('tudo')
+  const [mesLista, setMesLista] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
   const [ate, setAte] = useState('')
 
   const [aba, setAba] = useState<'clientes' | 'mensal' | 'resumo'>('clientes')
@@ -138,17 +153,22 @@ export function Caucao({ session }: { session: Session }) {
   }, [caucoes, busca, fParceiro, fResp, fJunta, nomeParceiro])
 
   // O período (data de recebimento) só vale para a lista; a conciliação tem o seletor de mês
+  // Visão mensal: clientes com saldo ou movimento na conta no mês (como cada aba da planilha)
+  const doMes = useMemo(() => (visao === 'mes' ? conciliarMes(base, mesLista) : null), [visao, base, mesLista])
+  const saldoMes = useMemo(() => new Map(doMes?.linhas.map((l) => [l.caucao.id, l.saldoFinal]) ?? []), [doMes])
+
   const lista = useMemo(
     () =>
       base
+        .filter((c) => !doMes || saldoMes.has(c.id))
         .filter((c) => {
           const r = resultado(c)
           if (fResultado === 'lucro' && r <= 0) return false
           if (fResultado === 'prejuizo' && r >= 0) return false
           return true
         })
-        .filter((c) => !(de && (!c.data_recebimento || c.data_recebimento < de)) && !(ate && (!c.data_recebimento || c.data_recebimento > ate))),
-    [base, de, ate, fResultado],
+        .filter((c) => doMes || (!(de && (!c.data_recebimento || c.data_recebimento < de)) && !(ate && (!c.data_recebimento || c.data_recebimento > ate)))),
+    [base, de, ate, fResultado, doMes, saldoMes],
   )
 
   const tot = useMemo(() => totalizar(lista), [lista])
@@ -226,7 +246,7 @@ export function Caucao({ session }: { session: Session }) {
     const fmt = (v: ValorCelula, i: number): string => {
       const x = v !== null && typeof v === 'object' ? v.valor : v
       if (x === null || x === undefined) return ''
-      if (typeof x === 'number') return x.toFixed(2).replace('.', ',')
+      if (typeof x === 'number') return formatarMoeda(x)
       return COLUNAS[i].tipo === 'data' ? formatarData(x) : x
     }
     const linhas = [COLUNAS.map((c) => c.titulo), ...lista.map((c) => linhaRelatorio(c).map(fmt))]
@@ -331,6 +351,43 @@ export function Caucao({ session }: { session: Session }) {
         )}
 
         {aba === 'clientes' && (
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
+            <div className="flex rounded-xl bg-slate-100 p-1" role="group" aria-label="Visão">
+              {(
+                [
+                  ['tudo', 'Todo o período'],
+                  ['mes', 'Visão mensal'],
+                ] as const
+              ).map(([v, l]) => (
+                <button
+                  key={v}
+                  onClick={() => setVisao(v)}
+                  className={`cursor-pointer rounded-lg px-3.5 py-1.5 text-sm font-semibold transition ${visao === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+            {visao === 'mes' && (
+              <div className="flex items-center gap-1">
+                <button className="btn-secondary px-2.5" onClick={() => setMesLista((m) => somarMes(m, -1))} title="Mês anterior" aria-label="Mês anterior">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <CampoMes value={mesLista} onChange={setMesLista} />
+                <button className="btn-secondary px-2.5" onClick={() => setMesLista((m) => somarMes(m, 1))} title="Próximo mês" aria-label="Próximo mês">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <span className="text-xs text-slate-500">
+              {visao === 'mes'
+                ? 'Clientes com saldo ou movimento na conta no mês, como cada aba da planilha. Clique no cliente para editar.'
+                : 'Todos os cauções cadastrados. Clique no cliente para editar.'}
+            </span>
+          </div>
+        )}
+
+        {aba === 'clientes' && (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <Kpi icone={Wallet} rotulo="Cauções recebidos" detalhe={`${lista.length} cliente(s)${filtrando ? ' no filtro' : ''}`}>
               {formatarMoeda(tot.caucao)}
@@ -402,12 +459,14 @@ export function Caucao({ session }: { session: Session }) {
           )}
           {aba === 'clientes' && (
             <>
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500" title="Período pela data de recebimento do caução">
-                Recebido de
-                <input type="date" className="input w-auto py-2" value={de} onChange={(e) => setDe(e.target.value)} />
-                até
-                <input type="date" className="input w-auto py-2" value={ate} onChange={(e) => setAte(e.target.value)} />
-              </div>
+              {visao === 'tudo' && (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500" title="Período pela data de recebimento do caução">
+                  Recebido de
+                  <CampoData className="input w-auto py-2" value={de} onChange={(v) => setDe(v)} />
+                  até
+                  <CampoData className="input w-auto py-2" value={ate} onChange={(v) => setAte(v)} />
+                </div>
+              )}
               <div className="ml-auto flex gap-2">
                 <button
                   className="btn-primary from-emerald-500 to-emerald-600 shadow-emerald-500/20"
@@ -442,6 +501,11 @@ export function Caucao({ session }: { session: Session }) {
                     <th className="px-3 py-3 text-right">Caução</th>
                     <th className="px-3 py-3 text-right">Taxa da junta</th>
                     <th className="px-3 py-3 text-right">Certificado</th>
+                    {doMes && (
+                      <th className="px-3 py-3 text-right" title="Saldo do cliente na conta Adiantamento de Clientes no último dia do mês">
+                        Saldo no mês
+                      </th>
+                    )}
                     <th className="py-3 pr-5 pl-3 text-right">Lucro / prejuízo</th>
                   </tr>
                 </thead>
@@ -488,6 +552,11 @@ export function Caucao({ session }: { session: Session }) {
                           {c.data_pagamento_certificado ? `Pago ${formatarData(c.data_pagamento_certificado)}` : 'Não pago'}
                         </div>
                       </td>
+                      {doMes && (
+                        <td className="px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-800 tabular-nums">
+                          {saldoMes.get(c.id) ? formatarMoeda(saldoMes.get(c.id)!) : <span className="text-slate-300">R$ 0,00</span>}
+                        </td>
+                      )}
                       <td className="py-3 pr-5 pl-3 text-right text-sm">
                         <Resultado valor={resultado(c)} />
                       </td>
@@ -503,6 +572,9 @@ export function Caucao({ session }: { session: Session }) {
                       <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.caucao)}</td>
                       <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.taxa)}</td>
                       <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(tot.certificado)}</td>
+                      {doMes && (
+                        <td className="px-3 py-3 text-right tabular-nums">{formatarMoeda(lista.reduce((t, c) => t + (saldoMes.get(c.id) ?? 0), 0))}</td>
+                      )}
                       <td className="py-3 pr-5 pl-3 text-right text-sm">
                         <Resultado valor={tot.resultado} />
                       </td>

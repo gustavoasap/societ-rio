@@ -5,6 +5,7 @@ import { lerNumeroBR, moedaDigitada } from '../../lib/format'
 import { Field, Modal, Select } from '../../components/ui'
 import { hojeISO } from '../tipos'
 import { MOTIVOS_PERDA, type Oportunidade } from './tipos'
+import { CampoData } from '../../components/CampoData'
 
 export function PerdaModal({ oportunidade, onClose, onFeito }: { oportunidade: Oportunidade; onClose: () => void; onFeito: () => void }) {
   const [motivo, setMotivo] = useState(oportunidade.motivo_perda ?? '')
@@ -176,7 +177,7 @@ export function GanhoModal({
                     <input className="input tabular-nums" value={valor} onChange={(e) => setValor(e.target.value)} onBlur={(e) => setValor(moedaDigitada(e.target.value))} />
                   </Field>
                   <Field label="A partir de">
-                    <input type="date" className="input" value={inicio} onChange={(e) => setInicio(e.target.value)} />
+                    <CampoData className="input" value={inicio} onChange={(v) => setInicio(v)} />
                   </Field>
                   <Field label="Dia do vencimento">
                     <input type="number" min={1} max={31} className="input" value={dia} onChange={(e) => setDia(e.target.value)} />

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { formatarData, formatarMoeda } from '../../lib/format'
 import { baixarArquivo, gerarXlsxAbas, TIPO_XLSX, type ValorCelula } from '../../lib/planilha'
 import { limitesMes, resumirPeriodo, type Caucao } from './tipos'
+import { CampoData, CampoMes } from '../../components/CampoData'
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
@@ -146,7 +147,17 @@ export function Resumo({
           { titulo: 'Situação', largura: 30 },
         ],
         linhas: porCliente,
-        total: ['Total (a transferir + já transferido)', '', null, null, null, null, { valor: r.itens.reduce((s, i) => s + i.valor, 0), destaque: 'negrito' }, '', ''],
+        total: [
+          'Total (a transferir + já transferido)',
+          '',
+          null,
+          null,
+          null,
+          null,
+          { valor: r.itens.reduce((s, i) => s + i.valor, 0), destaque: 'negrito' },
+          '',
+          '',
+        ],
       },
     ])
     baixarArquivo(`resumo-caucao-${de}${de !== ate ? `-a-${ate}` : ''}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
@@ -168,21 +179,9 @@ export function Resumo({
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-sm text-slate-500">
           De
-          <input
-            type="month"
-            className="input w-auto py-2"
-            value={de}
-            onChange={(e) => e.target.value && escolherPeriodo(e.target.value, ate < e.target.value ? e.target.value : ate)}
-            aria-label="Mês inicial"
-          />
+          <CampoMes value={de} onChange={(v) => escolherPeriodo(v, ate < v ? v : ate)} />
           até
-          <input
-            type="month"
-            className="input w-auto py-2"
-            value={ate}
-            onChange={(e) => e.target.value && escolherPeriodo(de > e.target.value ? e.target.value : de, e.target.value)}
-            aria-label="Mês final"
-          />
+          <CampoMes value={ate} onChange={(v) => escolherPeriodo(de > v ? v : de, v)} />
         </div>
         <button className="btn-primary ml-auto from-emerald-500 to-emerald-600 shadow-emerald-500/20" onClick={exportar}>
           <FileSpreadsheet className="h-4 w-4" />
@@ -312,7 +311,7 @@ export function Resumo({
                 )}
                 <label className="flex items-center gap-1.5">
                   Transferido em
-                  <input type="date" className="input w-auto py-1.5 text-xs" value={dataBaixa || fim} onChange={(e) => setDataBaixa(e.target.value)} />
+                  <CampoData className="input w-auto py-1.5 text-xs" value={dataBaixa || fim} onChange={(v) => setDataBaixa(v)} />
                 </label>
                 <button className="btn-primary btn-sm" onClick={marcarTransferidos} disabled={!selecionados.size || gravando}>
                   <CheckCheck className="h-4 w-4" />

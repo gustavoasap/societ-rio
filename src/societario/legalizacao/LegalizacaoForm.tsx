@@ -17,6 +17,7 @@ import {
   type StatusTfe,
   type Tfe,
 } from './tipos'
+import { CampoData } from '../../components/CampoData'
 
 // Municípios do IBGE por UF (carregados uma vez por estado, para sugerir o nome certo)
 const cacheMunicipios = new Map<string, string[]>()
@@ -122,7 +123,7 @@ export function LegalizacaoForm({
           </Field>
           <Field label="Data de validade">
             <div className="flex items-center gap-2">
-              <input type="date" className="input" value={l.licenciamento_validade ?? ''} onChange={(e) => set('licenciamento_validade', e.target.value || null)} />
+              <CampoData className="input" value={l.licenciamento_validade ?? ''} onChange={(v) => set('licenciamento_validade', v || null)} />
               {validade === 'vencida' && <Badge cor="vencida">Vencida</Badge>}
               {validade === 'vence_em_breve' && <Badge cor="vence_em_breve">Vence em até 30 dias</Badge>}
             </div>

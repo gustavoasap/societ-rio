@@ -5,6 +5,7 @@ import { nomeMes } from '../../engine/base'
 import { ANEXOS_SIMPLES, CENARIOS_ALIQUOTA, type Anexo } from '../../engine/tabelas'
 import type { MixProdutos, Parametros as P } from '../../engine/tipos'
 import { pct } from '../../formatacao'
+import { CampoMes } from '../../../components/CampoData'
 
 function Num({
   label,
@@ -58,7 +59,7 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
             <Select value={params.anexoServicos} onChange={(v) => set('anexoServicos', v as Anexo)} opcoes={(['III', 'IV', 'V'] as Anexo[]).map((a) => ({ value: a, label: ANEXOS_SIMPLES[a].nome }))} />
           </Field>
           <Field label="Início de atividade">
-            <input className="input" type="month" value={params.inicioAtividade} onChange={(e) => set('inicioAtividade', e.target.value)} />
+            <CampoMes className="input" vazio value={params.inicioAtividade} onChange={(v) => set('inicioAtividade', v)} />
             <span className="mt-1 block text-xs text-slate-500">Proporcionaliza o RBT12 no 1º ano (LC 123, art. 18, §2º)</span>
           </Field>
           <Num
@@ -112,7 +113,7 @@ export function Parametros({ params, onParams, mixEstimado }: { params: P; onPar
                 </button>
               </span>
             ))}
-            <input className="input w-40" type="month" value={novoMes} onChange={(e) => setNovoMes(e.target.value)} />
+            <CampoMes className="input" vazio value={novoMes} onChange={setNovoMes} />
             <input className="input w-40" type="number" step="0.01" placeholder="Receita bruta" value={novoValor} onChange={(e) => setNovoValor(e.target.value)} />
             <button
               className="btn-secondary btn-sm"

@@ -3,6 +3,7 @@ import { UserRound } from 'lucide-react'
 import { buscarCep, mascaraCep, mascaraCpf, mascaraTelefone } from '../lib/format'
 import { CORES_RACA, ESTADOS_CIVIS, QUALIFICACOES, REGIMES_BENS, SEXOS, rotuloSocio, type Socio } from '../types'
 import { Field, Section, Select } from './ui'
+import { CampoData } from './CampoData'
 
 export function SocioForm({ indice, socio, onChange }: { indice: number; socio: Socio; onChange: (s: Socio) => void }) {
   const [buscando, setBuscando] = useState(false)
@@ -36,7 +37,7 @@ export function SocioForm({ indice, socio, onChange }: { indice: number; socio: 
           <input className="input" value={socio.telefone} onChange={(e) => set('telefone', mascaraTelefone(e.target.value))} placeholder="(00) 00000-0000" />
         </Field>
         <Field label="Data de nascimento">
-          <input type="date" className="input" value={socio.data_nascimento} onChange={(e) => set('data_nascimento', e.target.value)} />
+          <CampoData className="input" value={socio.data_nascimento} onChange={(v) => set('data_nascimento', v)} />
         </Field>
 
         <Field label="Sexo">
@@ -71,7 +72,7 @@ export function SocioForm({ indice, socio, onChange }: { indice: number; socio: 
           />
         </Field>
         <Field label="Data de emissão (RG)">
-          <input type="date" className="input" value={socio.rg_data_emissao} onChange={(e) => set('rg_data_emissao', e.target.value)} />
+          <CampoData className="input" value={socio.rg_data_emissao} onChange={(v) => set('rg_data_emissao', v)} />
         </Field>
         <div className="hidden lg:block" />
 
@@ -87,7 +88,7 @@ export function SocioForm({ indice, socio, onChange }: { indice: number; socio: 
           />
         </Field>
         <Field label="Data de emissão (CNH)">
-          <input type="date" className="input" value={socio.cnh_data_emissao ?? ''} onChange={(e) => set('cnh_data_emissao', e.target.value)} />
+          <CampoData className="input" value={socio.cnh_data_emissao ?? ''} onChange={(v) => set('cnh_data_emissao', v)} />
         </Field>
         <div className="hidden lg:block" />
         <Field label="Estado civil">

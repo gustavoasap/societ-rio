@@ -7,6 +7,7 @@ import { lerXlsx } from '../../tributario/importacao/xlsx'
 import type { Parceiro } from '../../types'
 import { NOVO_CLIENTE, lerPlanilhaLote, lerTextoLote, temErro, validarLote, type EntradaLote, type LinhaLote } from './lote'
 import type { Caucao } from './tipos'
+import { CampoData } from '../../components/CampoData'
 
 const hojeISO = () => {
   const d = new Date()
@@ -59,9 +60,7 @@ export function RecebimentoLote({
   function adicionarAguardando() {
     setDeArquivo(null)
     const ja = new Set(linhas.map((l) => l.caucao?.id))
-    const novos = aguardando
-      .filter((c) => !ja.has(c.id))
-      .map((c) => (c.valor_caucao ? `${c.cliente}\t${c.valor_caucao.toFixed(2).replace('.', ',')}` : c.cliente))
+    const novos = aguardando.filter((c) => !ja.has(c.id)).map((c) => (c.valor_caucao ? `${c.cliente}\t${formatarMoeda(c.valor_caucao)}` : c.cliente))
     setTexto((t) => [t.trim(), ...novos].filter(Boolean).join('\n'))
   }
 
@@ -96,7 +95,7 @@ export function RecebimentoLote({
     const resultados = await Promise.all(
       prontas.map((l) =>
         l.novo
-          ? supabase.from('soc_caucoes').insert({ cliente: l.nomeDigitado.trim(), valor_caucao: l.valor, data_recebimento: l.data, ...resp })
+          ? supabase.from('soc_caucoes').insert({ cliente: l.nomeDigitado.trim().toUpperCase(), valor_caucao: l.valor, data_recebimento: l.data, ...resp })
           : supabase
               .from('soc_caucoes')
               .update({ valor_caucao: l.valor, data_recebimento: l.data, ...resp })
@@ -214,7 +213,7 @@ export function RecebimentoLote({
 
         <div className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
           <Field label="Data do pagamento / recebimento">
-            <input id="lote-data" type="date" className="input" value={data} onChange={(e) => setData(e.target.value)} />
+            <CampoData id="lote-data" className="input" value={data} onChange={(v) => setData(v)} />
           </Field>
           <p className="-mt-1 text-xs text-slate-500">Vale para as linhas sem data. Linha com data própria usa a dela.</p>
           <Field label="Quem pagou">

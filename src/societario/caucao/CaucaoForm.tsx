@@ -6,6 +6,7 @@ import { Field, Modal, Select } from '../../components/ui'
 import type { Parceiro } from '../../types'
 import { salvarJunta } from './acoes'
 import { COBERTURAS, resultado, valorResponsavel, type Caucao, type Junta } from './tipos'
+import { CampoData } from '../../components/CampoData'
 
 const brl = (v: number | null | undefined) => (v === null || v === undefined ? '' : moedaDigitada(String(v).replace('.', ',')))
 const NOVA_JUNTA = '__nova__'
@@ -95,7 +96,7 @@ export function CaucaoForm({
     setSalvando(true)
     setErro(null)
     const dados = {
-      cliente: f.cliente.trim(),
+      cliente: f.cliente.trim().toUpperCase(),
       parceiro_id: f.parceiro_id || null,
       responsavel_tipo: f.responsavel === 'cliente' ? 'cliente' : 'parceiro',
       responsavel_parceiro_id: f.responsavel === 'cliente' ? null : f.responsavel,
@@ -156,10 +157,10 @@ export function CaucaoForm({
           <Field label="Nome do cliente *" className="sm:col-span-2">
             <input
               id="caucao-cliente"
-              className="input"
+              className="input uppercase"
               list="sugestoes-clientes"
               value={f.cliente}
-              onChange={(e) => set('cliente', e.target.value)}
+              onChange={(e) => set('cliente', e.target.value.toUpperCase())}
               autoFocus={!caucao}
             />
             <datalist id="sugestoes-clientes">
@@ -195,7 +196,7 @@ export function CaucaoForm({
             <input {...moedaProps('valor_caucao')} />
           </Field>
           <Field label="Data de recebimento">
-            <input type="date" className="input" value={f.data_recebimento} onChange={(e) => set('data_recebimento', e.target.value)} />
+            <CampoData className="input" value={f.data_recebimento} onChange={(v) => set('data_recebimento', v)} />
           </Field>
 
           <h3 className="pt-1 text-sm font-bold text-slate-800 sm:col-span-2">Taxa da junta comercial</h3>
@@ -218,7 +219,7 @@ export function CaucaoForm({
               <input {...moedaProps('taxa_junta')} />
             </Field>
             <Field label="Data do pagamento">
-              <input type="date" className="input" value={f.data_pagamento_taxa} onChange={(e) => set('data_pagamento_taxa', e.target.value)} />
+              <CampoData className="input" value={f.data_pagamento_taxa} onChange={(v) => set('data_pagamento_taxa', v)} />
             </Field>
           </div>
           {novaJunta && (
@@ -276,7 +277,7 @@ export function CaucaoForm({
             <input {...moedaProps('valor_certificado')} />
           </Field>
           <Field label="Data do pagamento">
-            <input type="date" className="input" value={f.data_pagamento_certificado} onChange={(e) => set('data_pagamento_certificado', e.target.value)} />
+            <CampoData className="input" value={f.data_pagamento_certificado} onChange={(v) => set('data_pagamento_certificado', v)} />
           </Field>
         </div>
 
@@ -301,7 +302,7 @@ export function CaucaoForm({
             </p>
           </div>
           <Field label="Data da baixa">
-            <input id="caucao-apropriacao" type="date" className="input" value={f.data_apropriacao} onChange={(e) => set('data_apropriacao', e.target.value)} />
+            <CampoData id="caucao-apropriacao" className="input" value={f.data_apropriacao} onChange={(v) => set('data_apropriacao', v)} />
           </Field>
         </div>
 

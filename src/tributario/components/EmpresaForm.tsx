@@ -6,6 +6,7 @@ import { ANEXOS_SIMPLES, ICMS_INTERNO_UF, UFS, type Anexo } from '../engine/tabe
 import { comPadrao, type BeneficioIcms, type Estabelecimento, type RegimeAtual } from '../engine/tipos'
 import { salvarEmpresa, type EmpresaComEstab } from '../dados'
 import { anexoSugerido, cnpjValido, consultarCnpj, regimeSugerido, type DadosCnpj } from '../receita'
+import { CampoMes } from '../../components/CampoData'
 
 type EstabForm = Omit<Estabelecimento, 'id'> & { id?: string; chave: string }
 
@@ -159,7 +160,7 @@ export function EmpresaForm({ empresa, onClose, onSalvo }: { empresa: EmpresaCom
             <input className="input" value={cnae} onChange={(e) => setCnae(e.target.value)} placeholder="4789-0/99" />
           </Field>
           <Field label="Início de atividade" className="sm:col-span-1">
-            <input className="input" type="month" value={inicio} onChange={(e) => setInicio(e.target.value)} title="Usado para proporcionalizar o RBT12 nos primeiros 12 meses" />
+            <CampoMes className="input" vazio value={inicio} onChange={setInicio} title="Usado para proporcionalizar o RBT12 nos primeiros 12 meses" />
           </Field>
           <Field label="Observações" className="sm:col-span-6">
             <textarea className="input min-h-16" value={obs} onChange={(e) => setObs(e.target.value)} />

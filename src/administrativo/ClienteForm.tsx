@@ -17,6 +17,7 @@ import {
   type Honorario,
   type ParceiroResumo,
 } from './tipos'
+import { CampoData } from '../components/CampoData'
 
 type Dados = Omit<Cliente, 'id' | 'codigo' | 'created_at'>
 
@@ -176,7 +177,7 @@ export function ClienteForm({
             <b>Encerrar este cliente?</b> Ele sai da lista de ativos e vai para Inativos. O honorário vigente é encerrado na mesma data.
           </div>
           <Field label="Data do encerramento">
-            <input id="data-encerramento" type="date" className="input" value={dataEncerramento} onChange={(e) => setDataEncerramento(e.target.value)} />
+            <CampoData id="data-encerramento" className="input" value={dataEncerramento} onChange={(v) => setDataEncerramento(v)} />
           </Field>
           <button type="button" className="btn-danger" onClick={encerrar} disabled={salvando}>
             Confirmar encerramento
@@ -217,10 +218,10 @@ export function ClienteForm({
             <input id="telefone" className="input" value={d.telefone ?? ''} onChange={(e) => set('telefone', texto(e.target.value))} />
           </Field>
           <Field label="Data de abertura" className="sm:col-span-2">
-            <input id="data-abertura" type="date" className="input" value={d.data_abertura ?? ''} onChange={(e) => set('data_abertura', e.target.value || null)} />
+            <CampoData id="data-abertura" className="input" value={d.data_abertura ?? ''} onChange={(v) => set('data_abertura', v || null)} />
           </Field>
           <Field label="Assinatura do contrato" className="sm:col-span-2">
-            <input id="data-assinatura" type="date" className="input" value={d.data_assinatura ?? ''} onChange={(e) => set('data_assinatura', e.target.value || null)} />
+            <CampoData id="data-assinatura" className="input" value={d.data_assinatura ?? ''} onChange={(v) => set('data_assinatura', v || null)} />
           </Field>
           <Field label="Parceiro" className="sm:col-span-2">
             <Select value={d.parceiro_id ?? ''} onChange={(v) => set('parceiro_id', v || null)} opcoes={parceiros.map((p) => ({ value: p.id, label: p.nome }))} vazio="Nenhum" />
@@ -273,7 +274,7 @@ export function ClienteForm({
                 <input id="honorario-valor" className="input" inputMode="decimal" value={novoHonorario.valor} onChange={(e) => setNovoHonorario((s) => ({ ...s, valor: e.target.value }))} placeholder="360,00" />
               </Field>
               <Field label="Vale a partir de">
-                <input id="honorario-inicio" type="date" className="input" value={novoHonorario.inicio} onChange={(e) => setNovoHonorario((s) => ({ ...s, inicio: e.target.value }))} />
+                <CampoData id="honorario-inicio" className="input" value={novoHonorario.inicio} onChange={(v) => setNovoHonorario((s) => ({ ...s, inicio: v }))} />
               </Field>
               <Field label="Dia de vencimento">
                 <input id="honorario-dia" type="number" min={1} max={31} className="input" value={novoHonorario.dia} onChange={(e) => setNovoHonorario((s) => ({ ...s, dia: e.target.value }))} placeholder="10" />

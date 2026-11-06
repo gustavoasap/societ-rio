@@ -25,6 +25,7 @@ import {
   type StatusCliente,
   type Vigente,
 } from './tipos'
+import { CampoData } from '../components/CampoData'
 
 type Aba = 'painel' | 'ativos' | 'inativos'
 type Ordem = 'codigo' | 'razao_social' | 'honorario' | 'data_assinatura'
@@ -391,7 +392,7 @@ export function Clientes({ session }: { session: Session }) {
             <p className="text-sm text-slate-600">O cliente sai da lista de ativos e vai para Inativos. O honorário vigente é encerrado na mesma data.</p>
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-slate-600">Data do encerramento</span>
-              <input id="data-encerramento-lista" type="date" className="input" value={dataEnc} onChange={(e) => setDataEnc(e.target.value)} />
+              <CampoData id="data-encerramento-lista" className="input" value={dataEnc} onChange={(v) => setDataEnc(v)} />
             </label>
             <div className="flex justify-end gap-2">
               <button className="btn-secondary" onClick={() => setEncerrando(null)}>

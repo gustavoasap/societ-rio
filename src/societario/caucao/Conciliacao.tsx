@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, FileSpreadsheet, Scale } from
 import { formatarData, formatarMoeda, lerNumeroBR, moedaDigitada } from '../../lib/format'
 import { baixarArquivo, gerarXlsxAbas, TIPO_XLSX, type ValorCelula } from '../../lib/planilha'
 import { ROTULO_MOVIMENTO, conciliarMes, limitesMes, type Caucao } from './tipos'
+import { CampoMes } from '../../components/CampoData'
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
@@ -129,7 +130,7 @@ export function Conciliacao({ caucoes, filtrados, nomeParceiro }: { caucoes: Cau
           <button className="btn-secondary px-2.5" onClick={() => setMes((m) => somarMes(m, -1))} title="Mês anterior" aria-label="Mês anterior">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <input type="month" className="input w-auto py-2" value={mes} onChange={(e) => e.target.value && setMes(e.target.value)} aria-label="Mês" />
+          <CampoMes value={mes} onChange={setMes} />
           <button className="btn-secondary px-2.5" onClick={() => setMes((m) => somarMes(m, 1))} title="Próximo mês" aria-label="Próximo mês">
             <ChevronRight className="h-4 w-4" />
           </button>

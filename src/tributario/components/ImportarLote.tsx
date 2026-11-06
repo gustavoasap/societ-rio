@@ -10,6 +10,7 @@ import { adicionarEstabelecimento, gravarImportacao, importacoesSobrepostas, lis
 import { NOMES_MOV, prepararLinhas, tipoMovimentoDe, type TipoServico } from '../importacao/preparar'
 import { NOMES_RELATORIO, lerRelatorio, type RelatorioLido } from '../importacao/relatorios'
 import { moeda } from '../formatacao'
+import { CampoMes } from '../../components/CampoData'
 
 interface Item {
   chave: string
@@ -297,8 +298,8 @@ export function ImportarLote({ empresas, onClose, onConcluido }: { empresas: Emp
                               <option value="ratear">Ratear</option>
                               <option value="unica">Mês</option>
                             </select>
-                            <input className="input w-36 py-1" type="month" value={i.inicio} onChange={(e) => alterar(i.chave, { inicio: e.target.value })} />
-                            {i.modo === 'ratear' && <input className="input w-36 py-1" type="month" value={i.fim} onChange={(e) => alterar(i.chave, { fim: e.target.value })} />}
+                            <CampoMes className="input py-1" vazio value={i.inicio} onChange={(v) => alterar(i.chave, { inicio: v })} />
+                            {i.modo === 'ratear' && <CampoMes className="input py-1" vazio value={i.fim} onChange={(v) => alterar(i.chave, { fim: v })} />}
                           </div>
                         ) : i.rel.periodo ? (
                           `${nomeMes(i.rel.periodo.inicio)} a ${nomeMes(i.rel.periodo.fim)}`

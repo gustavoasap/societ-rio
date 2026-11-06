@@ -34,17 +34,33 @@ export function Juntas({ juntas, caucoes, onClose, onChanged }: { juntas: Junta[
   }
 
   return (
-    <Modal title="Juntas comerciais e taxas" subtitulo="Valor padrão da taxa de cada estado. Mudar aqui não altera os cauções já lançados." onClose={onClose} largura="max-w-2xl">
+    <Modal
+      title="Juntas comerciais e taxas"
+      subtitulo="Valor padrão da taxa de cada estado. Mudar aqui não altera os cauções já lançados."
+      onClose={onClose}
+      largura="max-w-2xl"
+    >
       <Section icone={editando ? Pencil : Plus} title={editando ? `Editar junta ${editando}` : 'Cadastrar estado'}>
         <div className="grid grid-cols-[5rem_1fr_9rem] gap-3">
           <Field label="UF">
-            <input className="input uppercase" maxLength={2} value={form.uf} onChange={(e) => setForm({ ...form, uf: e.target.value.replace(/[^a-z]/gi, '').toUpperCase() })} />
+            <input
+              className="input uppercase"
+              maxLength={2}
+              value={form.uf}
+              onChange={(e) => setForm({ ...form, uf: e.target.value.replace(/[^a-z]/gi, '').toUpperCase() })}
+            />
           </Field>
           <Field label="Nome da junta">
             <input className="input" placeholder="Ex.: JUCERJA" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
           </Field>
           <Field label="Taxa">
-            <input className="input tabular-nums" placeholder="R$ 0,00" value={form.taxa} onChange={(e) => setForm({ ...form, taxa: e.target.value })} onBlur={(e) => setForm({ ...form, taxa: moedaDigitada(e.target.value) })} />
+            <input
+              className="input tabular-nums"
+              placeholder="R$ 0,00"
+              value={form.taxa}
+              onChange={(e) => setForm({ ...form, taxa: e.target.value })}
+              onBlur={(e) => setForm({ ...form, taxa: moedaDigitada(e.target.value) })}
+            />
           </Field>
         </div>
         <div className="mt-3 flex items-center justify-end gap-2">

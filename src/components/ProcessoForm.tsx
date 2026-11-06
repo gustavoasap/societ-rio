@@ -22,6 +22,7 @@ import {
 } from '../types'
 import { SocioForm } from './SocioForm'
 import { Field, Modal, Section, Select } from './ui'
+import { CampoData } from './CampoData'
 
 type CampoNumerico = 'area_imovel' | 'area_estabelecimento' | 'area_terreno' | 'capital_social'
 type Rascunho = Omit<Processo, 'id' | 'created_at' | 'updated_at' | CampoNumerico> & Record<CampoNumerico, string>
@@ -257,7 +258,7 @@ export function ProcessoForm({
             <Select value={r.status} onChange={(v) => set('status', v as Rascunho['status'])} opcoes={STATUS_PROCESSO} />
           </Field>
           <Field label="Data de início">
-            <input type="date" className="input" value={r.data_inicio} onChange={(e) => set('data_inicio', e.target.value)} />
+            <CampoData className="input" value={r.data_inicio} onChange={(v) => set('data_inicio', v)} />
           </Field>
           <Field label="Parceiro (indicação)">
             <div className="flex gap-1.5">

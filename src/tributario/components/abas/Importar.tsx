@@ -8,6 +8,7 @@ import { excluirImportacao, gravarImportacao, importacoesSobrepostas, type Impor
 import { NOMES_MOV, prepararLinhas, tipoMovimentoDe, type TipoServico } from '../../importacao/preparar'
 import { NOMES_RELATORIO, lerRelatorio, type RelatorioLido } from '../../importacao/relatorios'
 import { moeda } from '../../formatacao'
+import { CampoMes } from '../../../components/CampoData'
 
 
 interface Pendente {
@@ -221,8 +222,8 @@ export function Importar({
                   <label className="block">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">{p.modo === 'ratear' ? 'Período (de / até)' : 'Competência'}</span>
                     <div className="flex gap-2">
-                      <input className="input" type="month" value={p.inicio} onChange={(e) => alterar(p.chave, { inicio: e.target.value })} />
-                      {p.modo === 'ratear' && <input className="input" type="month" value={p.fim} onChange={(e) => alterar(p.chave, { fim: e.target.value })} />}
+                      <CampoMes className="input" vazio value={p.inicio} onChange={(v) => alterar(p.chave, { inicio: v })} />
+                      {p.modo === 'ratear' && <CampoMes className="input" vazio value={p.fim} onChange={(v) => alterar(p.chave, { fim: v })} />}
                     </div>
                   </label>
                 </>

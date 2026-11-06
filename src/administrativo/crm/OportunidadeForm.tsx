@@ -22,6 +22,7 @@ import {
   type Oportunidade,
   type TipoAtividade,
 } from './tipos'
+import { CampoData, mascaraHora } from '../../components/CampoData'
 
 type Dados = Omit<Oportunidade, 'id' | 'etapa_desde' | 'fechado_em' | 'created_at' | 'updated_at'>
 
@@ -91,6 +92,7 @@ export function OportunidadeForm({
   const [atividades, setAtividades] = useState<Atividade[]>([])
   const [historico, setHistorico] = useState<Historico[]>([])
   const [nova, setNova] = useState<{ tipo: TipoAtividade; descricao: string; data: string }>({ tipo: 'ligacao', descricao: '', data: '' })
+  const [hora, setHora] = useState('')
 
   const set = <K extends keyof Dados>(k: K, v: Dados[K]) => setD((x) => ({ ...x, [k]: v }))
   const nomeMembro = (id: string | null) => equipe.find((m) => m.user_id === id)?.nome ?? ''
@@ -98,7 +100,13 @@ export function OportunidadeForm({
   const carregarDetalhes = useCallback(async () => {
     if (!oportunidade) return
     const [a, h] = await Promise.all([
-      supabase.from('crm_atividades').select('*').eq('oportunidade_id', oportunidade.id).order('concluida').order('data_prevista', { nullsFirst: false }).order('created_at', { ascending: false }),
+      supabase
+        .from('crm_atividades')
+        .select('*')
+        .eq('oportunidade_id', oportunidade.id)
+        .order('concluida')
+        .order('data_prevista', { nullsFirst: false })
+        .order('created_at', { ascending: false }),
       supabase.from('crm_historico').select('*').eq('oportunidade_id', oportunidade.id).order('em', { ascending: false }),
     ])
     setAtividades((a.data as Atividade[]) ?? [])
@@ -127,7 +135,10 @@ export function OportunidadeForm({
     }
     // A etapa só muda pelo funil (para registrar motivo de perda / conversão em cliente)
     const r = oportunidade
-      ? await supabase.from('crm_oportunidades').update({ ...dados, etapa: oportunidade.etapa }).eq('id', oportunidade.id)
+      ? await supabase
+          .from('crm_oportunidades')
+          .update({ ...dados, etapa: oportunidade.etapa })
+          .eq('id', oportunidade.id)
       : await supabase.from('crm_oportunidades').insert(dados)
     setSalvando(false)
     if (r.error) return (setErro(r.error.message), false)
@@ -159,6 +170,7 @@ export function OportunidadeForm({
     })
     if (error) return setErro(error.message)
     setNova({ tipo: nova.tipo, descricao: '', data: '' })
+    setHora('')
     carregarDetalhes()
   }
 
@@ -181,7 +193,11 @@ export function OportunidadeForm({
   }
 
   async function excluir() {
-    if (!oportunidade || !confirm(`Excluir a oportunidade "${oportunidade.empresa}" e todo o histórico dela? Para registrar que não fechou, use "Marcar como perdida".`)) return
+    if (
+      !oportunidade ||
+      !confirm(`Excluir a oportunidade "${oportunidade.empresa}" e todo o histórico dela? Para registrar que não fechou, use "Marcar como perdida".`)
+    )
+      return
     const { error } = await supabase.from('crm_oportunidades').delete().eq('id', oportunidade.id)
     if (error) return setErro(error.message)
     onSalvo()
@@ -197,7 +213,9 @@ export function OportunidadeForm({
         oportunidade ? (
           <>
             Etapa: <b className="text-white/90">{etapa.label}</b>
-            {oportunidade.etapa === 'perdido' && oportunidade.motivo_perda && ` · Motivo: ${labelDe(MOTIVOS_PERDA, oportunidade.motivo_perda)}${oportunidade.motivo_perda_detalhe ? ` (${oportunidade.motivo_perda_detalhe})` : ''}`}
+            {oportunidade.etapa === 'perdido' &&
+              oportunidade.motivo_perda &&
+              ` · Motivo: ${labelDe(MOTIVOS_PERDA, oportunidade.motivo_perda)}${oportunidade.motivo_perda_detalhe ? ` (${oportunidade.motivo_perda_detalhe})` : ''}`}
           </>
         ) : (
           'Cadastre o interessado. Depois é só arrastar o card pelo funil.'
@@ -274,7 +292,11 @@ export function OportunidadeForm({
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="CNPJ (se já tiver)">
-              <input className="input" value={mascaraCnpj(d.cnpj ?? '')} onChange={(e) => set('cnpj', e.target.value.replace(/\D/g, '').slice(0, 14) || null)} />
+              <input
+                className="input"
+                value={mascaraCnpj(d.cnpj ?? '')}
+                onChange={(e) => set('cnpj', e.target.value.replace(/\D/g, '').slice(0, 14) || null)}
+              />
             </Field>
             <div className="grid grid-cols-[1fr_5.5rem] gap-2">
               <Field label="Cidade">
@@ -288,7 +310,12 @@ export function OportunidadeForm({
               <input className="input" value={d.contato_nome ?? ''} onChange={(e) => set('contato_nome', e.target.value || null)} />
             </Field>
             <Field label="Cargo">
-              <input className="input" placeholder="Sócio, financeiro..." value={d.contato_cargo ?? ''} onChange={(e) => set('contato_cargo', e.target.value || null)} />
+              <input
+                className="input"
+                placeholder="Sócio, financeiro..."
+                value={d.contato_cargo ?? ''}
+                onChange={(e) => set('contato_cargo', e.target.value || null)}
+              />
             </Field>
             <Field label="Telefone / WhatsApp">
               <input className="input" value={mascaraTelefone(d.telefone ?? '')} onChange={(e) => set('telefone', e.target.value.replace(/\D/g, '') || null)} />
@@ -301,7 +328,12 @@ export function OportunidadeForm({
             </Field>
             {d.origem === 'indicacao_parceiro' ? (
               <Field label="Parceiro que indicou">
-                <Select value={d.parceiro_id ?? ''} onChange={(v) => set('parceiro_id', v || null)} opcoes={parceiros.map((p) => ({ value: p.id, label: p.nome }))} vazio="Selecione" />
+                <Select
+                  value={d.parceiro_id ?? ''}
+                  onChange={(v) => set('parceiro_id', v || null)}
+                  opcoes={parceiros.map((p) => ({ value: p.id, label: p.nome }))}
+                  vazio="Selecione"
+                />
               </Field>
             ) : (
               <div />
@@ -316,7 +348,12 @@ export function OportunidadeForm({
               <Select value={d.servico} onChange={(v) => set('servico', v)} opcoes={SERVICOS} />
             </Field>
             <Field label="Responsável na ASAP">
-              <Select value={d.responsavel_id ?? ''} onChange={(v) => set('responsavel_id', v || null)} opcoes={equipe.map((m) => ({ value: m.user_id, label: m.nome }))} vazio="Ninguém" />
+              <Select
+                value={d.responsavel_id ?? ''}
+                onChange={(v) => set('responsavel_id', v || null)}
+                opcoes={equipe.map((m) => ({ value: m.user_id, label: m.nome }))}
+                vazio="Ninguém"
+              />
             </Field>
             <Field label="Honorário mensal proposto">
               <input
@@ -337,7 +374,7 @@ export function OportunidadeForm({
               />
             </Field>
             <Field label="Previsão de fechamento">
-              <input type="date" className="input" value={d.previsao_fechamento ?? ''} onChange={(e) => set('previsao_fechamento', e.target.value || null)} />
+              <CampoData className="input" value={d.previsao_fechamento ?? ''} onChange={(v) => set('previsao_fechamento', v || null)} />
             </Field>
             <Field label="Temperatura (interesse)">
               <div className="flex gap-1">
@@ -355,7 +392,11 @@ export function OportunidadeForm({
             </Field>
             {!oportunidade && (
               <Field label="Etapa inicial">
-                <Select value={d.etapa} onChange={(v) => set('etapa', v as EtapaCrm)} opcoes={ETAPAS_CRM.filter((e) => e.value !== 'ganho' && e.value !== 'perdido')} />
+                <Select
+                  value={d.etapa}
+                  onChange={(v) => set('etapa', v as EtapaCrm)}
+                  opcoes={ETAPAS_CRM.filter((e) => e.value !== 'ganho' && e.value !== 'perdido')}
+                />
               </Field>
             )}
           </div>
@@ -400,7 +441,7 @@ export function OportunidadeForm({
               <ListTodo className="h-4 w-4 text-brand-600" />
               Atividades e follow-ups
             </h3>
-            <div className="mb-4 grid gap-2 sm:grid-cols-[8.5rem_1fr_12rem_auto]">
+            <div className="mb-4 grid gap-2 sm:grid-cols-[8.5rem_1fr_14rem_auto]">
               <Select value={nova.tipo} onChange={(v) => setNova((n) => ({ ...n, tipo: v as TipoAtividade }))} opcoes={TIPOS_ATIVIDADE} />
               <input
                 id="nova-atividade"
@@ -410,14 +451,26 @@ export function OportunidadeForm({
                 onChange={(e) => setNova((n) => ({ ...n, descricao: e.target.value }))}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), adicionarAtividade())}
               />
-              <input
-                type="datetime-local"
-                className="input"
-                title="Quando fazer (deixe 00:00 para o dia todo)"
-                value={nova.data}
-                disabled={nova.tipo === 'nota'}
-                onChange={(e) => setNova((n) => ({ ...n, data: e.target.value }))}
-              />
+              <div className="grid grid-cols-[1fr_4.5rem] gap-1" title="Quando fazer (hora em branco = o dia todo)">
+                <CampoData
+                  className="input"
+                  value={nova.data.slice(0, 10)}
+                  disabled={nova.tipo === 'nota'}
+                  onChange={(v) => setNova((n) => ({ ...n, data: v ? `${v}T${n.data.slice(11, 16) || '00:00'}` : '' }))}
+                />
+                <input
+                  className="input px-2 text-center tabular-nums"
+                  placeholder="HH:MM"
+                  inputMode="numeric"
+                  disabled={nova.tipo === 'nota' || !nova.data}
+                  value={hora}
+                  onChange={(e) => {
+                    const h = mascaraHora(e.target.value)
+                    setHora(h)
+                    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(h) || !h) setNova((n) => ({ ...n, data: n.data ? `${n.data.slice(0, 10)}T${h || '00:00'}` : '' }))
+                  }}
+                />
+              </div>
               <button type="button" className="btn-primary" onClick={adicionarAtividade} disabled={!nova.descricao.trim()}>
                 <Plus className="h-4 w-4" />
                 Adicionar
@@ -434,7 +487,12 @@ export function OportunidadeForm({
                       {a.tipo === 'nota' ? (
                         <span className="mt-0.5 h-5 w-5 shrink-0" />
                       ) : (
-                        <button type="button" className="mt-0.5 cursor-pointer text-slate-300 hover:text-emerald-600" onClick={() => alternarAtividade(a)} title={a.concluida ? 'Reabrir' : 'Concluir'}>
+                        <button
+                          type="button"
+                          className="mt-0.5 cursor-pointer text-slate-300 hover:text-emerald-600"
+                          onClick={() => alternarAtividade(a)}
+                          title={a.concluida ? 'Reabrir' : 'Concluir'}
+                        >
                           {a.concluida ? <CircleCheck className="h-5 w-5 text-emerald-500" /> : <Circle className="h-5 w-5" />}
                         </button>
                       )}
@@ -442,12 +500,22 @@ export function OportunidadeForm({
                         <div className={`text-sm ${a.concluida && a.tipo !== 'nota' ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{a.descricao}</div>
                         <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-slate-400">
                           <span className="font-semibold">{labelDe(TIPOS_ATIVIDADE, a.tipo)}</span>
-                          {a.data_prevista && <span className={atrasada ? 'font-semibold text-rose-600' : ''}>{atrasada ? 'Atrasada · ' : ''}{formatarDataHora(a.data_prevista)}</span>}
+                          {a.data_prevista && (
+                            <span className={atrasada ? 'font-semibold text-rose-600' : ''}>
+                              {atrasada ? 'Atrasada · ' : ''}
+                              {formatarDataHora(a.data_prevista)}
+                            </span>
+                          )}
                           {a.tipo === 'nota' && <span>{formatarDataHora(a.created_at)}</span>}
                           {a.responsavel_id && <span>· {nomeMembro(a.responsavel_id)}</span>}
                         </div>
                       </div>
-                      <button type="button" className="cursor-pointer text-slate-300 opacity-0 group-hover:opacity-100 hover:text-rose-600" onClick={() => excluirAtividade(a)} title="Excluir">
+                      <button
+                        type="button"
+                        className="cursor-pointer text-slate-300 opacity-0 group-hover:opacity-100 hover:text-rose-600"
+                        onClick={() => excluirAtividade(a)}
+                        title="Excluir"
+                      >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </li>

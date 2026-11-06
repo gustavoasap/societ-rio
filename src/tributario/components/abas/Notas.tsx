@@ -7,6 +7,7 @@ import type { AjusteNota, NotaDetalhe, NotaResumo } from '../../engine/notas'
 import type { Estabelecimento } from '../../engine/tipos'
 import { moeda } from '../../formatacao'
 import { Kpi } from '../comum'
+import { CampoData } from '../../../components/CampoData'
 
 const POR_PAGINA = 100
 const dataBr = (d: string) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '—')
@@ -296,7 +297,7 @@ export function Notas({
             <CheckCircle2 className="h-3.5 w-3.5" /> Considerar
           </button>
           <span className="flex items-center gap-1">
-            <input className="input w-40 py-1" type="date" value={dataLote} onChange={(e) => setDataLote(e.target.value)} />
+            <CampoData className="input w-40 py-1" value={dataLote} onChange={(v) => setDataLote(v)} />
             <button className="btn-secondary btn-sm" disabled={salvando || !dataLote} onClick={() => emLote((a) => ({ ...a, data: dataLote }))}>
               <CalendarDays className="h-3.5 w-3.5" /> Mudar a data
             </button>
@@ -506,17 +507,18 @@ function EditorNota({
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-xs font-semibold text-slate-600">
             Data considerada
-            <input
-              className="input mt-1 w-44"
-              type="date"
-              value={f.data ?? n.data}
-              onChange={(e) =>
-                setF({
-                  ...f,
-                  data: e.target.value && e.target.value !== n.data ? e.target.value : null,
-                })
-              }
-            />
+            <div className="mt-1 w-44">
+              <CampoData
+                className="input"
+                value={f.data ?? n.data}
+                onChange={(v) =>
+                  setF({
+                    ...f,
+                    data: v && v !== n.data ? v : null,
+                  })
+                }
+              />
+            </div>
           </label>
           <label className="text-xs font-semibold text-slate-600">
             CFOP considerado
