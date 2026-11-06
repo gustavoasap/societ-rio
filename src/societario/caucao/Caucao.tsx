@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import type { Session } from '@supabase/supabase-js'
 import {
   CalendarRange,
+  CalendarCheck,
   FileSpreadsheet,
   FileText,
   Handshake,
@@ -26,6 +27,7 @@ import type { Parceiro } from '../../types'
 import { CaucaoForm } from './CaucaoForm'
 import { Conciliacao } from './Conciliacao'
 import { Juntas } from './Juntas'
+import { RecebimentoLote } from './RecebimentoLote'
 import { labelCobertura, resultado, totalizar, type Caucao as CaucaoT, type Junta } from './tipos'
 
 const hoje = () => {
@@ -78,6 +80,8 @@ export function Caucao({ session }: { session: Session }) {
   const [editando, setEditando] = useState<CaucaoT | 'novo' | null>(null)
   const [verJuntas, setVerJuntas] = useState(false)
   const [verParceiros, setVerParceiros] = useState(false)
+  const [verLote, setVerLote] = useState(false)
+  const [aviso, setAviso] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
     const [c, p, j, proc, cli] = await comRetentativa(() =>
@@ -277,6 +281,10 @@ export function Caucao({ session }: { session: Session }) {
               <Landmark className="h-4 w-4" />
               Juntas e taxas
             </button>
+            <button className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setVerLote(true)}>
+              <CalendarCheck className="h-4 w-4" />
+              Recebimento em lote
+            </button>
             <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando('novo')}>
               <Plus className="h-4 w-4" />
               Novo caução
@@ -310,6 +318,14 @@ export function Caucao({ session }: { session: Session }) {
 
       <main className="w-full max-w-none space-y-5 px-3 py-6 sm:px-4 md:px-6 lg:px-8">
         {erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
+        {aviso && (
+          <p className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 ring-1 ring-emerald-200">
+            {aviso}
+            <button className="cursor-pointer text-xs underline" onClick={() => setAviso(null)}>
+              fechar
+            </button>
+          </p>
+        )}
 
         {aba === 'clientes' && (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -516,6 +532,18 @@ export function Caucao({ session }: { session: Session }) {
         />
       )}
       {verJuntas && <Juntas juntas={juntas} caucoes={caucoes} onClose={() => setVerJuntas(false)} onChanged={carregar} />}
+      {verLote && (
+        <RecebimentoLote
+          caucoes={caucoes}
+          parceiros={parceiros}
+          onClose={() => setVerLote(false)}
+          onFeito={(msg) => {
+            setVerLote(false)
+            setAviso(msg)
+            carregar()
+          }}
+        />
+      )}
       {verParceiros && <Parceiros parceiros={parceiros} processos={[]} onClose={() => setVerParceiros(false)} onChanged={carregar} />}
     </div>
   )
