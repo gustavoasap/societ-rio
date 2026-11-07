@@ -145,23 +145,27 @@ export function Clientes({ session }: { session: Session }) {
   }
 
   function exportar() {
-    const cab = ['Código', 'CNPJ', 'Razão social', 'Situação', 'Abertura', 'Assinatura', 'Encerramento', 'Responsável', 'E-mail', 'Telefone', 'Parceiro', 'Regime', 'Honorário mensal', 'Dia vencimento', ...ETAPAS.map((e) => e.label), 'Drive']
+    const cab = ['Código', 'Empresa', 'CNPJ', 'Razão social', 'Situação', 'Abertura', 'Início dos serviços', 'Assinatura', 'Carência (meses)', 'Encerramento', 'Situação do encerramento', 'Responsável', 'E-mail', 'Telefone', 'Parceiro', 'Regime', 'Honorário mensal', 'Dia vencimento', ...ETAPAS.map((e) => e.label), 'Drive']
     const linhas = lista.map((c) => {
       const v = vigentes.get(c.id)
       return [
         c.codigo,
+        c.empresa,
         formatarCnpj(c.cnpj),
         c.razao_social,
         labelDe(STATUS_CLIENTE, c.status),
         formatarData(c.data_abertura),
+        formatarData(c.data_inicio_servicos),
         formatarData(c.data_assinatura),
+        c.carencia_meses ?? '',
         formatarData(c.data_encerramento),
+        c.situacao_encerramento,
         c.responsavel,
         c.email,
         c.telefone,
         nomeParceiro(c.parceiro_id),
         labelDe(REGIMES, c.regime_tributario),
-        v ? v.valor.toFixed(2).replace('.', ',') : '',
+        v ? moeda(v.valor) : '',
         v?.dia_vencimento ?? '',
         ...ETAPAS.map((e) => TEXTO_ETAPA[c[e.campo] ?? 'vazio']),
         c.link_drive,
@@ -328,6 +332,7 @@ export function Clientes({ session }: { session: Session }) {
                                 className={`w-48 rounded-full border py-1 pl-3 text-xs font-semibold outline-none ${COR_STATUS[c.status]}`}
                               />
                             )}
+                            {c.situacao_encerramento && <div className="mt-1 pl-1 text-xs font-semibold text-rose-600">{c.situacao_encerramento}</div>}
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap text-slate-600 tabular-nums">{formatarData(c.data_assinatura)}</td>
                           <td className="px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-900 tabular-nums">

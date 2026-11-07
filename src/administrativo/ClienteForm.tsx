@@ -16,6 +16,7 @@ import {
   type Cliente,
   type Honorario,
   type ParceiroResumo,
+  EMPRESAS,
 } from './tipos'
 import { CampoData } from '../components/CampoData'
 
@@ -29,6 +30,10 @@ const VAZIO: Dados = {
   data_abertura: null,
   data_assinatura: null,
   data_encerramento: null,
+  empresa: 'ASAP',
+  data_inicio_servicos: null,
+  carencia_meses: null,
+  situacao_encerramento: null,
   responsavel: null,
   email: null,
   telefone: null,
@@ -192,13 +197,13 @@ export function ClienteForm({
       <form id="form-cliente" onSubmit={salvar} className="space-y-4">
         <section className="grid gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70 sm:grid-cols-6">
           <Field label="Razão social" className="sm:col-span-4">
-            <input id="razao-social" className="input" value={d.razao_social} onChange={(e) => set('razao_social', e.target.value)} required />
+            <input id="razao-social" className="input uppercase" value={d.razao_social} onChange={(e) => set('razao_social', e.target.value.toUpperCase())} required />
           </Field>
           <Field label="CNPJ" className="sm:col-span-2">
             <input id="cnpj" className="input font-mono" value={mascaraCnpj(d.cnpj ?? '')} onChange={(e) => set('cnpj', e.target.value)} placeholder="00.000.000/0000-00" />
           </Field>
           <Field label="Nome fantasia" className="sm:col-span-3">
-            <input id="nome-fantasia" className="input" value={d.nome_fantasia ?? ''} onChange={(e) => set('nome_fantasia', texto(e.target.value))} />
+            <input id="nome-fantasia" className="input uppercase" value={d.nome_fantasia ?? ''} onChange={(e) => set('nome_fantasia', texto(e.target.value.toUpperCase()))} />
           </Field>
           <Field label="Situação" className="sm:col-span-3">
             <Select
@@ -209,7 +214,7 @@ export function ClienteForm({
             />
           </Field>
           <Field label="Responsável" className="sm:col-span-2">
-            <input id="responsavel" className="input" value={d.responsavel ?? ''} onChange={(e) => set('responsavel', texto(e.target.value))} />
+            <input id="responsavel" className="input uppercase" value={d.responsavel ?? ''} onChange={(e) => set('responsavel', e.target.value.toUpperCase() || null)} />
           </Field>
           <Field label="E-mail" className="sm:col-span-2">
             <input id="email" type="email" className="input" value={d.email ?? ''} onChange={(e) => set('email', texto(e.target.value))} />
@@ -222,6 +227,37 @@ export function ClienteForm({
           </Field>
           <Field label="Assinatura do contrato" className="sm:col-span-2">
             <CampoData id="data-assinatura" className="input" value={d.data_assinatura ?? ''} onChange={(v) => set('data_assinatura', v || null)} />
+          </Field>
+          <Field label="Início dos serviços" className="sm:col-span-2">
+            <CampoData id="data-inicio-servicos" className="input" value={d.data_inicio_servicos ?? ''} onChange={(v) => set('data_inicio_servicos', v || null)} />
+          </Field>
+          <Field label="Empresa" className="sm:col-span-2">
+            <Select value={d.empresa ?? ''} onChange={(v) => set('empresa', v || null)} opcoes={EMPRESAS} vazio="Não informada" />
+          </Field>
+          <Field label="Carência (meses)" className="sm:col-span-2">
+            <input
+              id="carencia"
+              type="number"
+              min={0}
+              max={60}
+              className="input"
+              value={d.carencia_meses ?? ''}
+              onChange={(e) => set('carencia_meses', e.target.value === '' ? null : Math.max(0, Math.min(60, Math.trunc(Number(e.target.value)))))}
+            />
+          </Field>
+          <Field label="Situação do encerramento" className="sm:col-span-6">
+            <input
+              id="situacao-encerramento"
+              className="input"
+              list="situacoes-encerramento"
+              placeholder="Ex.: Pendente Distrato, Aguardando Retorno"
+              value={d.situacao_encerramento ?? ''}
+              onChange={(e) => set('situacao_encerramento', e.target.value || null)}
+            />
+            <datalist id="situacoes-encerramento">
+              <option value="Pendente Distrato" />
+              <option value="Aguardando Retorno" />
+            </datalist>
           </Field>
           <Field label="Parceiro" className="sm:col-span-2">
             <Select value={d.parceiro_id ?? ''} onChange={(v) => set('parceiro_id', v || null)} opcoes={parceiros.map((p) => ({ value: p.id, label: p.nome }))} vazio="Nenhum" />

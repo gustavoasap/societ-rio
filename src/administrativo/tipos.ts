@@ -11,6 +11,10 @@ export interface Cliente {
   data_abertura: string | null
   data_assinatura: string | null
   data_encerramento: string | null
+  empresa: string | null
+  data_inicio_servicos: string | null
+  carencia_meses: number | null
+  situacao_encerramento: string | null
   responsavel: string | null
   email: string | null
   telefone: string | null
@@ -108,5 +112,7 @@ export const hojeISO = () => {
 }
 
 export const temPendencia = (c: Cliente) => ETAPAS.some((e) => c[e.campo] === 'pendente' || c[e.campo] === 'pdf_enviado')
+
+export const EMPRESAS = ['ASAP', 'DELY']
 
 export const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
