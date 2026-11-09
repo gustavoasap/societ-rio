@@ -81,6 +81,8 @@ export interface Recorrencia {
   dia_util: 'seg_sab' | 'seg_sex' | null
   /** 1 = mensal, 2 = bimestral, 3 = trimestral, 6 = semestral, 12 = anual */
   intervalo_meses: number
+  /** preenchido = repete de N em N dias a partir de `inicio` (toda semana = 7, quinzena = 15) */
+  intervalo_dias?: number | null
   conta_id: string
   categoria_id: string | null
   pessoa_id: string | null

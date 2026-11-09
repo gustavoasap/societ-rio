@@ -120,6 +120,19 @@ export function enesimoDiaUtil(mes: string, n: number, modo: ModoDiaUtil = 'seg_
   return ultimoDia(mes)
 }
 
+/** Datas de uma série de N em N dias a partir de `inicio`, entre `de` e `ate` (inclusive). */
+export function datasPorDias(inicio: string, n: number, de: string, ate: string) {
+  const dia = 86400000
+  const base = Date.UTC(+inicio.slice(0, 4), +inicio.slice(5, 7) - 1, +inicio.slice(8, 10))
+  const ini = Date.UTC(+de.slice(0, 4), +de.slice(5, 7) - 1, +de.slice(8, 10))
+  const fim = Date.UTC(+ate.slice(0, 4), +ate.slice(5, 7) - 1, +ate.slice(8, 10))
+  const lista: string[] = []
+  if (!(n >= 1)) return lista
+  let k = Math.max(0, Math.ceil((ini - base) / (n * dia)))
+  for (let t = base + k * n * dia; t <= fim && lista.length < 400; k++, t = base + k * n * dia) lista.push(new Date(t).toISOString().slice(0, 10))
+  return lista
+}
+
 /** Data de uma recorrência no mês: dia fixo (limitado ao fim do mês) ou N-ésimo dia útil. */
 export function dataDaRecorrencia(mes: string, dia: number, modo: ModoDiaUtil | null) {
   if (modo) return enesimoDiaUtil(mes, dia, modo)

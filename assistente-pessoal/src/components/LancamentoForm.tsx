@@ -40,6 +40,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   const [diaRec, setDiaRec] = useState(() => Number((inicial.data ?? hoje()).slice(8, 10)))
   const [modoRec, setModoRec] = useState<ModoDiaUtil | null>(null)
   const [intervaloRec, setIntervaloRec] = useState(1)
+  const [diasRec, setDiasRec] = useState<number | null>(null)
   const [autoPago, setAutoPago] = useState(false)
   const [aplicarProximos, setAplicarProximos] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -47,14 +48,14 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   const [novaCat, setNovaCat] = useState(false)
   const padroes = useDados(buscarPadroes, [])
   // editando um mês de uma recorrência: dá para definir até quando ela vai
-  const [rec, setRec] = useState<Pick<Recorrencia, 'id' | 'inicio' | 'fim' | 'intervalo_meses'> | null>(null)
+  const [rec, setRec] = useState<Pick<Recorrencia, 'id' | 'inicio' | 'fim' | 'intervalo_meses' | 'intervalo_dias'> | null>(null)
   const [fimRec, setFimRec] = useState('')
   const recId = edicao?.recorrencia_id
   useEffect(() => {
     if (!recId) return
     supabase
       .from('pes_recorrencias')
-      .select('id, inicio, fim, intervalo_meses')
+      .select('id, inicio, fim, intervalo_meses, intervalo_dias')
       .eq('id', recId)
       .maybeSingle()
       .then(({ data: r }) => {
@@ -85,7 +86,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
     if (tipo === 'transferencia' && (!destinoId || destinoId === contaId)) return setErro('Escolha a conta de destino (diferente da de origem).')
     const desc = descricao.trim() || (tipo === 'transferencia' ? 'Transferência' : (cat?.nome ?? ''))
     if (!desc) return setErro('Informe uma descrição.')
-    if (repeticao === 'recorrente' && (!diaRec || diaRec < 1 || diaRec > (modoRec ? 23 : 31))) return setErro(modoRec ? 'Informe qual dia útil (de 1 a 23).' : 'Informe o dia do mês.')
+    if (repeticao === 'recorrente' && !diasRec && (!diaRec || diaRec < 1 || diaRec > (modoRec ? 23 : 31))) return setErro(modoRec ? 'Informe qual dia útil (de 1 a 23).' : 'Informe o dia do mês.')
     const mudouFim = !!rec && fimRec !== (rec.fim ?? '')
     if (mudouFim && fimRec && !dataValida(fimRec)) return setErro('Informe a data completa do fim da repetição.')
     if (mudouFim && fimRec && fimRec < rec!.inicio) return setErro(`O fim não pode ser antes do início da repetição (${dataBR(rec!.inicio)}).`)
@@ -141,9 +142,11 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
           tipo,
           descricao: desc,
           valor,
-          dia: diaRec,
-          dia_util: modoRec,
-          intervalo_meses: intervaloRec,
+          // de N em N dias: conta a partir da data de início (o "dia" fica só de referência)
+          dia: diasRec ? Number(data.slice(8, 10)) : diaRec,
+          dia_util: diasRec ? null : modoRec,
+          intervalo_meses: diasRec ? 1 : intervaloRec,
+          intervalo_dias: diasRec,
           conta_id: contaId,
           categoria_id: comum.categoria_id,
           pessoa_id: comum.pessoa_id,
@@ -278,7 +281,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
               <p className="flex items-start gap-2 text-xs text-azul-900">
                 <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
-                  Despesa que se repete {rec.intervalo_meses === 12 ? 'todo ano' : rec.intervalo_meses > 1 ? `a cada ${rec.intervalo_meses} meses` : 'todo mês'}, desde {dataBR(rec.inicio)}.{' '}
+                  Despesa que se repete {rec.intervalo_dias ? (rec.intervalo_dias === 7 ? 'toda semana' : `a cada ${rec.intervalo_dias} dias`) : rec.intervalo_meses === 12 ? 'todo ano' : rec.intervalo_meses > 1 ? `a cada ${rec.intervalo_meses} meses` : 'todo mês'}, desde {dataBR(rec.inicio)}.{' '}
                   {rec.fim ? `Termina em ${dataBR(rec.fim)}.` : 'Sem data para terminar.'}
                 </span>
               </p>
@@ -327,7 +330,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
                 <Repeat className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 Repete a partir de {dataBR(data)}. Os lançamentos vão sendo criados sozinhos (sempre até o mês seguinte). Ideal para salário, aluguel, assinaturas e despesas anuais como IPVA e IPTU.
               </p>
-              <CampoDia dia={diaRec} setDia={setDiaRec} modo={modoRec} setModo={setModoRec} aPartirDe={data} intervalo={intervaloRec} setIntervalo={setIntervaloRec} valor={valor} />
+              <CampoDia dia={diaRec} setDia={setDiaRec} modo={modoRec} setModo={setModoRec} aPartirDe={data} intervalo={intervaloRec} setIntervalo={setIntervaloRec} intervaloDias={diasRec} setIntervaloDias={setDiasRec} valor={valor} />
               <div className="grid grid-cols-2 items-end gap-3">
                 <Campo label="Até (opcional)">
                   <input className="input" type="date" value={fim} onChange={(e) => setFim(e.target.value)} />
