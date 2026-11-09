@@ -152,6 +152,27 @@ export async function buscarChavesExtrato(contaId: string) {
   return num(ok(r) as Pick<LinhaExtrato, 'data' | 'valor' | 'descricao' | 'fitid'>[], ['valor'])
 }
 
+export interface HistoricoPadrao {
+  id: string
+  texto: string
+  categoria_id: string | null
+}
+
+/** Históricos salvos para reaproveitar na conciliação. */
+export async function buscarPadroes() {
+  const r = await supabase.from('pes_historicos_padrao').select('id, texto, categoria_id').order('texto')
+  // banco ainda sem a tabela: segue sem padrões
+  return r.error ? [] : (r.data as HistoricoPadrao[])
+}
+
+/** Pessoa usada para a parte dos outros nas despesas compartilhadas (cria na primeira vez). */
+export async function pessoaRateio() {
+  const nome = 'Rateio (compartilhado)'
+  const achada = ok(await supabase.from('pes_pessoas').select('id').eq('nome', nome).maybeSingle()) as { id: string } | null
+  if (achada) return achada.id
+  return (await salvar('pes_pessoas', null, { nome })).id
+}
+
 /** Linhas já conciliadas da conta (histórico do banco → lançamento), para repetir a classificação. */
 export async function buscarHistoricoExtrato(contaId: string) {
   const r = await supabase.from('pes_extrato').select('descricao, lancamento_id').eq('conta_id', contaId).not('lancamento_id', 'is', null).order('data', { ascending: false }).limit(5000)
@@ -209,7 +230,7 @@ export async function gerarRecorrencias() {
 
 // ---------------------------------------------------------------- gravação
 
-type Tabela = 'pes_extrato' | 'pes_contas' | 'pes_categorias' | 'pes_lancamentos' | 'pes_metas' | 'pes_meta_aportes' | 'pes_objetivos' | 'pes_etapas' | 'pes_pessoas' | 'pes_recorrencias'
+type Tabela = 'pes_historicos_padrao' | 'pes_extrato' | 'pes_contas' | 'pes_categorias' | 'pes_lancamentos' | 'pes_metas' | 'pes_meta_aportes' | 'pes_objetivos' | 'pes_etapas' | 'pes_pessoas' | 'pes_recorrencias'
 
 export async function salvar<T extends object>(tabela: Tabela, id: string | null | undefined, valores: T) {
   const r = id ? await supabase.from(tabela).update(valores).eq('id', id).select().single() : await supabase.from(tabela).insert(valores).select().single()

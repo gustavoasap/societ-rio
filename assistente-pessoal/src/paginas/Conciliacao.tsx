@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { ArrowRight, Check, CircleAlert, EyeOff, FileUp, Landmark, Pencil, Plus, Scale, Trash2, Undo2 } from 'lucide-react'
+import { ArrowRight, Check, CircleAlert, EyeOff, FileUp, Landmark, Pencil, Plus, Scale, Star, Trash2, Undo2, Users } from 'lucide-react'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Cabecalho, Campo, CampoValor, Carregando, Erro, Modal, Segmentado, Selecao, SeletorMes, Vazio } from '../components/ui'
 import { useApp } from '../contexto'
@@ -10,7 +10,10 @@ import {
   buscarExtrato,
   buscarHistoricoExtrato,
   buscarLancamentos,
+  buscarPadroes,
   buscarSaldoExtrato,
+  pessoaRateio,
+  type HistoricoPadrao,
   excluir,
   inserirVarios,
   salvar,
@@ -18,7 +21,7 @@ import {
   saldoNaData,
   useDados,
 } from '../lib/dados'
-import { chaveLinha, conciliar, contaBate, lerExtrato, sugestaoPorHistorico, type LinhaExtrato } from '../lib/extrato'
+import { chaveLinha, conciliar, contaBate, lerExtrato, planoCompartilhada, sugestaoPorHistorico, type LinhaExtrato } from '../lib/extrato'
 import { dataBR, dataValida, mesPorExtenso, moeda } from '../lib/formato'
 import { supabase } from '../lib/supabase'
 import { BANCOS } from '../tipos'
@@ -48,6 +51,7 @@ export function Conciliacao() {
   const lanc = useDados(() => buscarLancamentos(primeiroDia(somarMesesAoMes(mes, -12)), somarDias(fim, 7)), [mes, fim])
   const saldoBanco = useDados(() => (contaId ? buscarSaldoExtrato(contaId, inicio, fim) : Promise.resolve(null)), [contaId, inicio, fim])
   const dataSaldo = saldoBanco.dados?.data ?? (fim < hoje() ? fim : hoje())
+  const padroes = useDados(buscarPadroes, [])
   const historico = useDados(() => (contaId ? buscarHistoricoExtrato(contaId) : Promise.resolve([])), [contaId])
   const saldoApp = useDados(() => (conta ? saldoNaData(conta.id, conta.saldo_inicial, dataSaldo) : Promise.resolve(0)), [conta?.id, conta?.saldo_inicial, dataSaldo])
 
@@ -147,6 +151,29 @@ export function Conciliacao() {
     } finally {
       setOcupado(false)
     }
+  }
+
+  async function desfazerCompartilhada(grupo: string) {
+    if (!window.confirm('Desfazer esta despesa compartilhada? Os lançamentos criados para ela são apagados e as linhas voltam para "A classificar".')) return
+    try {
+      const a = await supabase.from('pes_extrato').update({ lancamento_id: null, compartilhado_id: null }).eq('compartilhado_id', grupo)
+      if (a.error) throw new Error(a.error.message)
+      const b = await supabase.from('pes_lancamentos').delete().eq('compartilhado_id', grupo)
+      if (b.error) throw new Error(b.error.message)
+      avisarMudanca()
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // resumo de cada despesa compartilhada do mês (pago, recebido, minha parte)
+  const resumoCompart = new Map<string, { pago: number; recebido: number }>()
+  for (const l of extrato.dados ?? []) {
+    if (!l.compartilhado_id) continue
+    const r = resumoCompart.get(l.compartilhado_id) ?? { pago: 0, recebido: 0 }
+    if (l.valor < 0) r.pago += -l.valor
+    else r.recebido += l.valor
+    resumoCompart.set(l.compartilhado_id, r)
   }
 
   const diferenca = saldoBanco.dados && saldoApp.dados !== undefined ? Math.round((saldoBanco.dados.saldo - saldoApp.dados) * 100) / 100 : null
@@ -266,6 +293,7 @@ export function Conciliacao() {
                 linhas={c.soExtrato}
                 contaId={contaId}
                 sugestao={(l) => sugestaoPorHistorico(l.descricao, historico.dados ?? [], todos, contaId)}
+                padroes={padroes.dados ?? []}
                 onErro={setErro}
                 onAviso={setAviso}
               />
@@ -298,7 +326,13 @@ export function Conciliacao() {
                         {p.lanc.descricao} ({dataBR(p.lanc.data)})
                       </span>
                       {p.sugerido && <span className="rounded-full bg-amber-100 px-1.5 py-px text-[0.625rem] font-bold text-amber-800">sugerido</span>}
-                      {!p.sugerido && (
+                      {p.linha.compartilhado_id && <span className="rounded-full bg-violet-100 px-1.5 py-px text-[0.625rem] font-bold text-violet-800">compartilhada</span>}
+                      {p.linha.compartilhado_id && p.linha.valor < 0 && (
+                        <button className="icon-btn h-6 w-6" aria-label="Desfazer despesa compartilhada" title="Desfazer a despesa compartilhada" onClick={() => desfazerCompartilhada(p.linha.compartilhado_id!)}>
+                          <Undo2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {!p.sugerido && !p.linha.compartilhado_id && (
                         <button
                           className="icon-btn h-6 w-6"
                           aria-label="Desfazer conciliação"
@@ -309,6 +343,12 @@ export function Conciliacao() {
                         </button>
                       )}
                     </span>
+                    {p.linha.compartilhado_id && p.linha.valor < 0 && resumoCompart.get(p.linha.compartilhado_id) && (
+                      <span className="w-full pl-7 text-xs text-violet-700">
+                        Pago {moeda(resumoCompart.get(p.linha.compartilhado_id)!.pago)} · recebido {moeda(resumoCompart.get(p.linha.compartilhado_id)!.recebido)} · sua parte{' '}
+                        <b>{moeda(Math.max(0, resumoCompart.get(p.linha.compartilhado_id)!.pago - resumoCompart.get(p.linha.compartilhado_id)!.recebido))}</b>
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -370,12 +410,14 @@ function Classificar({
   linhas,
   contaId,
   sugestao,
+  padroes,
   onErro,
   onAviso,
 }: {
   linhas: LinhaExtrato[]
   contaId: string
   sugestao: (l: LinhaExtrato) => Sugestao
+  padroes: HistoricoPadrao[]
   onErro: (m: string) => void
   onAviso: (m: string) => void
 }) {
@@ -383,7 +425,22 @@ function Classificar({
   // o que foi digitado em cada linha (sem nada digitado, vale a sugestão)
   const [edicao, setEdicao] = useState<Record<string, { descricao?: string; classe?: string }>>({})
   const [gravando, setGravando] = useState(false)
+  const [compart, setCompart] = useState<LinhaExtrato | null>(null)
+  const [verPadroes, setVerPadroes] = useState(false)
   const outras = contas.filter((k) => k.ativa && k.id !== contaId)
+  const padraoDe = (t: string) => padroes.find((p) => p.texto.trim().toLowerCase() === t.trim().toLowerCase())
+
+  async function salvarPadrao(texto: string, classe: string) {
+    const t = texto.trim()
+    if (!t) return
+    if (padraoDe(t)) return onAviso(`“${t}” já está nos padrões.`)
+    try {
+      await salvar('pes_historicos_padrao', null, { texto: t, categoria_id: classe && !classe.startsWith('t:') ? classe : null })
+      onAviso(`“${t}” salvo nos padrões de histórico.`)
+    } catch (e) {
+      onErro(e instanceof Error ? e.message : String(e))
+    }
+  }
 
   const valores = (l: LinhaExtrato) => {
     const s = sugestao(l)
@@ -394,7 +451,14 @@ function Classificar({
       sugerido: !!s && e.descricao === undefined && e.classe === undefined,
     }
   }
-  const mudar = (id: string, campo: 'descricao' | 'classe', v: string) => setEdicao((x) => ({ ...x, [id]: { ...x[id], [campo]: v } }))
+  const mudar = (id: string, campo: 'descricao' | 'classe', v: string) =>
+    setEdicao((x) => {
+      const novo = { ...x[id], [campo]: v }
+      // escolheu um histórico padrão: traz a categoria dele, se ainda não escolheu outra
+      const p = campo === 'descricao' ? padraoDe(v) : undefined
+      if (p?.categoria_id && x[id]?.classe === undefined) novo.classe = p.categoria_id
+      return { ...x, [id]: novo }
+    })
 
   async function lancar(l: LinhaExtrato) {
     const v = valores(l)
@@ -440,7 +504,13 @@ function Classificar({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-bold text-slate-800">No extrato, ainda não lançado no app</h2>
-          <p className="text-xs text-slate-500">Ajuste o histórico se quiser (o valor fica o do banco), escolha a categoria e lance. Da próxima vez, o mesmo histórico já vem preenchido.</p>
+          <p className="text-xs text-slate-500">
+            Escreva o <b>Histórico – Conciliação</b> (o do banco fica guardado e o valor não muda), escolha a categoria e lance. Pagou por todos e recebeu PIX de volta? Use{' '}
+            <b>Compartilhada</b>.{' '}
+            <button className="font-semibold text-azul-600 hover:underline" onClick={() => setVerPadroes(true)}>
+              Padrões de histórico ({padroes.length})
+            </button>
+          </p>
         </div>
         {classificadas.length > 0 && (
           <button className="btn-primary btn-sm" onClick={() => lancarVarias(classificadas)} disabled={gravando}>
@@ -459,8 +529,28 @@ function Classificar({
                 <span className={`font-semibold tabular-nums sm:hidden ${corValor(l.valor)}`}>{comSinal(l.valor)}</span>
               </div>
               <div className="min-w-0">
-                <input className="input py-2 text-sm" value={v.descricao} onChange={(e) => mudar(l.id, 'descricao', e.target.value)} aria-label="Histórico" />
-                {v.descricao !== l.descricao && <div className="mt-0.5 truncate text-[0.6875rem] text-slate-400">No banco: {l.descricao}</div>}
+                <div className="mb-1 truncate text-xs text-slate-500" title={l.descricao}>
+                  <span className="font-semibold">Banco:</span> {l.descricao}
+                </div>
+                <div className="flex gap-1">
+                  <input
+                    className="input min-w-0 flex-1 py-2 text-sm"
+                    list="padroes-historico"
+                    value={v.descricao}
+                    onChange={(e) => mudar(l.id, 'descricao', e.target.value)}
+                    placeholder="Histórico – Conciliação"
+                    aria-label="Histórico – Conciliação"
+                  />
+                  <button
+                    type="button"
+                    className={`icon-btn shrink-0 ${padraoDe(v.descricao) ? 'text-amber-500' : ''}`}
+                    aria-label="Salvar como histórico padrão"
+                    title={padraoDe(v.descricao) ? 'Já é um padrão' : 'Salvar como histórico padrão'}
+                    onClick={() => salvarPadrao(v.descricao, v.classe)}
+                  >
+                    <Star className={`h-4 w-4 ${padraoDe(v.descricao) ? 'fill-current' : ''}`} />
+                  </button>
+                </div>
               </div>
               <span className={`hidden text-right font-semibold tabular-nums sm:block ${corValor(l.valor)}`}>{comSinal(l.valor)}</span>
               <div className="min-w-0">
@@ -491,6 +581,11 @@ function Classificar({
                 <button className="btn-primary btn-sm" onClick={() => lancarVarias([l])} disabled={gravando}>
                   Lançar
                 </button>
+                {l.valor < 0 && (
+                  <button className="icon-btn text-violet-600" aria-label="Despesa compartilhada" title="Despesa compartilhada (paguei por todos e recebi de volta)" onClick={() => setCompart(l)}>
+                    <Users className="h-4 w-4" />
+                  </button>
+                )}
                 <button className="icon-btn" aria-label="Ignorar esta linha" title="Ignorar" onClick={() => salvar('pes_extrato', l.id, { ignorada: true }).catch((e: Error) => onErro(e.message))}>
                   <EyeOff className="h-4 w-4" />
                 </button>
@@ -507,7 +602,204 @@ function Classificar({
           )
         })}
       </div>
+      <datalist id="padroes-historico">
+        {padroes.map((p) => (
+          <option key={p.id} value={p.texto} />
+        ))}
+      </datalist>
+      {compart && (
+        <CompartilhadaForm
+          saida={compart}
+          candidatas={linhas.filter((x) => x.valor > 0)}
+          contaId={contaId}
+          inicial={valores(compart)}
+          padroes={padroes}
+          onClose={() => setCompart(null)}
+          onAviso={onAviso}
+        />
+      )}
+      {verPadroes && <PadroesForm padroes={padroes} onClose={() => setVerPadroes(false)} />}
     </section>
+  )
+}
+
+const dias = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000
+
+/** Paguei o total e recebi a parte dos outros: escolhe as entradas (PIX) que são reembolso desta saída. */
+function CompartilhadaForm({
+  saida,
+  candidatas,
+  contaId,
+  inicial,
+  padroes,
+  onClose,
+  onAviso,
+}: {
+  saida: LinhaExtrato
+  candidatas: LinhaExtrato[]
+  contaId: string
+  inicial: { descricao: string; classe: string }
+  padroes: HistoricoPadrao[]
+  onClose: () => void
+  onAviso: (m: string) => void
+}) {
+  const { categorias } = useApp()
+  const [descricao, setDescricao] = useState(inicial.descricao)
+  const [categoria, setCategoria] = useState(inicial.classe.startsWith('t:') ? '' : inicial.classe)
+  const [marcadas, setMarcadas] = useState<Set<string>>(new Set())
+  const [erro, setErro] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
+  // as entradas mais próximas da data da saída primeiro
+  const lista = [...candidatas].sort((a, b) => dias(a.data, saida.data) - dias(b.data, saida.data) || a.data.localeCompare(b.data))
+  const entradas = lista.filter((l) => marcadas.has(l.id))
+  const pago = Math.abs(saida.valor)
+  const recebido = Math.round(entradas.reduce((t, e) => t + e.valor, 0) * 100) / 100
+  const minha = Math.round((pago - recebido) * 100) / 100
+
+  function alternar(id: string) {
+    setMarcadas((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }
+
+  async function gravar(e: FormEvent) {
+    e.preventDefault()
+    setErro(null)
+    if (!entradas.length) return setErro('Marque as entradas (PIX) que você recebeu por esta despesa.')
+    if (!descricao.trim()) return setErro('Informe o histórico.')
+    setSalvando(true)
+    try {
+      const grupo = crypto.randomUUID()
+      const itens = planoCompartilhada({ saida, entradas, contaId, categoriaId: categoria || null, descricao: descricao.trim(), pessoaId: await pessoaRateio(), grupo })
+      for (const it of itens) {
+        const novo = await salvar('pes_lancamentos', null, it.lanc)
+        if (it.linhaId) await salvar('pes_extrato', it.linhaId, { lancamento_id: novo.id, compartilhado_id: grupo })
+      }
+      onAviso(`Despesa compartilhada lançada: pago ${moeda(pago)}, recebido ${moeda(recebido)}, sua parte ${moeda(minha)}.`)
+      onClose()
+    } catch (x) {
+      setErro(x instanceof Error ? x.message : String(x))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <Modal
+      titulo="Despesa compartilhada"
+      onClose={onClose}
+      rodape={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="btn-primary" form="form-compartilhada" disabled={salvando}>
+            Lançar compartilhada
+          </button>
+        </>
+      }
+    >
+      <form id="form-compartilhada" onSubmit={gravar} className="space-y-4">
+        <div className="rounded-xl bg-slate-50 p-3 text-sm">
+          <div className="text-xs text-slate-500">Você pagou</div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate">
+              {dataBR(saida.data)} · {saida.descricao}
+            </span>
+            <b className="tabular-nums">{moeda(pago)}</b>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Campo label="Histórico – Conciliação">
+            <input className="input" list="padroes-historico-c" value={descricao} onChange={(e) => {
+              setDescricao(e.target.value)
+              const p = padroes.find((x) => x.texto.toLowerCase() === e.target.value.trim().toLowerCase())
+              if (p?.categoria_id && !categoria) setCategoria(p.categoria_id)
+            }} />
+            <datalist id="padroes-historico-c">
+              {padroes.map((p) => (
+                <option key={p.id} value={p.texto} />
+              ))}
+            </datalist>
+          </Campo>
+          <Campo label="Categoria da sua parte">
+            <Selecao value={categoria} onChange={setCategoria} vazio="Sem categoria" opcoes={categorias.filter((k) => k.tipo === 'despesa' && k.ativa).map((k) => ({ value: k.id, label: k.nome }))} />
+          </Campo>
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-semibold text-slate-600">Marque o que você recebeu de volta</div>
+          {lista.length === 0 ? (
+            <p className="text-sm text-slate-400">Não há entradas a classificar neste mês.</p>
+          ) : (
+            <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">
+              {lista.map((l) => (
+                <label key={l.id} className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50">
+                  <input type="checkbox" className="h-4 w-4 accent-violet-600" checked={marcadas.has(l.id)} onChange={() => alternar(l.id)} />
+                  <span className="w-20 shrink-0 text-xs text-slate-500 tabular-nums">{dataBR(l.data)}</span>
+                  <span className="min-w-0 flex-1 truncate">{l.descricao}</span>
+                  <span className="font-semibold text-emerald-600 tabular-nums">+ {moeda(l.valor)}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-2 rounded-xl bg-violet-50 p-3 text-center text-sm">
+          <div>
+            <div className="text-xs text-violet-700">Pago</div>
+            <b className="tabular-nums">{moeda(pago)}</b>
+          </div>
+          <div>
+            <div className="text-xs text-violet-700">Recebido ({entradas.length})</div>
+            <b className="tabular-nums">{moeda(recebido)}</b>
+          </div>
+          <div>
+            <div className="text-xs text-violet-700">Sua parte</div>
+            <b className={`tabular-nums ${minha < 0 ? 'text-rose-600' : ''}`}>{moeda(minha)}</b>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">Só a sua parte entra nas suas despesas (DRE, plano). A parte dos outros e os PIX recebidos ficam ligados a esta despesa e o saldo continua batendo com o banco.</p>
+        <Erro>{erro}</Erro>
+      </form>
+    </Modal>
+  )
+}
+
+/** Lista dos históricos padrão salvos, para apagar os que não usa mais. */
+function PadroesForm({ padroes, onClose }: { padroes: HistoricoPadrao[]; onClose: () => void }) {
+  const { categorias } = useApp()
+  const [erro, setErro] = useState<string | null>(null)
+  return (
+    <Modal
+      titulo="Padrões de histórico"
+      onClose={onClose}
+      rodape={
+        <button type="button" className="btn-secondary" onClick={onClose}>
+          Fechar
+        </button>
+      }
+    >
+      <p className="text-sm text-slate-500">Para salvar um novo, escreva o histórico na linha e toque na estrela ao lado. Ao escolher um padrão, a categoria dele vem junto.</p>
+      {padroes.length === 0 ? (
+        <p className="py-4 text-center text-sm text-slate-400">Nenhum padrão salvo ainda.</p>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {padroes.map((p) => (
+            <div key={p.id} className="flex items-center gap-3 py-2 text-sm">
+              <Star className="h-4 w-4 shrink-0 fill-current text-amber-500" />
+              <span className="min-w-0 flex-1 truncate">{p.texto}</span>
+              <span className="shrink-0 text-xs text-slate-500">{categorias.find((k) => k.id === p.categoria_id)?.nome ?? ''}</span>
+              <button className="icon-btn text-rose-500" aria-label={`Apagar ${p.texto}`} onClick={() => excluir('pes_historicos_padrao', p.id).catch((e: Error) => setErro(e.message))}>
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Erro>{erro}</Erro>
+    </Modal>
   )
 }
 

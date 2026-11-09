@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Lancamento } from '../tipos'
-import { categoriaPorDescricao, chaveLinha, conciliar, contaBate, lerCsv, lerData, lerExtrato, lerOfx, sugestaoPorHistorico, type LinhaExtrato } from './extrato'
+import { categoriaPorDescricao, chaveLinha, conciliar, contaBate, lerCsv, lerData, lerExtrato, lerOfx, planoCompartilhada, sugestaoPorHistorico, type LinhaExtrato } from './extrato'
 
 const OFX = `OFXHEADER:100
 DATA:OFXSGML
@@ -166,5 +166,44 @@ describe('sugestão pelo histórico do extrato', () => {
   })
   it('sem histórico: nada', () => {
     expect(sugestaoPorHistorico('TED QUALQUER', hist, [l1, l2], 'itau')).toBeNull()
+  })
+})
+
+describe('despesa compartilhada', () => {
+  const saida = linha({ id: 's', data: '2026-11-01', descricao: 'PIX ENVIADO RESTAURANTE', valor: -89.9 })
+  const pix = [1, 2, 3, 4, 5, 6, 7].map((i) => linha({ id: `p${i}`, data: '2026-11-01', descricao: `PIX RECEBIDO AMIGO ${i}`, valor: 10 }))
+  const plano = planoCompartilhada({ saida, entradas: pix, contaId: 'itau', categoriaId: 'alim', descricao: 'Churrasco', pessoaId: 'rateio', grupo: 'g1' })
+
+  it('minha parte na categoria, parte dos outros e reembolsos em nome da pessoa', () => {
+    expect(plano[0]).toEqual({ linhaId: 's', lanc: expect.objectContaining({ tipo: 'despesa', valor: 19.9, categoria_id: 'alim', pessoa_id: null }) })
+    expect(plano[1]).toEqual({ linhaId: null, lanc: expect.objectContaining({ tipo: 'despesa', valor: 70, pessoa_id: 'rateio', reembolsado: true }) })
+    expect(plano.slice(2).map((x) => [x.linhaId, x.lanc.tipo, x.lanc.valor, x.lanc.pessoa_id])).toEqual(pix.map((p) => [p.id, 'receita', 10, 'rateio']))
+    expect(plano.every((x) => x.lanc.compartilhado_id === 'g1')).toBe(true)
+  })
+
+  it('o saldo bate com o banco (−89,90 + 7 × 10) e a minha DRE só vê 19,90', () => {
+    const efeito = plano.reduce((t, x) => t + (x.lanc.tipo === 'receita' ? 1 : -1) * Math.round(x.lanc.valor * 100), 0)
+    expect(efeito).toBe(Math.round((-89.9 + 70) * 100))
+    expect(plano.filter((x) => !x.lanc.pessoa_id).map((x) => x.lanc.valor)).toEqual([19.9])
+  })
+
+  it('se todos pagaram tudo, a saída fica com a parte dos outros', () => {
+    const r = planoCompartilhada({ saida: linha({ id: 's', valor: -30 }), entradas: [linha({ id: 'a', valor: 30 })], contaId: 'itau', categoriaId: null, descricao: 'Presente', pessoaId: 'x', grupo: 'g' })
+    expect(r.map((x) => [x.linhaId, x.lanc.tipo, x.lanc.valor])).toEqual([
+      ['s', 'despesa', 30],
+      ['a', 'receita', 30],
+    ])
+  })
+
+  it('recebeu mais do que pagou: erro', () => {
+    expect(() => planoCompartilhada({ saida: linha({ valor: -10 }), entradas: [linha({ valor: 20 })], contaId: 'i', categoriaId: null, descricao: 'x', pessoaId: 'p', grupo: 'g' })).toThrow(/mais do que pagou/)
+  })
+
+  it('na conciliação, a parte dos outros não aparece como "só no app"', () => {
+    const parte = lanc({ id: 'outros', valor: 70, data: '2026-11-01', compartilhado_id: 'g1', pessoa_id: 'rateio' })
+    const minha = lanc({ id: 'minha', valor: 19.9, data: '2026-11-01', compartilhado_id: 'g1' })
+    const r = conciliar([linha({ id: 's', data: '2026-11-01', valor: -89.9, lancamento_id: 'minha', compartilhado_id: 'g1' })], [parte, minha], 'itau')
+    expect(r.pares.map((p) => p.lanc.id)).toEqual(['minha'])
+    expect(r.soApp).toEqual([])
   })
 })
