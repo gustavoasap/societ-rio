@@ -3,7 +3,7 @@ import { ArrowRight, CreditCard, Users } from 'lucide-react'
 import { AbasAnalise } from '../components/Abas'
 import { Conta, Explicar, Origem } from '../components/Explicar'
 import { GraficoMensal, Legenda } from '../components/Grafico'
-import { Cabecalho, Carregando, Erro, Progresso, Segmentado } from '../components/ui'
+import { Cabecalho, Carregando, Erro, Progresso, SeletorMes } from '../components/ui'
 import { COR_NATUREZA, corDe } from '../components/visual'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
@@ -16,19 +16,34 @@ import type { Natureza } from '../tipos'
 
 const ROTULO_NAT: Record<Natureza, string> = { fixa: 'Custos fixos', variavel: 'Custos variáveis', eventual: 'Eventuais' }
 
-type Periodo = '6' | '12' | 'ano'
+type Periodo = '1' | '3' | '6' | '12' | 'ano' | 'pers'
+
+/** Meses ("AAAA-MM") de `de` até `ate`, em ordem (no máximo 60). */
+function mesesEntre(de: string, ate: string) {
+  const lista: string[] = []
+  for (let m = de; m <= ate && lista.length < 60; m = somarMesesAoMes(m, 1)) lista.push(m)
+  return lista
+}
 
 export function Dashboard() {
   const { contas, categorias, pessoas } = useApp()
   const [periodo, setPeriodo] = useState<Periodo>('6')
-  const mes = mesAtual()
+  const atual = mesAtual()
+  // mês final das opções de N meses (1, 3, 6, 12): escolhido pelo usuário, padrão o mês atual
+  const [fimMes, setFimMes] = useState(atual)
+  const [ano, setAno] = useState(Number(atual.slice(0, 4)))
+  const [persDe, setPersDe] = useState(somarMesesAoMes(atual, -2))
+  const [persAte, setPersAte] = useState(atual)
   const meses =
     periodo === 'ano'
-      ? Array.from({ length: Number(mes.slice(5, 7)) }, (_, i) => `${mes.slice(0, 4)}-${String(i + 1).padStart(2, '0')}`)
-      : Array.from({ length: Number(periodo) }, (_, i) => somarMesesAoMes(mes, i - Number(periodo) + 1))
+      ? mesesEntre(`${ano}-01`, `${ano}` === atual.slice(0, 4) ? atual : `${ano}-12`)
+      : periodo === 'pers'
+        ? mesesEntre(persDe <= persAte ? persDe : persAte, persDe <= persAte ? persAte : persDe)
+        : mesesEntre(somarMesesAoMes(fimMes, 1 - Number(periodo)), fimMes)
+  const mes = meses[meses.length - 1]
   const inicio = primeiroDia(meses[0])
   // busca também os meses seguintes, para as faturas e parcelas futuras do cartão
-  const fimBusca = ultimoDia(somarMesesAoMes(mes, 12))
+  const fimBusca = ultimoDia(somarMesesAoMes(mes > atual ? mes : atual, 12))
   const lanc = useDados(() => buscarLancamentos(primeiroDia(somarMesesAoMes(meses[0], -1)), fimBusca), [inicio, fimBusca])
 
   if (lanc.carregando) return <Carregando />
@@ -62,25 +77,62 @@ export function Dashboard() {
       <Cabecalho
         titulo="Dashboard"
         descricao="Minha situação financeira no período (só o que é meu; gastos de terceiros ficam à parte)."
-        acoes={
-          <div className="w-full sm:w-80">
-            <Segmentado
-              valor={periodo}
-              onChange={setPeriodo}
-              opcoes={[
-                { value: '6', label: '6 meses' },
-                { value: '12', label: '12 meses' },
-                { value: 'ano', label: `${mes.slice(0, 4)}` },
-              ]}
-            />
-          </div>
-        }
       />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+          {(
+            [
+              ['1', '1 mês'],
+              ['3', '3 meses'],
+              ['6', '6 meses'],
+              ['12', '12 meses'],
+              ['ano', 'Ano'],
+              ['pers', 'Personalizado'],
+            ] as const
+          ).map(([v, rotulo]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setPeriodo(v)}
+              className={`cursor-pointer rounded-lg px-3 py-1.5 text-sm font-semibold whitespace-nowrap transition ${periodo === v ? 'bg-white text-azul-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
+        {['1', '3', '6', '12'].includes(periodo) && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">{periodo === '1' ? 'Mês:' : 'Até:'}</span>
+            <SeletorMes mes={fimMes} onChange={setFimMes} />
+          </div>
+        )}
+        {periodo === 'ano' && (
+          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+            <button className="icon-btn" onClick={() => setAno(ano - 1)} aria-label="Ano anterior">
+              ‹
+            </button>
+            <span className="min-w-16 text-center text-sm font-bold">{ano}</span>
+            <button className="icon-btn" onClick={() => setAno(ano + 1)} aria-label="Próximo ano">
+              ›
+            </button>
+          </div>
+        )}
+        {periodo === 'pers' && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            De <SeletorMes mes={persDe} onChange={setPersDe} /> até <SeletorMes mes={persAte} onChange={setPersAte} />
+          </div>
+        )}
+        {meses.length > 1 && (
+          <span className="text-xs font-semibold text-slate-500 first-letter:uppercase">
+            {mesAbreviado(meses[0])} a {mesAbreviado(mes)} ({meses.length} meses)
+          </span>
+        )}
+      </div>
       {lanc.erro && <Erro>{lanc.erro}</Erro>}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi
-          rotulo="Receita média / mês"
+          rotulo={n === 1 ? "Receita do mês" : "Receita média / mês"}
           valor={moeda(receita / n)}
           sub={`Total ${moeda(receita)}`}
           explica={
@@ -94,7 +146,7 @@ export function Dashboard() {
           }
         />
         <Kpi
-          rotulo="Despesa média / mês"
+          rotulo={n === 1 ? "Despesa do mês" : "Despesa média / mês"}
           valor={moeda(despesa / n)}
           sub={`Total ${moeda(despesa)}`}
           explica={
