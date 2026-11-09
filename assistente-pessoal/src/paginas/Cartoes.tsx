@@ -7,7 +7,8 @@ import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
 import { hoje, mesAtual, primeiroDia, somarDias, somarMesesAoMes, ultimoDia } from '../lib/datas'
 import { avisarMudanca, buscarLancamentos, useDados, type ContaComSaldo } from '../lib/dados'
-import { datasDaFatura, faturasDoCartao, faturasPorMes, type Fatura } from '../lib/financas'
+import { datasDaFatura, faturaDe, faturasDoCartao, faturasPorMes, type Fatura } from '../lib/financas'
+import type { Lancamento } from '../tipos'
 import { dataBR, dataValida, mesAbreviado, mesPorExtenso, moeda, percentual } from '../lib/formato'
 import { supabase } from '../lib/supabase'
 import { ContaForm } from './Contas'
@@ -217,14 +218,14 @@ function CartaoBloco({
           )}
         </>
       )}
-      {editDatas && f && <DatasFaturaForm cartao={c} mes={f.mes} onClose={() => setEditDatas(false)} />}
+      {editDatas && f && <DatasFaturaForm cartao={c} mes={f.mes} lancamentos={lancamentos} onClose={() => setEditDatas(false)} />}
       {resumo && f && <ResumoPorCategoria cartao={c.nome} fatura={f} onClose={() => setResumo(false)} />}
     </section>
   )
 }
 
 /** Fechamento e vencimento de uma fatura específica, quando fogem do padrão do cartão. */
-function DatasFaturaForm({ cartao: c, mes, onClose }: { cartao: ContaComSaldo; mes: string; onClose: () => void }) {
+function DatasFaturaForm({ cartao: c, mes, lancamentos, onClose }: { cartao: ContaComSaldo; mes: string; lancamentos: Lancamento[]; onClose: () => void }) {
   const F = c.dia_fechamento
   const V = c.dia_vencimento
   const outros = { ...c.ajustes_fatura }
@@ -239,6 +240,17 @@ function DatasFaturaForm({ cartao: c, mes, onClose }: { cartao: ContaComSaldo; m
   // a fatura não pode fechar antes da anterior nem depois da seguinte
   const fechAnterior = datasDaFatura(somarMesesAoMes(mes, -1), F, V, outros).fechamento!
   const fechSeguinte = datasDaFatura(somarMesesAoMes(mes, 1), F, V, outros).fechamento!
+
+  // prévia: compras que trocam de fatura com as datas digitadas
+  const okDatas = dataValida(fechamento) && dataValida(vencimento) && vencimento >= fechamento && fechamento > fechAnterior && fechamento < fechSeguinte
+  const novos = { ...outros, [mes]: { fechamento, vencimento } }
+  const mudam = okDatas
+    ? lancamentos
+        .filter((l) => l.conta_id === c.id && l.tipo !== 'transferencia')
+        .map((l) => ({ l, de: faturaDe(l.data, F, V, c.ajustes_fatura), para: faturaDe(l.data, F, V, novos) }))
+        .filter((x) => x.de !== x.para)
+        .sort((a, b) => a.l.data.localeCompare(b.l.data))
+    : []
 
   async function gravar(e: FormEvent) {
     e.preventDefault()
@@ -268,7 +280,7 @@ function DatasFaturaForm({ cartao: c, mes, onClose }: { cartao: ContaComSaldo; m
 
   return (
     <Modal
-      titulo={`Datas da fatura · ${c.nome} ${mesAbreviado(mes)}`}
+      titulo={`Fatura de ${mesAbreviado(mes)} · ${c.nome}`}
       onClose={onClose}
       rodape={
         <>
@@ -288,7 +300,8 @@ function DatasFaturaForm({ cartao: c, mes, onClose }: { cartao: ContaComSaldo; m
     >
       <form id="form-datas-fatura" onSubmit={gravar} className="space-y-4">
         <p className="text-sm text-slate-500">
-          Vale só para a fatura de {mesPorExtenso(mes)}. O padrão do cartão (fecha dia {F}, vence dia {V}) continua para os outros meses.
+          Vale só para a fatura de {mesPorExtenso(mes)}
+          {padrao.fechamento && padrao.fechamento.slice(0, 7) !== mes ? ` (a que fecha em ${mesPorExtenso(padrao.fechamento.slice(0, 7)).split(' de ')[0]})` : ''}. O padrão do cartão (fecha dia {F}, vence dia {V}) continua para os outros meses.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Fechamento" dica={`Padrão: ${dataBR(padrao.fechamento)}`}>
@@ -298,7 +311,32 @@ function DatasFaturaForm({ cartao: c, mes, onClose }: { cartao: ContaComSaldo; m
             <input className="input" type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} required />
           </Campo>
         </div>
-        <p className="text-xs text-slate-500">Compras a partir do dia do fechamento passam para a fatura seguinte; as anteriores ficam nesta.</p>
+        <p className="text-xs text-slate-500">
+          O <b>fechamento</b> é o dia do corte: compras até a véspera ficam nesta fatura; a partir dele, vão para a seguinte. O vencimento é só o dia de pagar.
+        </p>
+        {okDatas && (
+          <div className="rounded-xl bg-azul-50 p-3 text-xs text-azul-900">
+            {mudam.length === 0 ? (
+              'Com essas datas nenhuma compra muda de fatura.'
+            ) : (
+              <>
+                <div className="mb-1 font-bold">Ao salvar, {mudam.length === 1 ? 'esta compra muda' : `estas ${mudam.length} compras mudam`} de fatura:</div>
+                <ul className="space-y-0.5">
+                  {mudam.map(({ l, de, para }) => (
+                    <li key={l.id} className="flex justify-between gap-2">
+                      <span className="truncate">
+                        {dataBR(l.data)} · {l.descricao}
+                      </span>
+                      <span className="shrink-0 font-semibold">
+                        {mesAbreviado(de)} → {mesAbreviado(para)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
         <Erro>{erro}</Erro>
       </form>
     </Modal>
