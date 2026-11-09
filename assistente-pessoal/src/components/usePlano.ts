@@ -32,6 +32,7 @@ export function usePlano() {
     config: config.dados,
     saldoReserva,
     hoje: hj,
+    cartoes: contas.filter((c) => c.tipo === 'cartao').map((c) => c.id),
   })
   return {
     carregando: false,

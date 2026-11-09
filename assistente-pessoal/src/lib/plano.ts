@@ -88,7 +88,10 @@ export interface Plano {
   rendaNecessariaComGuardar: number
   /** folga que a renda atual dá sobre as despesas (0,25 = 25%); null sem despesas */
   folgaAtual: number | null
-  reserva: { alvo: number; confortavel: number; atual: number; falta: number; aporte: number; meses: number }
+  /** reserva: alvo = meses × todas as despesas do mês (fixos, cartão, parcelas, dia a dia); soEssencial = se cortasse o resto */
+  reserva: { alvo: number; soEssencial: number; atual: number; falta: number; aporte: number; meses: number }
+  /** de que é feito o custo de vida mensal (base da reserva) */
+  composicao: { fixosForaCartao: number; fixosCartao: number; comprasCartao: number; outros: number; ajusteOrcamento: number }
   guardar: number
   investir: number
   metas: { meta: Meta; porMes: number }[]
@@ -110,7 +113,10 @@ export function montarPlano(o: {
   config: Config
   saldoReserva: number
   hoje: string
+  /** ids das contas que são cartão de crédito (para separar o que é pago no cartão) */
+  cartoes?: string[]
 }): Plano {
+  const noCartao = new Set(o.cartoes ?? [])
   const mesAtual = mesDe(o.hoje)
   const recs = o.recorrencias.filter((r) => vigente(r, mesAtual))
   const cats = new Map(o.categorias.map((c) => [c.id, c]))
@@ -140,10 +146,16 @@ export function montarPlano(o: {
     }
     return x
   }
+  let fixosCartao = 0
+  let fixosFora = 0
   for (const r of recs.filter((r) => r.tipo === 'despesa')) {
     const x = linha(r.categoria_id ?? '')
     x.recorrente = somar([x.recorrente, mensalizado(r)])
+    if (noCartao.has(r.conta_id)) fixosCartao = somar([fixosCartao, mensalizado(r)])
+    else fixosFora = somar([fixosFora, mensalizado(r)])
   }
+  let mediaCartao = 0
+  let mediaFora = 0
   for (const l of o.lancamentos) {
     if (l.tipo !== 'despesa' || !avulsoReal(l)) continue
     const c = l.categoria_id ? cats.get(l.categoria_id) : undefined
@@ -155,6 +167,8 @@ export function montarPlano(o: {
     if (!conta) continue
     const x = linha(l.categoria_id ?? '')
     x.media = somar([x.media, l.valor / (meses || 1)])
+    if (noCartao.has(l.conta_id)) mediaCartao += l.valor / (meses || 1)
+    else mediaFora += l.valor / (meses || 1)
   }
   for (const c of o.categorias) if (c.tipo === 'despesa' && c.ativa && c.orcamento_mensal) linha(c.id)
   const custos = [...linhas.values()]
@@ -174,9 +188,20 @@ export function montarPlano(o: {
   const provisaoAnuais = somar(recs.filter((r) => r.tipo === 'despesa' && r.intervalo_meses > 1).map(mensalizado))
   const pct = o.config.pct_investimento / 100
 
-  // ---------------- reserva de emergência
-  const alvo = Math.round(custoEssencial * o.config.meses_reserva * 100) / 100
-  const confortavel = Math.round(custoTotal * o.config.meses_reserva * 100) / 100
+  // ---------------- reserva de emergência: todas as despesas do mês (fixos, cartão, parcelas e dia a dia),
+  // porque é isso que continua chegando se a renda parar
+  const alvo = Math.round(custoTotal * o.config.meses_reserva * 100) / 100
+  const soEssencial = Math.round(custoEssencial * o.config.meses_reserva * 100) / 100
+  const parcelasCartao = somar(o.lancamentos.filter((l) => l.tipo === 'despesa' && l.grupo && !l.pessoa_id && noCartao.has(l.conta_id) && mesDe(l.data) === proximoMes).map((l) => l.valor))
+  const comprasCartao = somar([Math.round(mediaCartao * 100) / 100, parcelasCartao])
+  const outros = somar([Math.round(mediaFora * 100) / 100, parcelas, -parcelasCartao])
+  const composicao = {
+    fixosForaCartao: fixosFora,
+    fixosCartao,
+    comprasCartao,
+    outros,
+    ajusteOrcamento: somar([custoTotal, -fixosFora, -fixosCartao, -comprasCartao, -outros]),
+  }
   const falta = Math.max(0, somar([alvo, -o.saldoReserva]))
 
   // ---------------- quanto separar: primeiro completa a reserva (em até 12 meses), o resto vai para investimento
@@ -203,9 +228,10 @@ export function montarPlano(o: {
     rendaNecessaria: Math.ceil(custoTotal * (1 + o.config.margem_folga / 100) * 100) / 100,
     rendaNecessariaComGuardar: Math.ceil(somar([custoTotal, guardar, metasTotal]) * (1 + o.config.margem_folga / 100) * 100) / 100,
     folgaAtual: custoTotal > 0 ? somar([renda.total, -custoTotal]) / custoTotal : null,
+    composicao,
     reserva: {
       alvo,
-      confortavel,
+      soEssencial,
       atual: o.saldoReserva,
       falta,
       aporte: aporteReserva,
