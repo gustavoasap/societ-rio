@@ -13,6 +13,10 @@ export interface LinhaExtrato {
   ignorada: boolean
   /** Despesa compartilhada: a saída e as entradas (reembolsos) do mesmo grupo */
   compartilhado_id?: string | null
+  /** Estorno: linha do extrato que esta desfaz, lançamento afetado e como (para desfazer) */
+  estorno_de?: string | null
+  estorno_lancamento?: string | null
+  estorno_modo?: 'pendente' | 'novo' | 'reduziu' | 'apagou' | null
 }
 
 export type LinhaLida = Pick<LinhaExtrato, 'data' | 'descricao' | 'valor' | 'fitid'>
@@ -216,6 +220,8 @@ export interface Conciliacao {
   /** Está no app, não apareceu no extrato */
   soApp: Lancamento[]
   ignoradas: LinhaExtrato[]
+  /** Linhas de estorno e as linhas que ficaram totalmente estornadas */
+  estornos: LinhaExtrato[]
 }
 
 /**
@@ -231,9 +237,13 @@ export function conciliar(linhas: LinhaExtrato[], lancamentos: Lancamento[], con
   const soExtrato: LinhaExtrato[] = []
   const ignoradas = linhas.filter((l) => l.ignorada)
   const pendentes: LinhaExtrato[] = []
+  // estorno: a própria linha do estorno e a original que ficou sem lançamento (estorno total)
+  const estornadas = new Set(linhas.filter((l) => l.estorno_modo && l.estorno_de).map((l) => l.estorno_de!))
+  const ehEstorno = (l: LinhaExtrato) => !!l.estorno_modo || (estornadas.has(l.id) && !l.lancamento_id)
+  const estornos = linhas.filter((l) => !l.ignorada && ehEstorno(l))
 
   for (const linha of linhas) {
-    if (linha.ignorada) continue
+    if (linha.ignorada || ehEstorno(linha)) continue
     const l = linha.lancamento_id ? porId.get(linha.lancamento_id) : undefined
     if (l && !usados.has(l.id)) {
       usados.add(l.id)
@@ -263,7 +273,7 @@ export function conciliar(linhas: LinhaExtrato[], lancamentos: Lancamento[], con
   // a "parte dos outros" de uma despesa compartilhada não tem linha própria no extrato
   const grupos = new Set(linhas.map((l) => l.compartilhado_id).filter(Boolean))
   const soApp = lancs.filter((l) => !usados.has(l.id) && !(l.compartilhado_id && grupos.has(l.compartilhado_id)))
-  return { pares, soExtrato, soApp: soApp.sort((a, b) => a.data.localeCompare(b.data)), ignoradas }
+  return { pares, soExtrato, soApp: soApp.sort((a, b) => a.data.localeCompare(b.data)), ignoradas, estornos }
 }
 
 /**
@@ -352,4 +362,54 @@ export function planoCompartilhada(o: {
   for (const e of o.entradas)
     itens.push({ linhaId: e.id, lanc: { ...base, tipo: 'receita', descricao: `Reembolso – ${o.descricao}`, valor: e.valor, data: e.data, categoria_id: null, pessoa_id: o.pessoaId, reembolsado: false } })
   return itens
+}
+
+// ---------------------------------------------------------------- estorno
+
+export type OriginalEstorno = { linha: LinhaExtrato; lanc?: Lancamento } | { linha?: undefined; lanc: Lancamento }
+
+export interface PlanoEstorno {
+  modo: 'pendente' | 'novo' | 'reduziu' | 'apagou'
+  /** linha do extrato estornada (se a original veio do extrato) */
+  estorno_de: string | null
+  /** novo lançamento com o líquido (original ainda não lançado, estorno parcial) */
+  criar?: { tipo: 'receita' | 'despesa'; descricao: string; valor: number; data: string; conta_id: string; categoria_id: string | null; pago: true }
+  /** lançamento já existente que fica com o valor líquido (estorno parcial) */
+  reduzir?: { id: string; valor: number }
+  /** lançamento já existente que deixa de existir (estorno total) */
+  apagar?: string
+  /** linha do extrato que perde o vínculo com o lançamento apagado */
+  desligar?: string
+  /** quanto sobra depois do estorno */
+  liquido: number
+}
+
+/**
+ * Um estorno desfaz, no todo ou em parte, um pagamento (saída) ou recebimento (entrada) anterior.
+ *  - original ainda não lançado: lança só o líquido (ou nada, se o estorno foi total);
+ *  - original já lançado: reduz o lançamento para o líquido (ou o apaga, se o estorno foi total).
+ * Assim a despesa/receita fica pelo valor que realmente ficou, e o saldo continua batendo com o banco.
+ */
+export function planoEstorno(o: { estorno: LinhaExtrato; original: OriginalEstorno; contaId: string; descricao: string; categoriaId: string | null }): PlanoEstorno {
+  const cent = (v: number) => Math.round(v * 100)
+  const e = Math.abs(cent(o.estorno.valor))
+  const { linha, lanc } = o.original
+  // sinal da original no extrato (ou pelo tipo do lançamento: despesa = saída)
+  const sinalOriginal = linha ? Math.sign(linha.valor) : lanc!.tipo === 'receita' ? 1 : lanc!.conta_destino_id === o.contaId ? 1 : -1
+  if (sinalOriginal === Math.sign(o.estorno.valor)) throw new Error('O estorno precisa ter o sinal contrário: entrada estorna um pagamento, saída estorna um recebimento.')
+  const base = lanc ? cent(lanc.valor) : Math.abs(cent(linha!.valor))
+  if (e > base) throw new Error(`O estorno (${(e / 100).toFixed(2)}) é maior que o valor original (${(base / 100).toFixed(2)}).`)
+  const liquido = (base - e) / 100
+  const estorno_de = linha?.id ?? null
+  if (!lanc) {
+    if (liquido === 0) return { modo: 'pendente', estorno_de, liquido }
+    return {
+      modo: 'novo',
+      estorno_de,
+      liquido,
+      criar: { tipo: linha!.valor > 0 ? 'receita' : 'despesa', descricao: o.descricao, valor: liquido, data: linha!.data, conta_id: o.contaId, categoria_id: o.categoriaId, pago: true },
+    }
+  }
+  if (liquido === 0) return { modo: 'apagou', estorno_de, liquido, apagar: lanc.id, desligar: linha?.id }
+  return { modo: 'reduziu', estorno_de, liquido, reduzir: { id: lanc.id, valor: liquido } }
 }

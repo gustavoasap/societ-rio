@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { CalendarX, CreditCard, Plus, Repeat, Trash2 } from 'lucide-react'
 import { useApp, type InicialLancamento } from '../contexto'
 import { hoje, type ModoDiaUtil } from '../lib/datas'
-import { atualizarDaquiEmDiante, avisarMudanca, excluir, excluirDaquiEmDiante, gerarRecorrencias, inserirVarios, salvar } from '../lib/dados'
+import { atualizarDaquiEmDiante, avisarMudanca, buscarPadroes, excluir, excluirDaquiEmDiante, gerarRecorrencias, inserirVarios, salvar, useDados } from '../lib/dados'
 import { datasDaFatura, faturaDe, gerarParcelas } from '../lib/financas'
 import { dataBR, dataValida, mesAbreviado, moeda } from '../lib/formato'
 import { supabase } from '../lib/supabase'
@@ -45,6 +45,7 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [novaCat, setNovaCat] = useState(false)
+  const padroes = useDados(buscarPadroes, [])
   // editando um mês de uma recorrência: dá para definir até quando ela vai
   const [rec, setRec] = useState<Pick<Recorrencia, 'id' | 'inicio' | 'fim' | 'intervalo_meses'> | null>(null)
   const [fimRec, setFimRec] = useState('')
@@ -345,9 +346,21 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
             <input
               className="input"
               value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
+              list="padroes-lancamento"
+              onChange={(e) => {
+                setDescricao(e.target.value)
+                // histórico padrão escolhido: traz a categoria dele (se for do mesmo tipo e ainda não tiver categoria)
+                const p = padroes.dados?.find((x) => x.texto.toLowerCase() === e.target.value.trim().toLowerCase())
+                const cp = p?.categoria_id ? categorias.find((k) => k.id === p.categoria_id) : undefined
+                if (cp && cp.tipo === tipo && !categoriaId) setCategoriaId(cp.id)
+              }}
               placeholder={tipo === 'transferencia' ? 'Transferência' : tipo === 'receita' ? 'Ex.: Pró-labore ASAP' : 'Ex.: Supermercado, aluguel, Netflix'}
             />
+            <datalist id="padroes-lancamento">
+              {(padroes.dados ?? []).map((p) => (
+                <option key={p.id} value={p.texto} />
+              ))}
+            </datalist>
           </Campo>
 
           {tipo === 'transferencia' ? (
