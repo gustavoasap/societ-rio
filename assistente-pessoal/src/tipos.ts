@@ -61,6 +61,8 @@ export interface Lancamento {
   pessoa_id: string | null
   reembolsado: boolean
   recorrencia_id: string | null
+  /** Despesa compartilhada: liga o que paguei, a parte dos outros e os reembolsos recebidos */
+  compartilhado_id?: string | null
 }
 
 export interface Pessoa {

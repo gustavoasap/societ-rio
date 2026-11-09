@@ -11,6 +11,8 @@ export interface LinhaExtrato {
   fitid: string | null
   lancamento_id: string | null
   ignorada: boolean
+  /** Despesa compartilhada: a saída e as entradas (reembolsos) do mesmo grupo */
+  compartilhado_id?: string | null
 }
 
 export type LinhaLida = Pick<LinhaExtrato, 'data' | 'descricao' | 'valor' | 'fitid'>
@@ -258,7 +260,10 @@ export function conciliar(linhas: LinhaExtrato[], lancamentos: Lancamento[], con
 
   pares.sort((a, b) => a.linha.data.localeCompare(b.linha.data))
   soExtrato.sort((a, b) => a.data.localeCompare(b.data))
-  return { pares, soExtrato, soApp: lancs.filter((l) => !usados.has(l.id)).sort((a, b) => a.data.localeCompare(b.data)), ignoradas }
+  // a "parte dos outros" de uma despesa compartilhada não tem linha própria no extrato
+  const grupos = new Set(linhas.map((l) => l.compartilhado_id).filter(Boolean))
+  const soApp = lancs.filter((l) => !usados.has(l.id) && !(l.compartilhado_id && grupos.has(l.compartilhado_id)))
+  return { pares, soExtrato, soApp: soApp.sort((a, b) => a.data.localeCompare(b.data)), ignoradas }
 }
 
 /**
@@ -295,4 +300,56 @@ export function categoriaPorDescricao(descricao: string, lancamentos: Lancamento
     .sort((a, b) => b.data.localeCompare(a.data))
     .find((l) => l.categoria_id && sem(l.descricao).replace(/\s+/g, ' ').trim() === alvo)
   return achado?.categoria_id ?? null
+}
+
+// ---------------------------------------------------------------- despesa compartilhada
+
+export interface NovoLancamento {
+  tipo: 'receita' | 'despesa'
+  descricao: string
+  valor: number
+  data: string
+  conta_id: string
+  categoria_id: string | null
+  pessoa_id: string | null
+  reembolsado: boolean
+  pago: true
+  compartilhado_id: string
+}
+
+/**
+ * Paguei o total (uma saída do extrato) e recebi a parte dos outros (entradas, ex.: vários PIX).
+ * Gera os lançamentos para o saldo bater com o banco e a DRE mostrar só a minha parte:
+ *  - minha parte (despesa, na categoria) → ligada à saída;
+ *  - parte dos outros (despesa em nome da pessoa, já reembolsada) → fora da minha DRE;
+ *  - cada reembolso (receita em nome da pessoa) → ligado à sua entrada, também fora da minha DRE.
+ */
+export function planoCompartilhada(o: {
+  saida: LinhaExtrato
+  entradas: LinhaExtrato[]
+  contaId: string
+  categoriaId: string | null
+  descricao: string
+  pessoaId: string
+  grupo: string
+}): { linhaId: string | null; lanc: NovoLancamento }[] {
+  const cent = (v: number) => Math.round(v * 100)
+  const pago = Math.abs(cent(o.saida.valor))
+  const recebido = o.entradas.reduce((t, e) => t + cent(e.valor), 0)
+  const minha = pago - recebido
+  if (o.saida.valor >= 0) throw new Error('A despesa compartilhada parte de uma saída (valor pago).')
+  if (o.entradas.some((e) => e.valor <= 0)) throw new Error('Os reembolsos precisam ser entradas.')
+  if (minha < 0) throw new Error('Você recebeu mais do que pagou. Confira as entradas marcadas.')
+  const base = { conta_id: o.contaId, pago: true as const, compartilhado_id: o.grupo }
+  const itens: { linhaId: string | null; lanc: NovoLancamento }[] = []
+  if (minha > 0)
+    itens.push({ linhaId: o.saida.id, lanc: { ...base, tipo: 'despesa', descricao: o.descricao, valor: minha / 100, data: o.saida.data, categoria_id: o.categoriaId, pessoa_id: null, reembolsado: false } })
+  if (recebido > 0)
+    itens.push({
+      linhaId: minha > 0 ? null : o.saida.id,
+      lanc: { ...base, tipo: 'despesa', descricao: `${o.descricao} (parte dos outros)`, valor: recebido / 100, data: o.saida.data, categoria_id: o.categoriaId, pessoa_id: o.pessoaId, reembolsado: true },
+    })
+  for (const e of o.entradas)
+    itens.push({ linhaId: e.id, lanc: { ...base, tipo: 'receita', descricao: `Reembolso – ${o.descricao}`, valor: e.valor, data: e.data, categoria_id: null, pessoa_id: o.pessoaId, reembolsado: false } })
+  return itens
 }
