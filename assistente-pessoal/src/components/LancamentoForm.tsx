@@ -201,8 +201,8 @@ export function LancamentoForm({ inicial, onClose }: { inicial: InicialLancament
   const opcoesContas = ativas.map((c) => ({ value: c.id, label: c.tipo === 'cartao' ? `💳 ${c.nome}` : c.nome }))
   const rotuloPago = tipo === 'receita' ? 'Já recebi' : tipo === 'despesa' ? 'Já paguei' : 'Já transferi'
   const okData = dataValida(data)
-  const fatura = ehCartao && conta && okData ? faturaDe(data, conta.dia_fechamento, conta.dia_vencimento) : null
-  const venc = fatura && conta ? datasDaFatura(fatura, conta.dia_fechamento, conta.dia_vencimento).vencimento : null
+  const fatura = ehCartao && conta && okData ? faturaDe(data, conta.dia_fechamento, conta.dia_vencimento, conta.ajustes_fatura) : null
+  const venc = fatura && conta ? datasDaFatura(fatura, conta.dia_fechamento, conta.dia_vencimento, conta.ajustes_fatura).vencimento : null
   const previa =
     repeticao === 'parcelado' && okData && valor && totalParcelas >= 2 && parcelaAtual >= 1 && parcelaAtual <= totalParcelas
       ? gerarParcelas({ valor, valorEhTotal, data, atual: parcelaAtual, total: totalParcelas })

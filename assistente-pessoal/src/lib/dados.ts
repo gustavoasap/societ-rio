@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Aporte, Categoria, Config, Conta, Etapa, Lancamento, Meta, Objetivo, Pessoa, Recorrencia } from '../tipos'
+import type { AjustesFatura, Aporte, Categoria, Config, Conta, Etapa, Lancamento, Meta, Objetivo, Pessoa, Recorrencia } from '../tipos'
 import type { LinhaExtrato } from './extrato'
 import { supabase } from './supabase'
 
@@ -66,12 +66,18 @@ const num = <T extends object>(linhas: T[], campos: (keyof T)[]) =>
 // ---------------------------------------------------------------- leitura
 
 export async function buscarContas() {
-  const [contas, saldos] = await Promise.all([
+  const [contas, saldos, datas] = await Promise.all([
     supabase.from('pes_contas').select('*').order('ordem').order('nome'),
     supabase.from('pes_saldos').select('*'),
+    supabase.from('pes_fatura_datas').select('conta_id, mes, fechamento, vencimento'),
   ])
   const mapa = new Map(ok(saldos).map((s: { conta_id: string; saldo: number }) => [s.conta_id, Number(s.saldo)]))
-  return num(ok(contas) as Conta[], ['saldo_inicial', 'limite']).map((c) => ({ ...c, saldo: mapa.get(c.id) ?? c.saldo_inicial }))
+  // sem a tabela (banco ainda não atualizado) segue só com as datas padrão
+  const ajustes = new Map<string, AjustesFatura>()
+  for (const d of (datas.error ? [] : datas.data) as { conta_id: string; mes: string; fechamento: string; vencimento: string }[]) {
+    ajustes.set(d.conta_id, { ...ajustes.get(d.conta_id), [d.mes.slice(0, 7)]: { fechamento: d.fechamento, vencimento: d.vencimento } })
+  }
+  return num(ok(contas) as Conta[], ['saldo_inicial', 'limite']).map((c) => ({ ...c, saldo: mapa.get(c.id) ?? c.saldo_inicial, ajustes_fatura: ajustes.get(c.id) ?? {} }))
 }
 export type ContaComSaldo = Awaited<ReturnType<typeof buscarContas>>[number]
 
