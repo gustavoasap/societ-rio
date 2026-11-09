@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { ArrowRight, Check, CircleAlert, EyeOff, FileUp, Landmark, Pencil, Plus, Scale, Star, Trash2, Undo2, Users } from 'lucide-react'
+import { CategoriaForm } from '../components/CategoriaForm'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Cabecalho, Campo, CampoValor, Carregando, Erro, Modal, Segmentado, Selecao, SeletorMes, Vazio } from '../components/ui'
 import { useApp } from '../contexto'
@@ -427,6 +428,8 @@ function Classificar({
   const [gravando, setGravando] = useState(false)
   const [compart, setCompart] = useState<LinhaExtrato | null>(null)
   const [verPadroes, setVerPadroes] = useState(false)
+  // criar categoria a partir de uma linha: guarda a linha para já selecionar a nova
+  const [novaCat, setNovaCat] = useState<LinhaExtrato | null>(null)
   const outras = contas.filter((k) => k.ativa && k.id !== contaId)
   const padraoDe = (t: string) => padroes.find((p) => p.texto.trim().toLowerCase() === t.trim().toLowerCase())
 
@@ -554,8 +557,14 @@ function Classificar({
               </div>
               <span className={`hidden text-right font-semibold tabular-nums sm:block ${corValor(l.valor)}`}>{comSinal(l.valor)}</span>
               <div className="min-w-0">
-                <select className="input cursor-pointer py-2 text-sm" value={v.classe} onChange={(e) => mudar(l.id, 'classe', e.target.value)} aria-label="Categoria">
+                <select
+                  className="input cursor-pointer py-2 text-sm"
+                  value={v.classe}
+                  onChange={(e) => (e.target.value === '__nova__' ? setNovaCat(l) : mudar(l.id, 'classe', e.target.value))}
+                  aria-label="Categoria"
+                >
                   <option value="">Escolha a categoria…</option>
+                  <option value="__nova__">+ Nova categoria…</option>
                   <optgroup label={tipo === 'receita' ? 'Receitas' : 'Despesas'}>
                     {categorias
                       .filter((k) => k.tipo === tipo && (k.ativa || k.id === v.classe))
@@ -619,6 +628,16 @@ function Classificar({
         />
       )}
       {verPadroes && <PadroesForm padroes={padroes} onClose={() => setVerPadroes(false)} />}
+      {novaCat && (
+        <CategoriaForm
+          inicial={null}
+          tipoPadrao={novaCat.valor > 0 ? 'receita' : 'despesa'}
+          onClose={() => setNovaCat(null)}
+          onSalva={(k) => {
+            if ((k.tipo === 'receita') === novaCat.valor > 0) mudar(novaCat.id, 'classe', k.id)
+          }}
+        />
+      )}
     </section>
   )
 }
@@ -647,6 +666,7 @@ function CompartilhadaForm({
   const [descricao, setDescricao] = useState(inicial.descricao)
   const [categoria, setCategoria] = useState(inicial.classe.startsWith('t:') ? '' : inicial.classe)
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set())
+  const [novaCat, setNovaCat] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   // as entradas mais próximas da data da saída primeiro
@@ -688,82 +708,89 @@ function CompartilhadaForm({
   }
 
   return (
-    <Modal
-      titulo="Despesa compartilhada"
-      onClose={onClose}
-      rodape={
-        <>
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Cancelar
-          </button>
-          <button className="btn-primary" form="form-compartilhada" disabled={salvando}>
-            Lançar compartilhada
-          </button>
-        </>
-      }
-    >
-      <form id="form-compartilhada" onSubmit={gravar} className="space-y-4">
-        <div className="rounded-xl bg-slate-50 p-3 text-sm">
-          <div className="text-xs text-slate-500">Você pagou</div>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate">
-              {dataBR(saida.data)} · {saida.descricao}
-            </span>
-            <b className="tabular-nums">{moeda(pago)}</b>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Campo label="Histórico – Conciliação">
-            <input className="input" list="padroes-historico-c" value={descricao} onChange={(e) => {
-              setDescricao(e.target.value)
-              const p = padroes.find((x) => x.texto.toLowerCase() === e.target.value.trim().toLowerCase())
-              if (p?.categoria_id && !categoria) setCategoria(p.categoria_id)
-            }} />
-            <datalist id="padroes-historico-c">
-              {padroes.map((p) => (
-                <option key={p.id} value={p.texto} />
-              ))}
-            </datalist>
-          </Campo>
-          <Campo label="Categoria da sua parte">
-            <Selecao value={categoria} onChange={setCategoria} vazio="Sem categoria" opcoes={categorias.filter((k) => k.tipo === 'despesa' && k.ativa).map((k) => ({ value: k.id, label: k.nome }))} />
-          </Campo>
-        </div>
-        <div>
-          <div className="mb-1 text-xs font-semibold text-slate-600">Marque o que você recebeu de volta</div>
-          {lista.length === 0 ? (
-            <p className="text-sm text-slate-400">Não há entradas a classificar neste mês.</p>
-          ) : (
-            <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">
-              {lista.map((l) => (
-                <label key={l.id} className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50">
-                  <input type="checkbox" className="h-4 w-4 accent-violet-600" checked={marcadas.has(l.id)} onChange={() => alternar(l.id)} />
-                  <span className="w-20 shrink-0 text-xs text-slate-500 tabular-nums">{dataBR(l.data)}</span>
-                  <span className="min-w-0 flex-1 truncate">{l.descricao}</span>
-                  <span className="font-semibold text-emerald-600 tabular-nums">+ {moeda(l.valor)}</span>
-                </label>
-              ))}
+    <>
+      <Modal
+        titulo="Despesa compartilhada"
+        onClose={onClose}
+        rodape={
+          <>
+            <button type="button" className="btn-secondary" onClick={onClose}>
+              Cancelar
+            </button>
+            <button className="btn-primary" form="form-compartilhada" disabled={salvando}>
+              Lançar compartilhada
+            </button>
+          </>
+        }
+      >
+        <form id="form-compartilhada" onSubmit={gravar} className="space-y-4">
+          <div className="rounded-xl bg-slate-50 p-3 text-sm">
+            <div className="text-xs text-slate-500">Você pagou</div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate">
+                {dataBR(saida.data)} · {saida.descricao}
+              </span>
+              <b className="tabular-nums">{moeda(pago)}</b>
             </div>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-2 rounded-xl bg-violet-50 p-3 text-center text-sm">
-          <div>
-            <div className="text-xs text-violet-700">Pago</div>
-            <b className="tabular-nums">{moeda(pago)}</b>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Campo label="Histórico – Conciliação">
+              <input className="input" list="padroes-historico-c" value={descricao} onChange={(e) => {
+                setDescricao(e.target.value)
+                const p = padroes.find((x) => x.texto.toLowerCase() === e.target.value.trim().toLowerCase())
+                if (p?.categoria_id && !categoria) setCategoria(p.categoria_id)
+              }} />
+              <datalist id="padroes-historico-c">
+                {padroes.map((p) => (
+                  <option key={p.id} value={p.texto} />
+                ))}
+              </datalist>
+            </Campo>
+            <Campo label="Categoria da sua parte">
+              <Selecao value={categoria} onChange={setCategoria} vazio="Sem categoria" opcoes={categorias.filter((k) => k.tipo === 'despesa' && (k.ativa || k.id === categoria)).map((k) => ({ value: k.id, label: k.nome }))} />
+              <button type="button" className="mt-1 inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-azul-600 hover:underline" onClick={() => setNovaCat(true)}>
+                <Plus className="h-3 w-3" /> Nova categoria
+              </button>
+            </Campo>
           </div>
           <div>
-            <div className="text-xs text-violet-700">Recebido ({entradas.length})</div>
-            <b className="tabular-nums">{moeda(recebido)}</b>
+            <div className="mb-1 text-xs font-semibold text-slate-600">Marque o que você recebeu de volta</div>
+            {lista.length === 0 ? (
+              <p className="text-sm text-slate-400">Não há entradas a classificar neste mês.</p>
+            ) : (
+              <div className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">
+                {lista.map((l) => (
+                  <label key={l.id} className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50">
+                    <input type="checkbox" className="h-4 w-4 accent-violet-600" checked={marcadas.has(l.id)} onChange={() => alternar(l.id)} />
+                    <span className="w-20 shrink-0 text-xs text-slate-500 tabular-nums">{dataBR(l.data)}</span>
+                    <span className="min-w-0 flex-1 truncate">{l.descricao}</span>
+                    <span className="font-semibold text-emerald-600 tabular-nums">+ {moeda(l.valor)}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
-          <div>
-            <div className="text-xs text-violet-700">Sua parte</div>
-            <b className={`tabular-nums ${minha < 0 ? 'text-rose-600' : ''}`}>{moeda(minha)}</b>
+          <div className="grid grid-cols-3 gap-2 rounded-xl bg-violet-50 p-3 text-center text-sm">
+            <div>
+              <div className="text-xs text-violet-700">Pago</div>
+              <b className="tabular-nums">{moeda(pago)}</b>
+            </div>
+            <div>
+              <div className="text-xs text-violet-700">Recebido ({entradas.length})</div>
+              <b className="tabular-nums">{moeda(recebido)}</b>
+            </div>
+            <div>
+              <div className="text-xs text-violet-700">Sua parte</div>
+              <b className={`tabular-nums ${minha < 0 ? 'text-rose-600' : ''}`}>{moeda(minha)}</b>
+            </div>
           </div>
-        </div>
-        <p className="text-xs text-slate-500">Só a sua parte entra nas suas despesas (DRE, plano). A parte dos outros e os PIX recebidos ficam ligados a esta despesa e o saldo continua batendo com o banco.</p>
-        <Erro>{erro}</Erro>
-      </form>
-    </Modal>
+          <p className="text-xs text-slate-500">Só a sua parte entra nas suas despesas (DRE, plano). A parte dos outros e os PIX recebidos ficam ligados a esta despesa e o saldo continua batendo com o banco.</p>
+          <Erro>{erro}</Erro>
+        </form>
+      </Modal>
+    {/* fora do <form> da compartilhada */}
+    {novaCat && <CategoriaForm inicial={null} tipoPadrao="despesa" onClose={() => setNovaCat(false)} onSalva={(k) => k.tipo === 'despesa' && setCategoria(k.id)} />}
+    </>
   )
 }
 
