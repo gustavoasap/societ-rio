@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, CircleDollarSign, History, Plus } from 'lucide-react'
+import { Building2, Check, CircleDollarSign, History, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatarData, lerNumeroBR, moedaDigitada } from '../lib/format'
 import { CampoData } from '../components/CampoData'
 import { Select } from '../components/ui'
+import { DetalhesEmpresa } from './DetalhesEmpresa'
 import { ETAPAS, OPCOES_ETAPA, STATUS_CLIENTE, hojeISO, moeda, type Cliente, type Etapa, type Honorario, type StatusCliente, type Vigente } from './tipos'
 
 /** Cores do seletor conforme a situação (mesma linguagem visual de Processos Societários). */
@@ -60,6 +61,7 @@ export function ClienteExpandido({
   const [form, setForm] = useState<{ valor: string; inicio: string; dia: string; descricao: string } | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
+  const [detalhes, setDetalhes] = useState(false)
 
   const carregarHistorico = useCallback(async () => {
     const { data } = await supabase.from('adm_honorarios').select('*').eq('cliente_id', c.id).order('vigencia_inicio', { ascending: false })
@@ -107,7 +109,7 @@ export function ClienteExpandido({
 
   return (
     <div className="animar-modal rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Cartao numero={1} titulo="Contrato assinado" ok={c.status === 'assinado'} cor={c.status === 'assinado' ? 'bg-emerald-500' : 'bg-amber-400'}>
           {encerrado ? (
             <div className={`rounded-lg border px-2.5 py-1.5 text-sm font-medium ${COR_STATUS_SELECT.encerrado}`}>
@@ -146,6 +148,12 @@ export function ClienteExpandido({
             </Cartao>
           )
         })}
+        <div className="flex items-stretch">
+          <button className="btn-primary w-full" onClick={() => setDetalhes(true)}>
+            <Building2 className="h-4 w-4" />
+            Detalhes da Empresa
+          </button>
+        </div>
       </div>
 
       <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
@@ -236,6 +244,7 @@ export function ClienteExpandido({
           </div>
         )}
       </div>
+      {detalhes && <DetalhesEmpresa cliente={c} onClose={() => setDetalhes(false)} onAtualizado={onHonorario} />}
     </div>
   )
 }

@@ -8,7 +8,19 @@ const COR_SERIE = '#2449f5' // brand-600: série única nos gráficos
 
 type IrPara = (aba: 'painel' | 'ativos' | 'inativos', filtros?: { status?: string; pendencia?: string; parceiro?: string }) => void
 
-function Kpi({ icone: I, rotulo, valor, detalhe, onClick }: { icone: typeof Receipt; rotulo: string; valor: string; detalhe?: ReactNode; onClick?: () => void }) {
+function Kpi({
+  icone: I,
+  rotulo,
+  valor,
+  detalhe,
+  onClick,
+}: {
+  icone: typeof Receipt
+  rotulo: string
+  valor: string
+  detalhe?: ReactNode
+  onClick?: () => void
+}) {
   const corpo = (
     <>
       <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
@@ -31,7 +43,17 @@ function Kpi({ icone: I, rotulo, valor, detalhe, onClick }: { icone: typeof Rece
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
-export function Painel({ clientes, vigentes, parceiros, irPara }: { clientes: Cliente[]; vigentes: Map<string, Vigente>; parceiros: ParceiroResumo[]; irPara: IrPara }) {
+export function Painel({
+  clientes,
+  vigentes,
+  parceiros,
+  irPara,
+}: {
+  clientes: Cliente[]
+  vigentes: Map<string, Vigente>
+  parceiros: ParceiroResumo[]
+  irPara: IrPara
+}) {
   const r = useMemo(() => {
     const assinados = clientes.filter((c) => c.status === 'assinado')
     const pendentes = clientes.filter((c) => c.status === 'pendente')
@@ -58,7 +80,12 @@ export function Painel({ clientes, vigentes, parceiros, irPara }: { clientes: Cl
     const hoje = new Date()
     const meses = Array.from({ length: 12 }, (_, i) => {
       const d = new Date(hoje.getFullYear(), hoje.getMonth() - 11 + i, 1)
-      return { chave: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, rotulo: `${MESES[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`, qtd: 0, valor: 0 }
+      return {
+        chave: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        rotulo: `${MESES[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`,
+        qtd: 0,
+        valor: 0,
+      }
     })
     for (const c of clientes) {
       const m = meses.find((x) => c.data_assinatura?.startsWith(x.chave))
@@ -112,7 +139,10 @@ export function Painel({ clientes, vigentes, parceiros, irPara }: { clientes: Cl
   }, [clientes, vigentes, parceiros])
 
   const atencao = [
-    r.assinadosSemHonorario > 0 && { texto: `${r.assinadosSemHonorario} cliente(s) com contrato assinado sem honorário informado`, acao: () => irPara('ativos', { status: 'assinado' }) },
+    r.assinadosSemHonorario > 0 && {
+      texto: `${r.assinadosSemHonorario} cliente(s) com contrato assinado sem honorário informado`,
+      acao: () => irPara('ativos', { status: 'assinado' }),
+    },
     r.semDia > 0 && { texto: `${r.semDia} honorário(s) sem dia de vencimento. Esse dado vai alimentar o fluxo de caixa.`, acao: () => irPara('ativos') },
     r.semRegime > 0 && { texto: `${r.semRegime} cliente(s) ativo(s) sem regime tributário informado`, acao: () => irPara('ativos') },
   ].filter(Boolean) as { texto: string; acao: () => void }[]
@@ -120,7 +150,13 @@ export function Painel({ clientes, vigentes, parceiros, irPara }: { clientes: Cl
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
-        <Kpi icone={UserCheck} rotulo="Clientes ativos" valor={String(r.assinados.length)} detalhe="com contrato assinado" onClick={() => irPara('ativos', { status: 'assinado' })} />
+        <Kpi
+          icone={UserCheck}
+          rotulo="Clientes ativos"
+          valor={String(r.assinados.length)}
+          detalhe="com contrato assinado"
+          onClick={() => irPara('ativos', { status: 'assinado' })}
+        />
         <Kpi icone={CircleDollarSign} rotulo="Honorários mensais" valor={moeda(r.mrr)} detalhe="contratos assinados" />
         <Kpi icone={Receipt} rotulo="Ticket médio" valor={moeda(r.ticket)} detalhe="por cliente com honorário" />
         <Kpi
@@ -175,7 +211,10 @@ export function Painel({ clientes, vigentes, parceiros, irPara }: { clientes: Cl
                 {r.parceirosOrd.map((p) => (
                   <tr key={p.id}>
                     <td className="py-2 pr-3">
-                      <button className="cursor-pointer text-left font-semibold whitespace-nowrap text-slate-700 hover:text-brand-600" onClick={() => irPara('ativos', { parceiro: p.id })}>
+                      <button
+                        className="cursor-pointer text-left font-semibold whitespace-nowrap text-slate-700 hover:text-brand-600"
+                        onClick={() => irPara('ativos', { parceiro: p.id })}
+                      >
                         {p.nome}
                       </button>
                     </td>
@@ -250,7 +289,10 @@ export function Painel({ clientes, vigentes, parceiros, irPara }: { clientes: Cl
                     <td className="px-3 py-2 text-right">{e.pdf || <span className="text-slate-300">0</span>}</td>
                     <td className="py-2 pl-3 text-right">
                       {e.pendente + e.pdf > 0 && (
-                        <button className="cursor-pointer text-xs font-semibold text-brand-600 hover:underline" onClick={() => irPara('ativos', { pendencia: e.campo })}>
+                        <button
+                          className="cursor-pointer text-xs font-semibold text-brand-600 hover:underline"
+                          onClick={() => irPara('ativos', { pendencia: e.campo })}
+                        >
                           Ver clientes
                         </button>
                       )}

@@ -38,6 +38,13 @@ const COR_ETAPA: Record<Etapa | 'vazio', string> = {
   na: 'bg-slate-300',
   vazio: 'bg-slate-200',
 }
+const CHIP_ETAPA: Record<Etapa | 'vazio', string> = {
+  concluida: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  pdf_enviado: 'bg-sky-50 text-sky-700 ring-sky-200',
+  pendente: 'bg-amber-50 text-amber-700 ring-amber-200',
+  na: 'bg-slate-100 text-slate-500 ring-slate-200',
+  vazio: 'bg-white text-slate-400 ring-slate-200',
+}
 const TEXTO_ETAPA: Record<Etapa | 'vazio', string> = {
   concluida: 'concluída',
   pdf_enviado: 'PDF enviado',
@@ -391,7 +398,7 @@ export function Clientes({ session }: { session: Session }) {
                         <Fragment key={c.id}>
                           <tr className={`transition ${expandidos.has(c.id) ? 'bg-brand-50/40' : 'hover:bg-slate-50/70'}`}>
                             <td className="py-3 pr-3 pl-5 font-mono text-xs text-slate-400 tabular-nums">{String(c.codigo).padStart(3, '0')}</td>
-                            <td className="min-w-64 px-3 py-3">
+                            <td className="min-w-56 px-3 py-3">
                               <button className="cursor-pointer text-left font-semibold text-slate-900 hover:text-brand-600" onClick={() => setEditando(c)}>
                                 {c.razao_social}
                               </button>
@@ -416,23 +423,18 @@ export function Clientes({ session }: { session: Session }) {
                               {v ? moeda(v.valor) : <span className="font-normal text-slate-300">—</span>}
                             </td>
                             <td className="px-3 py-3">
-                              <div className="flex flex-col gap-0.5">
+                              <div className="flex gap-1.5">
                                 {ETAPAS.map((e) => {
                                   const st = c[e.campo] ?? 'vazio'
                                   return (
-                                    <span
+                                    <div
                                       key={e.campo}
-                                      className="flex items-center gap-1.5 text-xs whitespace-nowrap"
+                                      className={`min-w-[5.75rem] rounded-lg px-2 py-1 ring-1 ring-inset ${CHIP_ETAPA[st]}`}
                                       title={`${e.label}: ${TEXTO_ETAPA[st]}`}
                                     >
-                                      <span className={`h-2 w-2 shrink-0 rounded-full ${COR_ETAPA[st]}`} />
-                                      <span className="text-slate-500">{e.label}:</span>
-                                      <span
-                                        className={`font-semibold ${st === 'concluida' ? 'text-emerald-700' : st === 'pendente' ? 'text-amber-700' : st === 'pdf_enviado' ? 'text-sky-700' : 'text-slate-400'}`}
-                                      >
-                                        {TEXTO_ETAPA[st]}
-                                      </span>
-                                    </span>
+                                      <div className="text-[0.625rem] font-semibold tracking-wide uppercase opacity-70">{e.label.replace(' digital', '')}</div>
+                                      <div className="text-xs font-bold whitespace-nowrap first-letter:uppercase">{st === 'vazio' ? '—' : TEXTO_ETAPA[st]}</div>
+                                    </div>
                                   )
                                 })}
                               </div>
