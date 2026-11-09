@@ -146,6 +146,14 @@ export async function buscarExtrato(contaId: string, inicio: string, fim: string
   return num(ok(r) as LinhaExtrato[], ['valor'])
 }
 
+/** Extrato do período: de uma conta ou de todas (contaId null). */
+export async function buscarExtratoPeriodo(inicio: string, fim: string, contaId: string | null) {
+  let q = supabase.from('pes_extrato').select('*').gte('data', inicio).lte('data', fim)
+  if (contaId) q = q.eq('conta_id', contaId)
+  const r = await q.order('data').order('criado_em').limit(5000)
+  return num(ok(r) as LinhaExtrato[], ['valor'])
+}
+
 /** Todas as chaves já importadas da conta (identificador do banco ou data|valor|descrição). */
 export async function buscarChavesExtrato(contaId: string) {
   const r = await supabase.from('pes_extrato').select('data, valor, descricao, fitid').eq('conta_id', contaId).limit(20000)
