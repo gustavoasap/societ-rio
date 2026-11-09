@@ -15,10 +15,18 @@ export interface LinhaExtrato {
 
 export type LinhaLida = Pick<LinhaExtrato, 'data' | 'descricao' | 'valor' | 'fitid'>
 
+/** Banco, agência e conta informados no arquivo (OFX traz em BANKACCTFROM). */
+export interface ContaDoArquivo {
+  banco: string
+  agencia: string
+  numero: string
+}
+
 export interface ExtratoLido {
   linhas: LinhaLida[]
   /** Saldo final informado no arquivo (OFX traz; CSV normalmente não) */
   saldo: { data: string; valor: number } | null
+  conta?: ContaDoArquivo | null
 }
 
 const dois = (n: number) => String(n).padStart(2, '0')
@@ -62,7 +70,28 @@ export function lerOfx(texto: string): ExtratoLido {
   const bal = /<LEDGERBAL>([\s\S]*?)(?:<\/LEDGERBAL>|$)/i.exec(texto)?.[1] ?? ''
   const saldoValor = numero(tag(bal, 'BALAMT'))
   const saldoData = lerData(tag(bal, 'DTASOF').slice(0, 8))
-  return { linhas, saldo: bal && Number.isFinite(saldoValor) && saldoData ? { data: saldoData, valor: saldoValor } : null }
+  const acct = /<(?:BANKACCTFROM|CCACCTFROM)>([\s\S]*?)(?:<\/(?:BANKACCTFROM|CCACCTFROM)>|<BANKTRANLIST>|$)/i.exec(texto)?.[1] ?? ''
+  const conta = acct && tag(acct, 'ACCTID') ? { banco: tag(acct, 'BANKID'), agencia: tag(acct, 'BRANCHID'), numero: tag(acct, 'ACCTID') } : null
+  return { linhas, saldo: bal && Number.isFinite(saldoValor) && saldoData ? { data: saldoData, valor: saldoValor } : null, conta }
+}
+
+const soDigitos = (t: string | null | undefined) => (t ?? '').replace(/\D/g, '').replace(/^0+/, '')
+
+/**
+ * O arquivo é desta conta? Compara banco e agência (quando os dois lados têm) e o número da conta,
+ * aceitando com ou sem dígito e número com a agência na frente (cada banco monta o OFX de um jeito).
+ */
+export function contaBate(cadastro: { banco_codigo?: string | null; agencia?: string | null; numero_conta?: string | null }, arq: ContaDoArquivo): 'bate' | 'nao_bate' | 'sem_dados' {
+  const num = soDigitos(cadastro.numero_conta)
+  if (!num) return 'sem_dados'
+  const banco = soDigitos(cadastro.banco_codigo)
+  if (banco && soDigitos(arq.banco) && banco !== soDigitos(arq.banco)) return 'nao_bate'
+  const ag = soDigitos(cadastro.agencia)
+  const agArq = soDigitos(arq.agencia)
+  if (ag && agArq && !ag.startsWith(agArq) && !agArq.startsWith(ag)) return 'nao_bate'
+  const n = soDigitos(arq.numero)
+  const iguais = (a: string, b: string) => a === b || a === b.slice(0, -1) || (b.length >= 5 && a.endsWith(b))
+  return n && (iguais(n, num) || iguais(num, n)) ? 'bate' : 'nao_bate'
 }
 
 // ---------------------------------------------------------------- CSV / planilha salva como CSV
@@ -230,6 +259,33 @@ export function conciliar(linhas: LinhaExtrato[], lancamentos: Lancamento[], con
   pares.sort((a, b) => a.linha.data.localeCompare(b.linha.data))
   soExtrato.sort((a, b) => a.data.localeCompare(b.data))
   return { pares, soExtrato, soApp: lancs.filter((l) => !usados.has(l.id)).sort((a, b) => a.data.localeCompare(b.data)), ignoradas }
+}
+
+/**
+ * O que foi feito da última vez com uma linha de mesmo histórico: a descrição que você deu e a categoria
+ * (ou a conta de destino, se virou transferência). Serve para já preencher a classificação.
+ */
+export function sugestaoPorHistorico(
+  descricao: string,
+  historico: Pick<LinhaExtrato, 'descricao' | 'lancamento_id'>[],
+  lancamentos: Lancamento[],
+  contaId: string,
+): { descricao: string; categoria_id: string | null; transferir_para: string | null } | null {
+  const alvo = sem(descricao).replace(/\s+/g, ' ').trim()
+  const porId = new Map(lancamentos.map((l) => [l.id, l]))
+  const achados = historico
+    .filter((h) => h.lancamento_id && sem(h.descricao).replace(/\s+/g, ' ').trim() === alvo)
+    .map((h) => porId.get(h.lancamento_id!))
+    .filter((l): l is Lancamento => !!l)
+    .sort((a, b) => b.data.localeCompare(a.data))
+  const l = achados[0]
+  if (!l) {
+    const cat = categoriaPorDescricao(descricao, lancamentos)
+    return cat ? { descricao, categoria_id: cat, transferir_para: null } : null
+  }
+  // transferência: a "outra" conta é o destino (se saiu daqui) ou a origem (se entrou aqui)
+  if (l.tipo === 'transferencia') return { descricao: l.descricao, categoria_id: null, transferir_para: l.conta_id === contaId ? l.conta_destino_id : l.conta_id }
+  return { descricao: l.descricao, categoria_id: l.categoria_id, transferir_para: null }
 }
 
 /** Categoria usada da última vez num lançamento com a mesma descrição (para já sugerir). */

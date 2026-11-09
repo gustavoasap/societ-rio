@@ -19,6 +19,10 @@ export interface Conta {
   dia_vencimento: number | null
   /** Conta que forma a reserva de emergência */
   reserva: boolean
+  /** Dados bancários (para reconhecer o OFX importado) */
+  banco_codigo?: string | null
+  agencia?: string | null
+  numero_conta?: string | null
   /** Faturas do cartão com datas fora do padrão, por mês da fatura ("AAAA-MM") */
   ajustes_fatura?: AjustesFatura
 }
@@ -182,3 +186,23 @@ export const NATUREZAS: { value: Natureza; label: string }[] = [
 ]
 
 export const rotuloDe = <T extends string>(lista: { value: T; label: string }[], v: T) => lista.find((o) => o.value === v)?.label ?? v
+
+/** Bancos mais comuns (código COMPE) para o cadastro da conta. */
+export const BANCOS: { codigo: string; nome: string }[] = [
+  { codigo: '001', nome: 'Banco do Brasil' },
+  { codigo: '033', nome: 'Santander' },
+  { codigo: '077', nome: 'Inter' },
+  { codigo: '104', nome: 'Caixa Econômica Federal' },
+  { codigo: '208', nome: 'BTG Pactual' },
+  { codigo: '212', nome: 'Banco Original' },
+  { codigo: '237', nome: 'Bradesco' },
+  { codigo: '260', nome: 'Nubank' },
+  { codigo: '290', nome: 'PagBank' },
+  { codigo: '323', nome: 'Mercado Pago' },
+  { codigo: '336', nome: 'C6 Bank' },
+  { codigo: '341', nome: 'Itaú' },
+  { codigo: '380', nome: 'PicPay' },
+  { codigo: '422', nome: 'Safra' },
+  { codigo: '748', nome: 'Sicredi' },
+  { codigo: '756', nome: 'Sicoob' },
+]
