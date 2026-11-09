@@ -22,7 +22,7 @@ import {
   saldoNaData,
   useDados,
 } from '../lib/dados'
-import { chaveLinha, conciliar, contaBate, lerExtrato, planoCompartilhada, planoEstorno, sugestaoPorHistorico, valorNaConta, type LinhaExtrato, type OriginalEstorno } from '../lib/extrato'
+import { chaveLinha, conciliar, contaBate, lerExtrato, planoCompartilhada, planoEstorno, sugestaoPorHistorico, valorNaConta, type LinhaExtrato, type OpEstorno, type OriginalEstorno } from '../lib/extrato'
 import { dataBR, dataValida, mesPorExtenso, moeda } from '../lib/formato'
 import { supabase } from '../lib/supabase'
 import { BANCOS, type Lancamento } from '../tipos'
@@ -157,6 +157,11 @@ export function Conciliacao() {
   async function desfazerEstorno(e: LinhaExtrato) {
     if (!window.confirm('Desfazer este estorno?')) return
     try {
+      if (e.estorno_desfazer) {
+        await executarDesfazer(e.estorno_desfazer as Desfazer[])
+        await salvar('pes_extrato', e.id, { estorno_de: null, estorno_modo: null, estorno_lancamento: null, estorno_desfazer: null })
+        return
+      }
       if (e.estorno_modo === 'novo' && e.estorno_lancamento) {
         if (e.estorno_de) await salvar('pes_extrato', e.estorno_de, { lancamento_id: null })
         await excluir('pes_lancamentos', e.estorno_lancamento)
@@ -873,6 +878,54 @@ function CompartilhadaForm({
   )
 }
 
+/** Como voltar atrás de cada operação de um estorno (gravado na linha do estorno). */
+type Desfazer =
+  | { op: 'apagar_id'; id: string }
+  | { op: 'valor'; id: string; valor: number }
+  | { op: 'recriar'; lanc: Lancamento }
+  | { op: 'ligar'; linha: string; lancamento_id: string | null }
+
+/** Aplica as operações do estorno e devolve a lista para desfazer (na ordem certa). */
+async function executarOps(ops: OpEstorno[]): Promise<Desfazer[]> {
+  const volta: Desfazer[] = []
+  for (const op of ops) {
+    if (op.op === 'criar') {
+      const novo = await salvar('pes_lancamentos', null, op.lanc)
+      if (op.ligar) {
+        await salvar('pes_extrato', op.ligar, { lancamento_id: novo.id })
+        volta.push({ op: 'ligar', linha: op.ligar, lancamento_id: null })
+      }
+      volta.push({ op: 'apagar_id', id: novo.id })
+    } else if (op.op === 'valor') {
+      await salvar('pes_lancamentos', op.id, { valor: op.para })
+      volta.push({ op: 'valor', id: op.id, valor: op.de })
+    } else if (op.op === 'apagar') {
+      if (op.desligar) {
+        await salvar('pes_extrato', op.desligar, { lancamento_id: null })
+        volta.push({ op: 'ligar', linha: op.desligar, lancamento_id: op.lanc.id })
+      }
+      await excluir('pes_lancamentos', op.lanc.id)
+      volta.push({ op: 'recriar', lanc: op.lanc })
+    } else {
+      await salvar('pes_extrato', op.linha, { lancamento_id: op.para })
+      volta.push({ op: 'ligar', linha: op.linha, lancamento_id: op.de })
+    }
+  }
+  return volta.reverse()
+}
+
+async function executarDesfazer(lista: Desfazer[]) {
+  for (const d of lista) {
+    if (d.op === 'apagar_id') await excluir('pes_lancamentos', d.id)
+    else if (d.op === 'valor') await salvar('pes_lancamentos', d.id, { valor: d.valor })
+    else if (d.op === 'recriar') {
+      const r = await supabase.from('pes_lancamentos').insert(d.lanc)
+      if (r.error) throw new Error(r.error.message)
+    } else await salvar('pes_extrato', d.linha, { lancamento_id: d.lancamento_id })
+  }
+  avisarMudanca()
+}
+
 /** Este valor desfaz, no todo ou em parte, um pagamento ou recebimento anterior: escolhe qual. */
 function EstornoForm({
   estorno: e,
@@ -898,18 +951,35 @@ function EstornoForm({
   const recebimento = e.valor < 0 // saída estorna um recebimento; entrada estorna um pagamento
   const limite = somarDias(e.data, -120)
   // candidatas: linhas do extrato ainda sem lançamento e lançamentos já feitos nesta conta (até 120 dias antes)
-  type Opcao = { chave: string; data: string; descricao: string; valor: number; original: OriginalEstorno; jaLancado: boolean }
+  type Opcao = { chave: string; data: string; descricao: string; valor: number; original: OriginalEstorno; jaLancado: boolean; compart?: boolean }
+  const grupoDe = (l: Lancamento) => (l.compartilhado_id ? lancamentos.filter((g) => g.compartilhado_id === l.compartilhado_id) : [l])
+  const somarValores = (ls: Lancamento[]) => Math.round(ls.reduce((t, x) => t + Math.round(x.valor * 100), 0)) / 100
+  const vinculos = new Map(extratoMes.filter((x) => x.lancamento_id).map((x) => [x.lancamento_id!, x.id]))
   const opcoes: Opcao[] = [
     ...pendentes
       .filter((l) => l.id !== e.id && Math.sign(l.valor) === -Math.sign(e.valor) && Math.abs(l.valor) >= valorE - 0.001 && l.data <= e.data)
       .map((l) => ({ chave: `l:${l.id}`, data: l.data, descricao: l.descricao, valor: Math.abs(l.valor), original: { linha: l }, jaLancado: false })),
     ...lancamentos
       .filter((l) => (l.conta_id === contaId || l.conta_destino_id === contaId) && l.tipo !== 'transferencia' && l.data >= limite && l.data <= e.data)
-      .filter((l) => Math.sign(valorNaConta(l, contaId)) === -Math.sign(e.valor) && l.valor >= valorE - 0.001)
+      .filter((l) => Math.sign(valorNaConta(l, contaId)) === -Math.sign(e.valor))
+      // da compra compartilhada (minha parte + parte dos outros) mostra uma opção só, pelo total pago
+      .filter((l) => !(l.compartilhado_id && l.tipo === 'despesa' && l.pessoa_id && grupoDe(l).some((g) => g.tipo === 'despesa' && !g.pessoa_id)))
       .map((l) => {
-        const linha = extratoMes.find((x) => x.lancamento_id === l.id)
-        return { chave: `x:${l.id}`, data: l.data, descricao: l.descricao, valor: l.valor, original: linha ? { linha, lanc: l } : { lanc: l }, jaLancado: true }
-      }),
+        const total = l.compartilhado_id && l.tipo === 'despesa' ? somarValores(grupoDe(l).filter((g) => g.tipo === 'despesa')) : l.valor
+        const linha = extratoMes.find((x) => grupoDe(l).some((g) => g.id === x.lancamento_id) && (l.tipo === 'receita' ? x.lancamento_id === l.id : Math.sign(x.valor) < 0))
+        const compart = !!l.compartilhado_id
+        return {
+          chave: `x:${l.id}`,
+          data: l.data,
+          // no reembolso, mostra o PIX de quem pagou (texto do banco) para escolher o certo
+          descricao: compart && l.tipo === 'despesa' ? l.descricao.replace(/ \(parte dos outros\)$/, '') : compart && linha ? linha.descricao : l.descricao,
+          valor: total,
+          original: linha ? { linha, lanc: l } : { lanc: l },
+          jaLancado: true,
+          compart,
+        }
+      })
+      .filter((o) => o.valor >= valorE - 0.001),
   ].sort((a, b) => Number(Math.abs(b.valor - valorE) < 0.005) - Number(Math.abs(a.valor - valorE) < 0.005) || b.data.localeCompare(a.data))
   const [escolha, setEscolha] = useState(opcoes[0]?.chave ?? '')
   const op = opcoes.find((o) => o.chave === escolha)
@@ -919,6 +989,25 @@ function EstornoForm({
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const liquido = op ? Math.round((op.valor - valorE) * 100) / 100 : 0
+  // prévia: o que muda em cada lançamento (importante na despesa compartilhada)
+  let previa: string[] = []
+  if (op?.jaLancado && op.original.lanc) {
+    try {
+      const nomes = (l: Lancamento) => (l.compartilhado_id ? (l.tipo === 'receita' ? 'Reembolso recebido' : l.pessoa_id ? 'Parte dos outros' : 'Sua parte') : l.descricao)
+      const porId = new Map(grupoDe(op.original.lanc).map((l) => [l.id, l]))
+      previa = planoEstorno({ estorno: e, original: op.original, contaId, descricao: op.descricao, categoriaId: null, grupo: [...porId.values()], vinculos }).ops.flatMap((x) =>
+        x.op === 'valor'
+          ? [`${nomes(porId.get(x.id)!)}: ${moeda(x.de)} → ${moeda(x.para)}`]
+          : x.op === 'apagar'
+            ? [`${nomes(x.lanc)}: ${moeda(x.lanc.valor)} → apagado`]
+            : x.op === 'criar'
+              ? [`Sua parte: nova, ${moeda(x.lanc.valor)}`]
+              : [],
+      )
+    } catch {
+      previa = []
+    }
+  }
   const precisaClassificar = !!op && !op.jaLancado && liquido > 0
   const tipoOriginal = recebimento ? 'receita' : 'despesa'
 
@@ -930,23 +1019,9 @@ function EstornoForm({
     try {
       const desc = (descricao || sug?.descricao || op.descricao).trim()
       const cat = categoria || (sug?.classe && !sug.classe.startsWith('t:') ? sug.classe : '') || null
-      const plano = planoEstorno({ estorno: e, original: op.original, contaId, descricao: desc, categoriaId: cat })
-      let afetado: string | null = null
-      if (plano.criar) {
-        const novo = await salvar('pes_lancamentos', null, plano.criar)
-        await salvar('pes_extrato', plano.estorno_de!, { lancamento_id: novo.id })
-        afetado = novo.id
-      }
-      if (plano.reduzir) {
-        await salvar('pes_lancamentos', plano.reduzir.id, { valor: plano.reduzir.valor })
-        afetado = plano.reduzir.id
-      }
-      if (plano.apagar) {
-        if (plano.desligar) await salvar('pes_extrato', plano.desligar, { lancamento_id: null })
-        await excluir('pes_lancamentos', plano.apagar)
-        afetado = plano.apagar
-      }
-      await salvar('pes_extrato', e.id, { estorno_de: plano.estorno_de, estorno_modo: plano.modo, estorno_lancamento: afetado })
+      const plano = planoEstorno({ estorno: e, original: op.original, contaId, descricao: desc, categoriaId: cat, grupo: op.original.lanc ? grupoDe(op.original.lanc) : [], vinculos })
+      const volta = await executarOps(plano.ops)
+      await salvar('pes_extrato', e.id, { estorno_de: plano.estorno_de, estorno_modo: plano.modo, estorno_lancamento: null, estorno_desfazer: volta })
       onAviso(liquido === 0 ? `Estorno total registrado: ${op.descricao} ficou zerado.` : `Estorno parcial registrado: ${op.descricao} ficou em ${moeda(liquido)}.`)
       onClose()
     } catch (x) {
@@ -994,7 +1069,7 @@ function EstornoForm({
                   <input type="radio" name="original" className="h-4 w-4 accent-amber-600" checked={escolha === o.chave} onChange={() => setEscolha(o.chave)} />
                   <span className="w-20 shrink-0 text-xs text-slate-500 tabular-nums">{dataBR(o.data)}</span>
                   <span className="min-w-0 flex-1 truncate">{o.descricao}</span>
-                  <span className="shrink-0 text-[0.625rem] font-bold text-slate-400 uppercase">{o.jaLancado ? 'lançado' : 'no extrato'}</span>
+                  <span className="shrink-0 text-[0.625rem] font-bold text-slate-400 uppercase">{o.compart ? 'compartilhada' : o.jaLancado ? 'lançado' : 'no extrato'}</span>
                   <span className="shrink-0 font-semibold tabular-nums">{moeda(o.valor)}</span>
                 </label>
               ))}
@@ -1030,6 +1105,21 @@ function EstornoForm({
                 opcoes={categorias.filter((k) => k.tipo === tipoOriginal && k.ativa).map((k) => ({ value: k.id, label: k.nome }))}
               />
             </Campo>
+          </div>
+        )}
+        {previa.length > 0 && (
+          <div className="rounded-xl border border-amber-200 p-3 text-xs text-slate-700">
+            <div className="mb-1 font-bold text-amber-800">O que muda ao registrar</div>
+            <ul className="space-y-0.5">
+              {previa.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+            {op?.compart && (
+              <p className="mt-1.5 text-slate-500">
+                {recebimento ? 'Você devolveu parte do que recebeu: a parte dos outros diminui e a sua aumenta.' : 'A devolução da loja abate primeiro da sua parte, depois da parte dos outros.'}
+              </p>
+            )}
           </div>
         )}
         <p className="text-xs text-slate-500">
