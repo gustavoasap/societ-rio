@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Lancamento } from '../tipos'
-import { categoriaPorDescricao, chaveLinha, conciliar, lerCsv, lerData, lerExtrato, lerOfx, type LinhaExtrato } from './extrato'
+import { categoriaPorDescricao, chaveLinha, conciliar, contaBate, lerCsv, lerData, lerExtrato, lerOfx, sugestaoPorHistorico, type LinhaExtrato } from './extrato'
 
 const OFX = `OFXHEADER:100
 DATA:OFXSGML
@@ -126,5 +126,45 @@ describe('conciliação', () => {
     const ls = [lanc({ descricao: 'PIX PADARIA', categoria_id: 'alim', data: '2026-09-01' }), lanc({ descricao: 'pix  padaria', categoria_id: 'merc', data: '2026-10-01' })]
     expect(categoriaPorDescricao('Pix Padaria', ls)).toBe('merc')
     expect(categoriaPorDescricao('Outra coisa', ls)).toBeNull()
+  })
+})
+
+describe('dados da conta no OFX', () => {
+  const ofx = (bank: string, branch: string, acct: string) =>
+    `OFXHEADER:100\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL<BANKACCTFROM><BANKID>${bank}<BRANCHID>${branch}<ACCTID>${acct}<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST><STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261003<TRNAMT>-10.00<FITID>1<MEMO>X</STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`
+
+  it('lê banco, agência e conta', () => {
+    expect(lerOfx(ofx('0341', '1234', '12345-6')).conta).toEqual({ banco: '0341', agencia: '1234', numero: '12345-6' })
+    expect(lerOfx(OFX).conta).toBeNull()
+  })
+
+  it('confere com o cadastro (zeros à esquerda, com ou sem dígito, agência na frente)', () => {
+    const itau = { banco_codigo: '341', agencia: '1234', numero_conta: '12345-6' }
+    expect(contaBate(itau, { banco: '0341', agencia: '1234', numero: '12345-6' })).toBe('bate')
+    expect(contaBate(itau, { banco: '0341', agencia: '', numero: '123456' })).toBe('bate')
+    expect(contaBate(itau, { banco: '341', agencia: '1234', numero: '12345' })).toBe('bate')
+    expect(contaBate(itau, { banco: '341', agencia: '', numero: '1234123456' })).toBe('bate')
+    expect(contaBate(itau, { banco: '237', agencia: '1234', numero: '12345-6' })).toBe('nao_bate')
+    expect(contaBate(itau, { banco: '341', agencia: '9999', numero: '12345-6' })).toBe('nao_bate')
+    expect(contaBate(itau, { banco: '341', agencia: '1234', numero: '99999-9' })).toBe('nao_bate')
+    expect(contaBate({ banco_codigo: '341' }, { banco: '341', agencia: '1', numero: '1' })).toBe('sem_dados')
+  })
+})
+
+describe('sugestão pelo histórico do extrato', () => {
+  const l1 = lanc({ id: 'l1', descricao: 'Padaria', categoria_id: 'alim', data: '2026-09-03' })
+  const l2 = lanc({ id: 'l2', tipo: 'transferencia', descricao: 'Fatura Nubank', valor: 900, data: '2026-09-03', conta_id: 'itau', conta_destino_id: 'nubank' })
+  const hist = [
+    { descricao: 'PIX ENVIADO PADARIA PAO QUENTE', lancamento_id: 'l1' },
+    { descricao: 'PAGAMENTO FATURA NU', lancamento_id: 'l2' },
+  ]
+  it('repete a descrição e a categoria dadas da última vez', () => {
+    expect(sugestaoPorHistorico('PIX enviado padaria pao quente', hist, [l1, l2], 'itau')).toEqual({ descricao: 'Padaria', categoria_id: 'alim', transferir_para: null })
+  })
+  it('lembra quando virou transferência (pagamento de fatura)', () => {
+    expect(sugestaoPorHistorico('PAGAMENTO FATURA NU', hist, [l1, l2], 'itau')).toEqual({ descricao: 'Fatura Nubank', categoria_id: null, transferir_para: 'nubank' })
+  })
+  it('sem histórico: nada', () => {
+    expect(sugestaoPorHistorico('TED QUALQUER', hist, [l1, l2], 'itau')).toBeNull()
   })
 })

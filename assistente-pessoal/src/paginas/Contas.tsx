@@ -9,7 +9,7 @@ import { mesAtual, primeiroDia, somarMesesAoMes, ultimoDia } from '../lib/datas'
 import { faturasPorMes } from '../lib/financas'
 import { Link } from '../lib/rotas'
 import { dataBR, mesAbreviado, mesPorExtenso, moeda } from '../lib/formato'
-import { rotuloDe, TIPOS_CONTA, type Lancamento, type TipoConta } from '../tipos'
+import { BANCOS, rotuloDe, TIPOS_CONTA, type Lancamento, type TipoConta } from '../tipos'
 
 export function Contas() {
   const { contas, abrirLancamento } = useApp()
@@ -124,6 +124,10 @@ export function ContaForm({ inicial, onClose, tipoPadrao = 'corrente' }: { inici
   const [cor, setCor] = useState(inicial?.cor ?? 'azul')
   const [ativa, setAtiva] = useState(inicial?.ativa ?? true)
   const [reserva, setReserva] = useState(inicial?.reserva ?? false)
+  const [banco, setBanco] = useState(inicial?.banco_codigo ?? '')
+  const [agencia, setAgencia] = useState(inicial?.agencia ?? '')
+  const [numeroConta, setNumeroConta] = useState(inicial?.numero_conta ?? '')
+  const bancario = tipo === 'corrente' || tipo === 'poupanca' || tipo === 'investimento'
   const [erro, setErro] = useState<string | null>(null)
 
   async function gravar(e: FormEvent) {
@@ -143,6 +147,9 @@ export function ContaForm({ inicial, onClose, tipoPadrao = 'corrente' }: { inici
         cor,
         ativa,
         reserva: tipo !== 'cartao' && reserva,
+        banco_codigo: bancario ? banco.replace(/\D/g, '') || null : null,
+        agencia: bancario ? agencia.trim() || null : null,
+        numero_conta: bancario ? numeroConta.trim() || null : null,
       })
       onClose()
     } catch (e) {
@@ -218,6 +225,41 @@ export function ContaForm({ inicial, onClose, tipoPadrao = 'corrente' }: { inici
             <Campo label="Dia do vencimento">
               <input className="input" type="number" min={1} max={31} value={vencimento} onChange={(e) => setVencimento(e.target.value ? Number(e.target.value) : '')} />
             </Campo>
+          </div>
+        )}
+        {bancario && (
+          <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+            <div className="text-xs font-bold text-slate-600">Dados bancários (para importar o extrato OFX)</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
+              <Campo label="Banco (código)">
+                <input
+                  className="input"
+                  list="lista-bancos"
+                  value={banco}
+                  onChange={(e) => {
+                    setBanco(e.target.value)
+                    const b = BANCOS.find((x) => x.codigo === e.target.value.replace(/\D/g, '').padStart(3, '0'))
+                    if (b && !instituicao.trim()) setInstituicao(b.nome)
+                  }}
+                  placeholder="Ex.: 341"
+                  inputMode="numeric"
+                />
+                <datalist id="lista-bancos">
+                  {BANCOS.map((b) => (
+                    <option key={b.codigo} value={b.codigo}>
+                      {b.nome}
+                    </option>
+                  ))}
+                </datalist>
+              </Campo>
+              <Campo label="Agência">
+                <input className="input" value={agencia} onChange={(e) => setAgencia(e.target.value)} placeholder="Ex.: 1234" inputMode="numeric" />
+              </Campo>
+              <Campo label="Conta com dígito">
+                <input className="input" value={numeroConta} onChange={(e) => setNumeroConta(e.target.value)} placeholder="Ex.: 12345-6" />
+              </Campo>
+            </div>
+            {banco && <div className="text-xs text-slate-500">{BANCOS.find((x) => x.codigo === banco.replace(/\D/g, '').padStart(3, '0'))?.nome ?? 'Banco não está na lista, mas pode usar o código assim mesmo.'}</div>}
           </div>
         )}
         {tipo !== 'cartao' && (

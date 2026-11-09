@@ -152,6 +152,12 @@ export async function buscarChavesExtrato(contaId: string) {
   return num(ok(r) as Pick<LinhaExtrato, 'data' | 'valor' | 'descricao' | 'fitid'>[], ['valor'])
 }
 
+/** Linhas já conciliadas da conta (histórico do banco → lançamento), para repetir a classificação. */
+export async function buscarHistoricoExtrato(contaId: string) {
+  const r = await supabase.from('pes_extrato').select('descricao, lancamento_id').eq('conta_id', contaId).not('lancamento_id', 'is', null).order('data', { ascending: false }).limit(5000)
+  return ok(r) as Pick<LinhaExtrato, 'descricao' | 'lancamento_id'>[]
+}
+
 /** Saldo informado pelo banco mais recente até `ate`. */
 export async function buscarSaldoExtrato(contaId: string, inicio: string, ate: string) {
   const r = await supabase.from('pes_extrato_saldos').select('data, saldo').eq('conta_id', contaId).gte('data', inicio).lte('data', ate).order('data', { ascending: false }).limit(1).maybeSingle()
