@@ -82,8 +82,9 @@ export function Inicio() {
 
       <DisponivelMes oculto={oculto} />
 
-      {/* Números do mês */}
-      <p className="-mb-2 text-xs font-semibold text-slate-500 first-letter:uppercase">
+      {/* Números do mês (o rótulo do período fica dentro do mesmo bloco, sem margem negativa) */}
+      <div className="flex flex-col gap-2">
+      <p className="text-xs font-semibold text-slate-500 first-letter:uppercase">
         {mesPorExtenso(mes)} · mês atual (para média e futuro, veja{' '}
         <Link para="/plano" className="text-azul-600 hover:underline">
           Meu plano
@@ -146,6 +147,7 @@ export function Inicio() {
           negativo={r.resultado < 0}
           explica={<Conta linhas={[{ rotulo: 'Receitas do mês', valor: r.receitas }, { sinal: '−', rotulo: 'Despesas do mês', valor: r.despesas }]} total={{ rotulo: 'Resultado do mês', valor: r.resultado }} />}
         />
+      </div>
       </div>
 
       {/* Classificação das despesas do mês, faturas e terceiros */}
