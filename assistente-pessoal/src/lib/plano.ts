@@ -2,23 +2,36 @@
 // quanto ainda posso gastar no mês e projeção dos próximos 12 meses.
 import type { Categoria, Config, Lancamento, Meta, Aporte, Recorrencia } from '../tipos'
 import { progressoMeta, somar } from './calculos'
-import { diasEntre, diasNoMes, mesDe, somarMesesAoMes, ultimoDia } from './datas'
+import { datasPorDias, diasEntre, diasNoMes, mesDe, somarMesesAoMes, ultimoDia } from './datas'
 
 const mesNum = (mes: string) => {
   const [a, m] = mes.split('-').map(Number)
   return a * 12 + (m - 1)
 }
 
-/** A recorrência cai neste mês ("AAAA-MM")? Respeita início, fim e periodicidade (ex.: anual só no mês do início). */
-export function ocorreNoMes(r: Pick<Recorrencia, 'inicio' | 'fim' | 'intervalo_meses' | 'ativa'>, mes: string) {
-  if (!r.ativa) return false
+type RecPeriodo = Pick<Recorrencia, 'inicio' | 'fim' | 'intervalo_meses' | 'ativa'> & { intervalo_dias?: number | null }
+
+/** Quantas vezes a recorrência cai neste mês ("AAAA-MM"): 0 ou 1 nas mensais/periódicas; nas de N em N dias, pode ser 2 ou mais. */
+export function vezesNoMes(r: RecPeriodo, mes: string) {
+  if (!r.ativa) return 0
+  if (r.intervalo_dias) {
+    const ate = r.fim && r.fim < ultimoDia(mes) ? r.fim : ultimoDia(mes)
+    return datasPorDias(r.inicio, r.intervalo_dias, `${mes}-01`, ate).length
+  }
   const desde = mesNum(mes) - mesNum(mesDe(r.inicio))
-  if (desde < 0 || desde % (r.intervalo_meses || 1) !== 0) return false
-  return !r.fim || mesDe(r.fim) >= mes
+  if (desde < 0 || desde % (r.intervalo_meses || 1) !== 0) return 0
+  return !r.fim || mesDe(r.fim) >= mes ? 1 : 0
 }
 
-/** Valor mensal equivalente (provisão): IPVA de R$ 2.400 por ano = R$ 200 por mês. */
-export const mensalizado = (r: Pick<Recorrencia, 'valor' | 'intervalo_meses'>) => Math.round((r.valor / (r.intervalo_meses || 1)) * 100) / 100
+/** A recorrência cai neste mês ("AAAA-MM")? Respeita início, fim e periodicidade (ex.: anual só no mês do início). */
+export const ocorreNoMes = (r: RecPeriodo, mes: string) => vezesNoMes(r, mes) > 0
+
+/**
+ * Valor mensal equivalente (provisão): IPVA de R$ 2.400 por ano = R$ 200 por mês.
+ * De N em N dias: valor × (dias no mês médio ÷ N) — ex.: R$ 200 a cada 15 dias ≈ R$ 405,83 por mês.
+ */
+export const mensalizado = (r: Pick<Recorrencia, 'valor' | 'intervalo_meses'> & { intervalo_dias?: number | null }) =>
+  Math.round((r.intervalo_dias ? (r.valor * 365.25) / 12 / r.intervalo_dias : r.valor / (r.intervalo_meses || 1)) * 100) / 100
 
 /** Recorrência que vale para o plano: ativa, minha, e ainda não terminou. */
 const vigente = (r: Recorrencia, mesAtual: string) => r.ativa && !r.pessoa_id && (!r.fim || mesDe(r.fim) >= mesAtual)
@@ -233,9 +246,11 @@ export function projetar(o: { plano: Plano; recorrencias: Recorrencia[]; lancame
   for (let i = 1; i <= (o.meses ?? 12); i++) {
     const mes = somarMesesAoMes(mesAtual, i)
     const noMes = recs.filter((r) => ocorreNoMes(r, mes))
-    const entradas = somar([...noMes.filter((r) => r.tipo === 'receita').map((r) => r.valor), o.plano.renda.variavelMedia])
+    // recorrência de N em N dias pode cair mais de uma vez no mês
+    const vezes = (r: Recorrencia) => r.valor * vezesNoMes(r, mes)
+    const entradas = somar([...noMes.filter((r) => r.tipo === 'receita').map(vezes), o.plano.renda.variavelMedia])
     const parcelas = o.lancamentos.filter((l) => l.tipo === 'despesa' && l.grupo && !l.pessoa_id && mesDe(l.data) === mes).map((l) => l.valor)
-    const saidas = somar([...noMes.filter((r) => r.tipo === 'despesa').map((r) => r.valor), ...parcelas, avulsosMes])
+    const saidas = somar([...noMes.filter((r) => r.tipo === 'despesa').map(vezes), ...parcelas, avulsosMes])
     const resultado = somar([entradas, -saidas])
     patrimonio = somar([patrimonio, resultado])
     lista.push({ mes, entradas, saidas, resultado, patrimonio })

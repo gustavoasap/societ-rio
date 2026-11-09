@@ -169,3 +169,25 @@ describe('plano financeiro', () => {
     expect(d.diasRestantes).toBe(30)
   })
 })
+
+describe('recorrência de N em N dias', () => {
+  const faxina = { inicio: '2026-11-09', fim: null, intervalo_meses: 1, intervalo_dias: 15, ativa: true }
+  it('conta quantas vezes cai em cada mês', async () => {
+    const { vezesNoMes } = await import('./plano')
+    expect(vezesNoMes(faxina, '2026-11')).toBe(2) // 09 e 24/11
+    expect(vezesNoMes(faxina, '2026-12')).toBe(2) // 09 e 24/12
+    expect(vezesNoMes(faxina, '2026-10')).toBe(0)
+    expect(vezesNoMes({ ...faxina, intervalo_dias: 7 }, '2026-12')).toBe(4) // 07, 14, 21 e 28/12
+    expect(vezesNoMes({ ...faxina, intervalo_dias: 7 }, '2026-11')).toBe(4) // 09, 16, 23 e 30/11
+    expect(vezesNoMes({ ...faxina, fim: '2026-11-20' }, '2026-11')).toBe(1)
+  })
+  it('valor mensal equivalente: R$ 200 a cada 15 dias ≈ R$ 405,83', async () => {
+    const { mensalizado } = await import('./plano')
+    expect(mensalizado({ valor: 200, intervalo_meses: 1, intervalo_dias: 15 })).toBe(405.83)
+    expect(mensalizado({ valor: 2400, intervalo_meses: 12 })).toBe(200)
+  })
+  it('datas da série', async () => {
+    const { datasPorDias } = await import('./datas')
+    expect(datasPorDias('2026-11-09', 15, '2026-11-10', '2027-01-10')).toEqual(['2026-11-24', '2026-12-09', '2026-12-24', '2027-01-08'])
+  })
+})
