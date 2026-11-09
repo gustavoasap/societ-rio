@@ -178,3 +178,38 @@ describe('fatura com datas ajustadas num mês', () => {
     ])
   })
 })
+
+describe('exemplo do Claude: assinatura todo dia 26, cartão fecha dia 26 e vence dia 3', () => {
+  const claude = ['2026-09-26', '2026-10-26', '2026-11-26', '2026-12-26']
+  const nubank = (ajustes = {}): Conta => ({ id: 'n', nome: 'Nubank', tipo: 'cartao', instituicao: null, saldo_inicial: 0, limite: null, cor: 'roxo', ativa: true, ordem: 0, dia_fechamento: 26, dia_vencimento: 3, reserva: false, ajustes_fatura: ajustes })
+  const faturas = (c: Conta) => faturasDoCartao(c, claude.map((data) => lanc({ conta_id: 'n', valor: 114.4, data }))).map((f) => [f.mes, f.itens.map((l) => l.data)])
+
+  it('no padrão, uma cobrança em cada fatura', () => {
+    expect(faturas(nubank())).toEqual([
+      ['2026-11', ['2026-09-26']],
+      ['2026-12', ['2026-10-26']],
+      ['2027-01', ['2026-11-26']],
+      ['2027-02', ['2026-12-26']],
+    ])
+  })
+
+  it('a fatura que fecha em outubro passa a fechar dia 27: antecipa a cobrança de 26/10 e não mexe nas seguintes', () => {
+    const aj = { '2026-11': { fechamento: '2026-10-27', vencimento: '2026-11-03' } }
+    expect(faturas(nubank(aj))).toEqual([
+      ['2026-11', ['2026-09-26', '2026-10-26']],
+      ['2027-01', ['2026-11-26']],
+      ['2027-02', ['2026-12-26']],
+    ])
+  })
+
+  it('fechando dia 25 nada muda para o Claude: 26/09 continua nesta e 26/10 na seguinte', () => {
+    // fechando 25/10, a compra de 26/09 continua (está entre o fechamento anterior, 26/09, e 25/10)
+    const aj = { '2026-11': { fechamento: '2026-10-25', vencimento: '2026-11-03' } }
+    expect(faturas(nubank(aj))).toEqual([
+      ['2026-11', ['2026-09-26']],
+      ['2026-12', ['2026-10-26']],
+      ['2027-01', ['2026-11-26']],
+      ['2027-02', ['2026-12-26']],
+    ])
+  })
+})
