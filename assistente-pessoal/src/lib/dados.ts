@@ -154,6 +154,34 @@ export async function buscarExtratoPeriodo(inicio: string, fim: string, contaId:
   return num(ok(r) as LinhaExtrato[], ['valor'])
 }
 
+/**
+ * Saldo de uma conta no fim do dia anterior a `inicio` e no fim de `fim`.
+ * Usa o saldo informado pelo banco (OFX ou digitado) mais próximo do período e as linhas do extrato entre as datas;
+ * sem saldo do banco, usa o saldo calculado pelo app (saldo inicial + o que foi pago/recebido).
+ */
+export async function saldosDoPeriodo(conta: { id: string; saldo_inicial: number }, inicio: string, fim: string) {
+  const r = await supabase.from('pes_extrato_saldos').select('data, saldo').eq('conta_id', conta.id).order('data')
+  const brutos = r.error || !Array.isArray(r.data) ? [] : (r.data as { data: string; saldo: number }[])
+  const refs = brutos.map((x) => ({ data: x.data, saldo: Number(x.saldo) }))
+  const dentro = refs.filter((x) => x.data >= inicio && x.data <= fim).at(-1)
+  const antes = refs.filter((x) => x.data < inicio).at(-1)
+  const depois = refs.find((x) => x.data > fim)
+  const ref = dentro ?? antes ?? depois
+  const vespera = new Date(Date.parse(inicio) - 86400000).toISOString().slice(0, 10)
+  if (!ref) {
+    const [anterior, final] = await Promise.all([saldoNaData(conta.id, conta.saldo_inicial, vespera), saldoNaData(conta.id, conta.saldo_inicial, fim)])
+    return { anterior, final, fonte: 'app' as const, ref: null }
+  }
+  const de = ref.data < inicio ? ref.data : inicio
+  const ate = ref.data > fim ? ref.data : fim
+  const linhas = await buscarExtratoPeriodo(de, ate, conta.id)
+  const soma = (f: (d: string) => boolean) => Math.round(linhas.filter((l) => !l.ignorada && f(l.data)).reduce((t, l) => t + Math.round(l.valor * 100), 0)) / 100
+  // saldo do banco é do fim do dia `ref.data`
+  const anterior = ref.data >= inicio ? Math.round((ref.saldo - soma((d) => d >= inicio && d <= ref.data)) * 100) / 100 : Math.round((ref.saldo + soma((d) => d > ref.data && d < inicio)) * 100) / 100
+  const final = Math.round((anterior + soma((d) => d >= inicio && d <= fim)) * 100) / 100
+  return { anterior, final, fonte: 'banco' as const, ref }
+}
+
 /** Todas as chaves já importadas da conta (identificador do banco ou data|valor|descrição). */
 export async function buscarChavesExtrato(contaId: string) {
   const r = await supabase.from('pes_extrato').select('data, valor, descricao, fitid').eq('conta_id', contaId).limit(20000)

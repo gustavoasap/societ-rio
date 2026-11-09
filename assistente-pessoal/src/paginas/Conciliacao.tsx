@@ -21,7 +21,9 @@ import {
   salvar,
   salvarSaldoExtrato,
   saldoNaData,
+  saldosDoPeriodo,
   useDados,
+  type ContaComSaldo,
 } from '../lib/dados'
 import { chaveLinha, conciliar, contaBate, lerExtrato, planoCompartilhada, planoEstorno, sugestaoPorHistorico, valorNaConta, type LinhaExtrato, type OpEstorno, type OriginalEstorno } from '../lib/extrato'
 import { dataBR, dataValida, mesPorExtenso, moeda } from '../lib/formato'
@@ -283,12 +285,15 @@ export function Conciliacao() {
 
       {extrato.carregando || lanc.carregando || !c ? (
         <Carregando />
-      ) : extrato.dados!.length === 0 && soAppDoMes.length === 0 ? (
+      ) : extrato.dados!.length === 0 && soAppDoMes.length === 0 && abaAtual !== 'extrato' ? (
         <Vazio icone={Scale}>
           <span>
             Nenhuma linha do extrato de {conta?.nome} em {mesPorExtenso(mes)}.
           </span>
           <span className="text-xs">No app do banco, baixe o extrato em OFX (ou CSV) e toque em “Importar extrato”, ou use “Digitar linha”.</span>
+          <button className="btn-secondary btn-sm mt-1" onClick={() => setAba('extrato')}>
+            Ver o extrato de outro período
+          </button>
         </Vazio>
       ) : (
         <>
@@ -437,14 +442,7 @@ export function Conciliacao() {
           )}
 
           {abaAtual === 'extrato' && (
-            <ExtratoAba
-              conta={conta!}
-              inicio={inicio}
-              fim={fim}
-              lancamentos={todos}
-              saldoBanco={saldoBanco.dados ?? null}
-              onEditar={(lanc, banco) => setEditLanc({ lanc, banco })}
-            />
+            <ExtratoAba conta={conta!} mesInicial={mes} onEditar={(lanc, banco) => setEditLanc({ lanc, banco })} />
           )}
 
           {abaAtual === 'ignoradas' && c.ignoradas.length === 0 && <Vazio icone={EyeOff}>Nenhuma linha ignorada.</Vazio>}
@@ -1315,42 +1313,45 @@ function EditarConciliada({ lanc, banco, padroes, onClose }: { lanc: Lancamento;
   )
 }
 
-/** O extrato do mês dentro do app: de uma conta (com saldo dia a dia, se o saldo do banco for conhecido) ou de todas. */
-function ExtratoAba({
-  conta,
-  inicio,
-  fim,
-  lancamentos,
-  saldoBanco,
-  onEditar,
-}: {
-  conta: { id: string; nome: string }
-  inicio: string
-  fim: string
-  lancamentos: Lancamento[]
-  saldoBanco: { data: string; saldo: number } | null
-  onEditar: (l: Lancamento, banco: string) => void
-}) {
+type Periodo = 'mes' | 'ano' | 'personalizado'
+
+/** O extrato dentro do app: de uma conta ou de todas, no mês, no ano ou num período escolhido, com saldo anterior e final. */
+function ExtratoAba({ conta, mesInicial, onEditar }: { conta: ContaComSaldo; mesInicial: string; onEditar: (l: Lancamento, banco: string) => void }) {
   const { contas, categorias } = useApp()
+  const bancos = contas.filter((c) => c.ativa && c.tipo !== 'cartao')
   const [todas, setTodas] = useState(false)
-  const linhas = useDados(() => buscarExtratoPeriodo(inicio, fim, todas ? null : conta.id), [inicio, fim, todas, conta.id])
-  const porId = new Map(lancamentos.map((l) => [l.id, l]))
+  const [periodo, setPeriodo] = useState<Periodo>('mes')
+  const [mes, setMes] = useState(mesInicial)
+  const [ano, setAno] = useState(Number(mesInicial.slice(0, 4)))
+  const [deP, setDeP] = useState(primeiroDia(mesInicial))
+  const [ateP, setAteP] = useState(ultimoDia(mesInicial))
+  const inicio = periodo === 'mes' ? primeiroDia(mes) : periodo === 'ano' ? `${ano}-01-01` : deP
+  const fim = periodo === 'mes' ? ultimoDia(mes) : periodo === 'ano' ? `${ano}-12-31` : ateP
+  const valido = dataValida(inicio) && dataValida(fim) && inicio <= fim
+  const alvo = todas ? bancos : [conta]
+  const linhas = useDados(() => (valido ? buscarExtratoPeriodo(inicio, fim, todas ? null : conta.id) : Promise.resolve([])), [inicio, fim, todas, conta.id, valido])
+  // lançamentos do período (com folga de dias) para mostrar o seu histórico e a categoria
+  const lancs = useDados(() => (valido ? buscarLancamentos(somarDias(inicio, -10), somarDias(fim, 10)) : Promise.resolve([])), [inicio, fim, valido])
+  const saldos = useDados(
+    () => (valido ? Promise.all(alvo.map((c) => saldosDoPeriodo(c, inicio, fim))) : Promise.resolve([])),
+    [inicio, fim, valido, todas, conta.id, alvo.map((c) => c.id).join()],
+  )
+  const porId = new Map((lancs.dados ?? []).map((l) => [l.id, l]))
   const lista = (linhas.dados ?? []).filter((l) => !l.ignorada)
-  const entradas = lista.filter((l) => l.valor > 0).reduce((t, l) => t + l.valor, 0)
-  const saidas = lista.filter((l) => l.valor < 0).reduce((t, l) => t - l.valor, 0)
-  // saldo dia a dia: só para uma conta e se o saldo do banco no mês for conhecido (volta a partir dele)
-  let saldoInicial: number | null = null
-  if (!todas && saldoBanco) {
-    const ate = lista.filter((l) => l.data <= saldoBanco.data).reduce((t, l) => t + l.valor, 0)
-    saldoInicial = Math.round((saldoBanco.saldo - ate) * 100) / 100
-  }
-  // saldo depois de cada linha (calculado antes de desenhar)
-  const saldos = lista.reduce<number[]>((acc, l) => [...acc, Math.round(((acc.at(-1) ?? saldoInicial ?? 0) + l.valor) * 100) / 100], [])
+  const entradas = Math.round(lista.filter((l) => l.valor > 0).reduce((t, l) => t + l.valor * 100, 0)) / 100
+  const saidas = Math.round(lista.filter((l) => l.valor < 0).reduce((t, l) => t - l.valor * 100, 0)) / 100
+  const sd = saldos.dados ?? []
+  const saldoAnterior = sd.length ? Math.round(sd.reduce((t, x) => t + x.anterior * 100, 0)) / 100 : null
+  const saldoFinal = sd.length ? Math.round(sd.reduce((t, x) => t + x.final * 100, 0)) / 100 : null
+  const peloApp = sd.some((x) => x.fonte === 'app')
+  // saldo depois de cada linha (só faz sentido numa conta)
+  const correntes = !todas && saldoAnterior !== null ? lista.reduce<number[]>((acc, l) => [...acc, Math.round(((acc.at(-1) ?? saldoAnterior) + l.valor) * 100) / 100], []) : null
+  const tituloPeriodo = periodo === 'mes' ? mesPorExtenso(mes) : periodo === 'ano' ? `ano de ${ano}` : `${dataBR(inicio)} a ${dataBR(fim)}`
 
   return (
     <section className="cartao space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-slate-800">Extrato de {mesPorExtenso(inicio.slice(0, 7))}</h2>
+        <h2 className="text-sm font-bold text-slate-800 first-letter:uppercase">Extrato · {tituloPeriodo}</h2>
         <div className="w-full sm:w-72">
           <Segmentado
             valor={todas ? 'todas' : 'uma'}
@@ -1362,24 +1363,74 @@ function ExtratoAba({
           />
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-2 text-center text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="w-full sm:w-80">
+          <Segmentado
+            valor={periodo}
+            onChange={setPeriodo}
+            opcoes={[
+              { value: 'mes', label: 'Mês' },
+              { value: 'ano', label: 'Ano' },
+              { value: 'personalizado', label: 'Personalizado' },
+            ]}
+          />
+        </div>
+        {periodo === 'mes' && <SeletorMes mes={mes} onChange={setMes} />}
+        {periodo === 'ano' && (
+          <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+            <button className="icon-btn" onClick={() => setAno(ano - 1)} aria-label="Ano anterior">
+              ‹
+            </button>
+            <span className="min-w-16 text-center text-sm font-bold">{ano}</span>
+            <button className="icon-btn" onClick={() => setAno(ano + 1)} aria-label="Próximo ano">
+              ›
+            </button>
+          </div>
+        )}
+        {periodo === 'personalizado' && (
+          <div className="flex items-center gap-2">
+            <input className="input py-2 text-sm" type="date" value={deP} onChange={(e) => setDeP(e.target.value)} aria-label="De" />
+            <span className="text-xs text-slate-500">até</span>
+            <input className="input py-2 text-sm" type="date" value={ateP} onChange={(e) => setAteP(e.target.value)} aria-label="Até" />
+          </div>
+        )}
+      </div>
+      {!valido && <Erro>Escolha um período válido (data inicial antes da final).</Erro>}
+      {(saldos.erro || linhas.erro) && <Erro>{saldos.erro || linhas.erro}</Erro>}
+
+      <div className="grid grid-cols-2 gap-2 text-center text-sm sm:grid-cols-5">
+        <div className="rounded-xl bg-slate-50 p-2">
+          <div className="text-xs text-slate-500">Saldo anterior</div>
+          <b className="tabular-nums">{saldoAnterior === null ? '…' : moeda(saldoAnterior)}</b>
+        </div>
         <div className="rounded-xl bg-emerald-50 p-2">
-          <div className="text-xs text-emerald-700">Entradas</div>
+          <div className="text-xs text-emerald-700">(+) Entradas</div>
           <b className="text-emerald-700 tabular-nums">{moeda(entradas)}</b>
         </div>
-        <div className="rounded-xl bg-slate-50 p-2">
-          <div className="text-xs text-slate-500">Saídas</div>
-          <b className="tabular-nums">{moeda(saidas)}</b>
+        <div className="rounded-xl bg-rose-50 p-2">
+          <div className="text-xs text-rose-700">(−) Saídas</div>
+          <b className="text-rose-700 tabular-nums">{moeda(saidas)}</b>
         </div>
         <div className="rounded-xl bg-azul-50 p-2">
           <div className="text-xs text-azul-700">Líquido</div>
           <b className="text-azul-800 tabular-nums">{comSinal(Math.round((entradas - saidas) * 100) / 100)}</b>
         </div>
+        <div className="col-span-2 rounded-xl bg-azul-900 p-2 text-white sm:col-span-1">
+          <div className="text-xs text-white/70">(=) Saldo final</div>
+          <b className="tabular-nums">{saldoFinal === null ? '…' : moeda(saldoFinal)}</b>
+        </div>
       </div>
+      {saldoAnterior !== null && saldoFinal !== null && Math.abs(saldoAnterior + entradas - saidas - saldoFinal) > 0.009 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Saldo anterior + entradas − saídas não fecha com o saldo final: parte do saldo vem do app (contas sem saldo do banco informado) e o extrato do período está
+          incompleto. Importe o extrato completo ou informe o saldo do banco.
+        </p>
+      )}
+
       {linhas.carregando ? (
         <Carregando />
       ) : lista.length === 0 ? (
-        <p className="py-6 text-center text-sm text-slate-400">Nenhuma linha de extrato neste mês.</p>
+        <p className="py-6 text-center text-sm text-slate-400">Nenhuma linha de extrato no período.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[44rem] text-sm">
@@ -1391,22 +1442,22 @@ function ExtratoAba({
                 <th className="py-1.5 pr-2">Seu histórico / observação</th>
                 <th className="py-1.5 pr-2">Categoria</th>
                 <th className="py-1.5 text-right">Valor</th>
-                {saldoInicial !== null && <th className="py-1.5 pl-2 text-right">Saldo</th>}
+                {correntes && <th className="py-1.5 pl-2 text-right">Saldo</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {saldoInicial !== null && (
+              {correntes && (
                 <tr className="text-xs text-slate-500">
                   <td className="py-1.5" colSpan={5}>
-                    Saldo anterior
+                    Saldo anterior ({dataBR(somarDias(inicio, -1))})
                   </td>
-                  <td className="py-1.5 pl-2 text-right font-semibold tabular-nums">{moeda(saldoInicial)}</td>
+                  <td className="py-1.5 pl-2 text-right font-semibold tabular-nums">{moeda(saldoAnterior!)}</td>
                 </tr>
               )}
               {lista.map((l, i) => {
                 const lanc = l.lancamento_id ? porId.get(l.lancamento_id) : undefined
                 const cat = lanc?.categoria_id ? categorias.find((k) => k.id === lanc.categoria_id) : undefined
-                const estado = lanc ? 'conciliada' : l.estorno_modo || l.estorno_de ? 'estorno' : 'a classificar'
+                const estado = l.lancamento_id ? 'conciliada' : l.estorno_modo || l.estorno_de ? 'estorno' : 'a classificar'
                 return (
                   <tr key={l.id} className="align-top">
                     <td className="py-2 pr-2 text-xs whitespace-nowrap text-slate-500 tabular-nums">{dataBR(l.data)}</td>
@@ -1423,22 +1474,30 @@ function ExtratoAba({
                         <span className={`rounded-full px-1.5 py-px text-[0.625rem] font-bold ${estado === 'estorno' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`}>{estado}</span>
                       )}
                     </td>
-                    <td className="py-2 pr-2 text-xs text-slate-600">{lanc?.tipo === 'transferencia' ? 'Transferência' : lanc?.compartilhado_id && lanc.tipo === 'receita' ? 'Reembolso (compartilhada)' : (cat?.nome ?? (lanc ? 'Sem categoria' : ''))}</td>
+                    <td className="py-2 pr-2 text-xs text-slate-600">
+                      {lanc?.tipo === 'transferencia' ? 'Transferência' : lanc?.compartilhado_id && lanc.tipo === 'receita' ? 'Reembolso (compartilhada)' : (cat?.nome ?? (lanc ? 'Sem categoria' : ''))}
+                    </td>
                     <td className={`py-2 text-right font-semibold whitespace-nowrap tabular-nums ${corValor(l.valor)}`}>{comSinal(l.valor)}</td>
-                    {saldoInicial !== null && <td className="py-2 pl-2 text-right text-xs whitespace-nowrap text-slate-600 tabular-nums">{moeda(saldos[i])}</td>}
+                    {correntes && <td className="py-2 pl-2 text-right text-xs whitespace-nowrap text-slate-600 tabular-nums">{moeda(correntes[i])}</td>}
                   </tr>
                 )
               })}
+              {correntes && (
+                <tr className="text-xs font-bold text-slate-800">
+                  <td className="py-1.5" colSpan={5}>
+                    Saldo final ({dataBR(fim)})
+                  </td>
+                  <td className="py-1.5 pl-2 text-right tabular-nums">{moeda(saldoFinal!)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       )}
       <p className="text-xs text-slate-400">
-        {todas
-          ? 'Todas as contas com extrato importado ou digitado neste mês.'
-          : saldoInicial === null
-            ? 'Para ver o saldo dia a dia, informe o saldo do banco no quadro de cima (o OFX já traz).'
-            : `Saldo dia a dia calculado de trás para frente a partir do saldo do banco em ${dataBR(saldoBanco!.data)}.`}{' '}
+        {peloApp
+          ? 'Saldo calculado pelo app (saldo inicial + o que foi pago/recebido) em ' + (todas ? 'parte das contas' : 'esta conta') + ', porque não há saldo do banco informado. Importe o OFX ou informe o saldo para usar o do banco.'
+          : 'Saldos a partir do saldo informado pelo banco (OFX ou digitado), somando e subtraindo as linhas do extrato.'}{' '}
         Toque no seu histórico para editar sem desconciliar.
       </p>
     </section>

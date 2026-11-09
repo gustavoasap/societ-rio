@@ -1,14 +1,27 @@
 import { useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { AbasAnalise } from '../components/Abas'
-import { Cabecalho, Carregando, Erro, SeletorMes } from '../components/ui'
+import { Cabecalho, Carregando, Erro, Modal, SeletorMes } from '../components/ui'
 import { COR_NATUREZA } from '../components/visual'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
 import { mesAtual, somarMesesAoMes } from '../lib/datas'
 import { buscarLancamentos, useDados } from '../lib/dados'
-import { montarDre, type Dre, type GrupoDre } from '../lib/financas'
-import { mesAbreviado, mesPorExtenso, moeda, percentual } from '../lib/formato'
+import { ehMeu, montarDre, naturezaDe, type Dre, type GrupoDre } from '../lib/financas'
+import { dataBR, mesAbreviado, mesPorExtenso, moeda, percentual } from '../lib/formato'
+import { mesDe } from '../lib/datas'
+import type { Lancamento, Natureza } from '../tipos'
+
+/** O que abrir no detalhe: uma linha (categoria) de um grupo, no ano todo ou num mês. */
+interface AlvoDetalhe {
+  tipo: 'receita' | 'despesa'
+  natureza: Natureza
+  categoriaId: string
+  rotulo: string
+  /** índice do mês (0–11) ou null = ano todo */
+  mes: number | null
+}
+type AbrirDetalhe = (a: Omit<AlvoDetalhe, 'tipo'>) => void
 
 const fmt = (v: number) => (v === 0 ? '–' : v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 
@@ -16,6 +29,7 @@ export function DrePagina() {
   const { categorias, pessoas } = useApp()
   const [ano, setAno] = useState(() => Number(mesAtual().slice(0, 4)))
   const [mes, setMes] = useState(mesAtual)
+  const [detalhe, setDetalhe] = useState<AlvoDetalhe | null>(null)
   const lanc = useDados(() => buscarLancamentos(`${ano - 1}-12-01`, `${ano}-12-31`), [ano])
 
   if (lanc.carregando) return <Carregando />
@@ -65,7 +79,7 @@ export function DrePagina() {
         <DreMes dre={dre} lancAno={ano} mes={mes} setMes={(m) => {
             if (Number(m.slice(0, 4)) !== ano) setAno(Number(m.slice(0, 4)))
             setMes(m)
-          }} />
+          }} abrir={setDetalhe} />
       </div>
 
       {/* Computador: o ano inteiro */}
@@ -100,12 +114,12 @@ export function DrePagina() {
             <tbody>
               <Secao titulo="Receitas" />
               {dre.receitas.map((g) => (
-                <Grupo key={g.natureza} g={g} receita={somar(dre.receitaTotal)} n={ateHoje} />
+                <Grupo key={g.natureza} g={g} receita={somar(dre.receitaTotal)} n={ateHoje} abrir={(a) => setDetalhe({ ...a, tipo: 'receita' })} />
               ))}
               <Total rotulo="Receita total" valores={dre.receitaTotal} receita={somar(dre.receitaTotal)} n={ateHoje} tom="azul" />
               <Secao titulo="Despesas" />
               {dre.despesas.map((g) => (
-                <Grupo key={g.natureza} g={g} receita={somar(dre.receitaTotal)} n={ateHoje} negativo />
+                <Grupo key={g.natureza} g={g} receita={somar(dre.receitaTotal)} n={ateHoje} negativo abrir={(a) => setDetalhe({ ...a, tipo: 'despesa' })} />
               ))}
               <Total rotulo="(−) Despesa total" valores={dre.despesaTotal} receita={somar(dre.receitaTotal)} n={ateHoje} tom="cinza" />
               <Total rotulo="(=) Resultado (sobra para investir)" valores={dre.resultado} receita={somar(dre.receitaTotal)} n={ateHoje} tom="resultado" />
@@ -132,7 +146,80 @@ export function DrePagina() {
         </div>
         {dre.receitas.length === 0 && dre.despesas.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-400">Nenhum lançamento em {ano}.</p>}
       </section>
+      <p className="hidden text-xs text-slate-400 lg:block">Clique no nome de uma categoria para ver os lançamentos do ano, ou num valor para ver os do mês.</p>
+      {detalhe && <DetalheDre alvo={detalhe} meses={meses} lancamentos={lanc.dados ?? []} onClose={() => setDetalhe(null)} />}
     </div>
+  )
+}
+
+/** Os lançamentos que formam um número da DRE: valor, data, descrição, de onde vem. */
+function DetalheDre({ alvo, meses, lancamentos, onClose }: { alvo: AlvoDetalhe; meses: string[]; lancamentos: Lancamento[]; onClose: () => void }) {
+  const { contas, categorias, abrirLancamento } = useApp()
+  const cats = new Map(categorias.map((c) => [c.id, c]))
+  const periodo = alvo.mes === null ? meses : [meses[alvo.mes]]
+  const lista = lancamentos
+    .filter(
+      (l) =>
+        l.tipo === alvo.tipo &&
+        ehMeu(l) &&
+        periodo.includes(mesDe(l.data)) &&
+        (l.categoria_id ?? '') === alvo.categoriaId &&
+        naturezaDe(l, cats) === alvo.natureza,
+    )
+    .sort((a, b) => a.data.localeCompare(b.data))
+  const total = somar(lista.map((l) => l.valor))
+  const origem = (l: Lancamento) => {
+    const c = contas.find((x) => x.id === l.conta_id)
+    const partes = [c ? (c.tipo === 'cartao' ? `💳 ${c.nome}` : c.nome) : '?']
+    if (l.parcelas) partes.push(`parcela ${l.parcela}/${l.parcelas}`)
+    if (l.recorrencia_id) partes.push('recorrente (Fixos)')
+    if (l.compartilhado_id) partes.push('sua parte de despesa compartilhada')
+    if (!l.pago) partes.push('não pago')
+    return partes.join(' · ')
+  }
+  return (
+    <Modal
+      titulo={`${alvo.rotulo} · ${alvo.mes === null ? `ano de ${meses[0].slice(0, 4)}` : mesPorExtenso(meses[alvo.mes])}`}
+      onClose={onClose}
+      rodape={
+        <button type="button" className="btn-secondary" onClick={onClose}>
+          Fechar
+        </button>
+      }
+    >
+      {lista.length === 0 ? (
+        <p className="text-sm text-slate-500">Nenhum lançamento.</p>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {lista.map((l) => (
+            <button
+              key={l.id}
+              className="flex w-full cursor-pointer items-start gap-3 py-2.5 text-left hover:bg-slate-50"
+              onClick={() => {
+                onClose()
+                abrirLancamento(l)
+              }}
+              title="Abrir o lançamento"
+            >
+              <span className="w-20 shrink-0 text-xs text-slate-500 tabular-nums">{dataBR(l.data)}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-slate-800">{l.descricao}</span>
+                {l.observacao && <span className="block text-xs text-slate-600">{l.observacao}</span>}
+                <span className="block text-xs text-slate-400">{origem(l)}</span>
+              </span>
+              <span className="shrink-0 text-sm font-bold tabular-nums">{moeda(l.valor)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold">
+        <span>
+          Total ({lista.length} {lista.length === 1 ? 'lançamento' : 'lançamentos'})
+        </span>
+        <span className="tabular-nums">{moeda(total)}</span>
+      </div>
+      <p className="text-xs text-slate-400">Pela data do lançamento (no cartão, a data da compra ou da parcela). Toque num lançamento para abrir e editar.</p>
+    </Modal>
   )
 }
 
@@ -146,7 +233,7 @@ function Secao({ titulo }: { titulo: string }) {
   )
 }
 
-function Grupo({ g, receita, n, negativo }: { g: GrupoDre; receita: number; n: number; negativo?: boolean }) {
+function Grupo({ g, receita, n, negativo, abrir }: { g: GrupoDre; receita: number; n: number; negativo?: boolean; abrir: AbrirDetalhe }) {
   const [aberto, setAberto] = useState(true)
   return (
     <>
@@ -171,10 +258,20 @@ function Grupo({ g, receita, n, negativo }: { g: GrupoDre; receita: number; n: n
       {aberto &&
         g.linhas.map((l) => (
           <tr key={l.id} className="text-slate-600">
-            <td className="sticky left-0 bg-white py-1.5 pr-4 pl-12">{l.rotulo}</td>
+            <td className="sticky left-0 bg-white py-1.5 pr-4 pl-12">
+              <button className="cursor-pointer text-left hover:text-azul-700 hover:underline" title="Ver os lançamentos do ano" onClick={() => abrir({ natureza: g.natureza, categoriaId: l.id, rotulo: l.rotulo, mes: null })}>
+                {l.rotulo}
+              </button>
+            </td>
             {l.valores.map((v, i) => (
               <td key={i} className="px-2 py-1.5 text-right">
-                {fmt(v)}
+                {v ? (
+                  <button className="cursor-pointer rounded px-1 hover:bg-azul-50 hover:text-azul-700" title="Ver os lançamentos do mês" onClick={() => abrir({ natureza: g.natureza, categoriaId: l.id, rotulo: l.rotulo, mes: i })}>
+                    {fmt(v)}
+                  </button>
+                ) : (
+                  fmt(v)
+                )}
               </td>
             ))}
             <td className="bg-slate-50 px-3 py-1.5 text-right">{fmt(l.total)}</td>
@@ -207,7 +304,7 @@ function Total({ rotulo, valores, receita, n, tom }: { rotulo: string; valores: 
 }
 
 /** DRE de um mês, com a variação em relação ao mês anterior (visão do celular). */
-function DreMes({ dre, lancAno, mes, setMes }: { dre: Dre; lancAno: number; mes: string; setMes: (m: string) => void }) {
+function DreMes({ dre, lancAno, mes, setMes, abrir }: { dre: Dre; lancAno: number; mes: string; setMes: (m: string) => void; abrir: (a: AlvoDetalhe) => void }) {
   const i = Number(mes.slice(5, 7)) - 1
   const valido = Number(mes.slice(0, 4)) === lancAno
   const ant = i - 1
@@ -236,7 +333,7 @@ function DreMes({ dre, lancAno, mes, setMes }: { dre: Dre; lancAno: number; mes:
           {dre.receitas.map((g) => (
             <div key={g.natureza}>
               {linha(g.rotulo, g.valores[i], ant >= 0 ? g.valores[ant] : null)}
-              {g.linhas.filter((l) => l.valores[i]).map((l) => linha(l.rotulo, l.valores[i], null, '', true))}
+              {g.linhas.filter((l) => l.valores[i]).map((l) => linha(<button className="text-left hover:underline" onClick={() => abrir({ tipo: 'receita', natureza: g.natureza, categoriaId: l.id, rotulo: l.rotulo, mes: i })}>{l.rotulo}</button>, l.valores[i], null, '', true))}
             </div>
           ))}
           {linha('Receita total', dre.receitaTotal[i], ant >= 0 ? dre.receitaTotal[ant] : null, 'mt-1 rounded-lg bg-azul-50 px-2 text-azul-900')}
@@ -252,7 +349,7 @@ function DreMes({ dre, lancAno, mes, setMes }: { dre: Dre; lancAno: number; mes:
                 g.valores[i],
                 ant >= 0 ? g.valores[ant] : null,
               )}
-              {g.linhas.filter((l) => l.valores[i]).map((l) => linha(l.rotulo, l.valores[i], null, '', true))}
+              {g.linhas.filter((l) => l.valores[i]).map((l) => linha(<button className="text-left hover:underline" onClick={() => abrir({ tipo: 'despesa', natureza: g.natureza, categoriaId: l.id, rotulo: l.rotulo, mes: i })}>{l.rotulo}</button>, l.valores[i], null, '', true))}
             </div>
           ))}
           {linha('(−) Despesa total', dre.despesaTotal[i], ant >= 0 ? dre.despesaTotal[ant] : null, 'mt-1 rounded-lg bg-slate-100 px-2')}

@@ -114,7 +114,8 @@ const GUIAS: Record<string, Guia> = {
               <b>Custo de vida atual</b>: tudo o que você gasta num mês típico (soma da tabela “De onde vem o custo de vida”).
             </li>
             <li>
-              <b>Renda mínima para viver</b>: só as categorias marcadas como essenciais (Ajustes → Categorias).
+              <b>Renda mínima para viver</b>: todas as despesas previstas no mês atual (fixos e assinaturas, inclusive no cartão, parcelas e o dia a dia). Muda de mês
+              para mês: o botão “Visão por mês” mostra os próximos 12.
             </li>
             <li>
               <b>Renda necessária</b>: custo de vida + a margem de folga que você escolher (%). Ao lado aparece também contando o que quer guardar.
@@ -177,6 +178,10 @@ const GUIAS: Record<string, Guia> = {
         ),
       },
       {
+        titulo: 'Detalhar um número',
+        texto: <p>Clique no nome de uma categoria para ver todos os lançamentos do ano, ou num valor para ver os daquele mês: data, descrição, observação, conta/cartão e se é parcela ou recorrente.</p>,
+      },
+      {
         titulo: 'Classificação',
         texto: (
           <p>
@@ -225,7 +230,12 @@ const GUIAS: Record<string, Guia> = {
       },
       {
         titulo: 'Onde isso aparece',
-        texto: <p>Nos lançamentos de cada mês, no Meu plano (renda e custo fixo; as anuais divididas por 12) e na projeção dos próximos 12 meses.</p>,
+        texto: (
+          <p>
+            Nos lançamentos de cada mês, no Meu plano (renda e custo fixo; as anuais divididas por 12) e na projeção dos próximos 12 meses. As despesas ficam separadas em
+            “Despesas recorrentes (fora do cartão)” e “Despesas cartão de crédito” (as que caem na fatura) — o bloco depende da conta escolhida em “Pago com”.
+          </p>
+        ),
       },
       {
         titulo: 'Alterar ou encerrar',
@@ -323,7 +333,8 @@ const GUIAS: Record<string, Guia> = {
               <b>Só no app</b>: lançamentos desta conta que não apareceram no extrato (data/valor diferente, ainda não compensou...).
             </li>
             <li>
-              <b>Extrato</b>: o extrato completo do mês, de uma conta ou de todas, com o histórico do banco, o seu histórico e o saldo.
+              <b>Extrato</b>: o extrato de uma conta ou de todas, por mês, ano ou período personalizado, com saldo anterior, entradas, saídas, saldo final e o saldo
+              linha a linha.
             </li>
           </ul>
         ),

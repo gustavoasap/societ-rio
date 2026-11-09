@@ -150,9 +150,11 @@ export function montarPlano(o: {
     const nat = l.natureza ?? c?.natureza ?? 'variavel'
     // variáveis: média dos últimos 3 meses; fixas sem recorrência e eventuais: média de 12 meses
     const [desde, meses] = nat === 'variavel' ? [inicio3, h3] : [inicio12, h12]
-    if (!meses || !passado(l, desde)) continue
+    // ainda sem mês fechado: usa o que já foi gasto no mês atual (senão os gastos do dia a dia sumiriam)
+    const conta = meses ? passado(l, desde) : mesDe(l.data) === mesAtual
+    if (!conta) continue
     const x = linha(l.categoria_id ?? '')
-    x.media = somar([x.media, l.valor / meses])
+    x.media = somar([x.media, l.valor / (meses || 1)])
   }
   for (const c of o.categorias) if (c.tipo === 'despesa' && c.ativa && c.orcamento_mensal) linha(c.id)
   const custos = [...linhas.values()]
@@ -265,6 +267,38 @@ export interface Disponivel {
   disponivel: number
   porDia: number
   diasRestantes: number
+}
+
+export interface DespesasDoMes {
+  mes: string
+  /** fixos e assinaturas (Fixos e salário), inclusive no cartão, pelas vezes que caem no mês */
+  recorrentes: number
+  /** parcelas já lançadas com data no mês */
+  parcelas: number
+  /** gastos do dia a dia: média do histórico (no mês atual, o maior entre a média e o que já foi gasto) */
+  diaADia: number
+  total: number
+}
+
+/**
+ * Todas as despesas previstas mês a mês, do mês atual para frente: recorrentes (fixos, assinaturas, anuais
+ * no mês em que vencem, de 15 em 15 dias...), parcelas e gastos do dia a dia. É a renda mínima de cada mês.
+ */
+export function despesasPorMes(o: { plano: Plano; recorrencias: Recorrencia[]; lancamentos: Lancamento[]; hoje: string; meses?: number }): DespesasDoMes[] {
+  const mesAtual = mesDe(o.hoje)
+  const recs = o.recorrencias.filter((r) => vigente(r, mesAtual) && r.tipo === 'despesa')
+  const media = somar(o.plano.custos.map((x) => somar([x.estimativa, -x.recorrente])))
+  const lista: DespesasDoMes[] = []
+  for (let i = 0; i < (o.meses ?? 12); i++) {
+    const mes = somarMesesAoMes(mesAtual, i)
+    const recorrentes = somar(recs.map((r) => r.valor * vezesNoMes(r, mes)))
+    const doMes = o.lancamentos.filter((l) => l.tipo === 'despesa' && !l.pessoa_id && mesDe(l.data) === mes)
+    const parcelas = somar(doMes.filter((l) => l.grupo).map((l) => l.valor))
+    const avulsosReais = somar(doMes.filter((l) => !l.grupo && !l.recorrencia_id).map((l) => l.valor))
+    const diaADia = i === 0 ? Math.max(media, avulsosReais) : media
+    lista.push({ mes, recorrentes, parcelas, diaADia, total: somar([recorrentes, parcelas, diaADia]) })
+  }
+  return lista
 }
 
 /**
