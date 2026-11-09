@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Lancamento } from '../tipos'
-import { categoriaPorDescricao, chaveLinha, conciliar, contaBate, lerCsv, lerData, lerExtrato, lerOfx, planoCompartilhada, sugestaoPorHistorico, type LinhaExtrato } from './extrato'
+import { categoriaPorDescricao, chaveLinha, conciliar, contaBate, lerCsv, lerData, lerExtrato, lerOfx, planoCompartilhada, planoEstorno, sugestaoPorHistorico, type LinhaExtrato } from './extrato'
 
 const OFX = `OFXHEADER:100
 DATA:OFXSGML
@@ -205,5 +205,41 @@ describe('despesa compartilhada', () => {
     const r = conciliar([linha({ id: 's', data: '2026-11-01', valor: -89.9, lancamento_id: 'minha', compartilhado_id: 'g1' })], [parte, minha], 'itau')
     expect(r.pares.map((p) => p.lanc.id)).toEqual(['minha'])
     expect(r.soApp).toEqual([])
+  })
+})
+
+describe('estorno', () => {
+  const pago = linha({ id: 'o', data: '2026-11-02', descricao: 'COMPRA LOJA X', valor: -100 })
+  const args = { contaId: 'itau', descricao: 'Loja X', categoriaId: 'roupas' }
+
+  it('original ainda não lançado, estorno parcial: lança só o líquido', () => {
+    const r = planoEstorno({ ...args, estorno: linha({ id: 'e', valor: 30 }), original: { linha: pago } })
+    expect(r).toEqual({ modo: 'novo', estorno_de: 'o', liquido: 70, criar: expect.objectContaining({ tipo: 'despesa', valor: 70, data: '2026-11-02', categoria_id: 'roupas' }) })
+  })
+
+  it('original ainda não lançado, estorno total: não lança nada', () => {
+    expect(planoEstorno({ ...args, estorno: linha({ valor: 100 }), original: { linha: pago } })).toEqual({ modo: 'pendente', estorno_de: 'o', liquido: 0 })
+  })
+
+  it('original já lançado: parcial reduz, total apaga e solta a linha', () => {
+    const l = lanc({ id: 'L', valor: 100 })
+    expect(planoEstorno({ ...args, estorno: linha({ valor: 30 }), original: { linha: { ...pago, lancamento_id: 'L' }, lanc: l } })).toEqual({ modo: 'reduziu', estorno_de: 'o', liquido: 70, reduzir: { id: 'L', valor: 70 } })
+    expect(planoEstorno({ ...args, estorno: linha({ valor: 100 }), original: { linha: { ...pago, lancamento_id: 'L' }, lanc: l } })).toEqual({ modo: 'apagou', estorno_de: 'o', liquido: 0, apagar: 'L', desligar: 'o' })
+  })
+
+  it('recebimento estornado (saída) e lançamento sem linha no extrato', () => {
+    const rec = lanc({ id: 'R', tipo: 'receita', valor: 500 })
+    expect(planoEstorno({ ...args, estorno: linha({ valor: -200 }), original: { lanc: rec } })).toEqual({ modo: 'reduziu', estorno_de: null, liquido: 300, reduzir: { id: 'R', valor: 300 } })
+  })
+
+  it('sinal igual ou estorno maior que o original: erro', () => {
+    expect(() => planoEstorno({ ...args, estorno: linha({ valor: -30 }), original: { linha: pago } })).toThrow(/sinal contrário/)
+    expect(() => planoEstorno({ ...args, estorno: linha({ valor: 150 }), original: { linha: pago } })).toThrow(/maior que o valor original/)
+  })
+
+  it('na conciliação, estorno e original estornada saem de "a classificar"', () => {
+    const r = conciliar([pago, linha({ id: 'e', data: '2026-11-05', valor: 100, estorno_de: 'o', estorno_modo: 'pendente' }), linha({ id: 'x', valor: -5 })], [], 'itau')
+    expect(r.estornos.map((l) => l.id)).toEqual(['o', 'e'])
+    expect(r.soExtrato.map((l) => l.id)).toEqual(['x'])
   })
 })

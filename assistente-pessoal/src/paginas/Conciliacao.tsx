@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { ArrowRight, Check, CircleAlert, EyeOff, FileUp, Landmark, Pencil, Plus, Scale, Star, Trash2, Undo2, Users } from 'lucide-react'
+import { ArrowRight, Check, CircleAlert, EyeOff, FileUp, Landmark, Pencil, Plus, RotateCcw, Scale, Star, Trash2, Undo2, Users } from 'lucide-react'
 import { CategoriaForm } from '../components/CategoriaForm'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Cabecalho, Campo, CampoValor, Carregando, Erro, Modal, Segmentado, Selecao, SeletorMes, Vazio } from '../components/ui'
@@ -22,10 +22,10 @@ import {
   saldoNaData,
   useDados,
 } from '../lib/dados'
-import { chaveLinha, conciliar, contaBate, lerExtrato, planoCompartilhada, sugestaoPorHistorico, type LinhaExtrato } from '../lib/extrato'
+import { chaveLinha, conciliar, contaBate, lerExtrato, planoCompartilhada, planoEstorno, sugestaoPorHistorico, valorNaConta, type LinhaExtrato, type OriginalEstorno } from '../lib/extrato'
 import { dataBR, dataValida, mesPorExtenso, moeda } from '../lib/formato'
 import { supabase } from '../lib/supabase'
-import { BANCOS } from '../tipos'
+import { BANCOS, type Lancamento } from '../tipos'
 import { ContaForm } from './Contas'
 
 /** Lê o arquivo como UTF-8; se vier com acentos quebrados (bancos antigos), relê como Windows-1252. */
@@ -154,6 +154,24 @@ export function Conciliacao() {
     }
   }
 
+  async function desfazerEstorno(e: LinhaExtrato) {
+    if (!window.confirm('Desfazer este estorno?')) return
+    try {
+      if (e.estorno_modo === 'novo' && e.estorno_lancamento) {
+        if (e.estorno_de) await salvar('pes_extrato', e.estorno_de, { lancamento_id: null })
+        await excluir('pes_lancamentos', e.estorno_lancamento)
+      }
+      if (e.estorno_modo === 'reduziu' && e.estorno_lancamento) {
+        const r = await supabase.from('pes_lancamentos').select('valor').eq('id', e.estorno_lancamento).maybeSingle()
+        if (r.data) await salvar('pes_lancamentos', e.estorno_lancamento, { valor: Math.round((Number(r.data.valor) + Math.abs(e.valor)) * 100) / 100 })
+      }
+      await salvar('pes_extrato', e.id, { estorno_de: null, estorno_modo: null, estorno_lancamento: null })
+      if (e.estorno_modo === 'apagou') setAviso('Estorno desfeito. O lançamento original tinha sido apagado: lance-o de novo pela linha dele em “A classificar”.')
+    } catch (x) {
+      setErro(x instanceof Error ? x.message : String(x))
+    }
+  }
+
   async function desfazerCompartilhada(grupo: string) {
     if (!window.confirm('Desfazer esta despesa compartilhada? Os lançamentos criados para ela são apagados e as linhas voltam para "A classificar".')) return
     try {
@@ -271,7 +289,7 @@ export function Conciliacao() {
             {(
               [
                 ['classificar', 'A classificar', c.soExtrato.length, 'text-amber-600'],
-                ['conciliadas', 'Conciliadas', c.pares.length, 'text-emerald-600'],
+                ['conciliadas', 'Conciliadas', c.pares.length + c.estornos.length, 'text-emerald-600'],
                 ['soApp', 'Só no app', soAppDoMes.length, 'text-rose-600'],
                 ['ignoradas', 'Ignoradas', c.ignoradas.length, 'text-slate-500'],
               ] as const
@@ -295,12 +313,48 @@ export function Conciliacao() {
                 contaId={contaId}
                 sugestao={(l) => sugestaoPorHistorico(l.descricao, historico.dados ?? [], todos, contaId)}
                 padroes={padroes.dados ?? []}
+                lancamentos={todos}
+                extratoMes={extrato.dados ?? []}
                 onErro={setErro}
                 onAviso={setAviso}
               />
             ))}
 
-          {abaAtual === 'conciliadas' && c.pares.length === 0 && <Vazio icone={Scale}>Nenhuma linha conciliada ainda.</Vazio>}
+          {abaAtual === 'conciliadas' && c.pares.length === 0 && c.estornos.length === 0 && <Vazio icone={Scale}>Nenhuma linha conciliada ainda.</Vazio>}
+          {abaAtual === 'conciliadas' && c.estornos.length > 0 && (
+            <section className="cartao space-y-2">
+              <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
+                <RotateCcw className="h-4 w-4 text-amber-600" /> Estornos
+              </h2>
+              <div className="divide-y divide-slate-100">
+                {c.estornos.map((l) => {
+                  const orig = l.estorno_de ? extrato.dados?.find((x) => x.id === l.estorno_de) : undefined
+                  return (
+                    <div key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-sm">
+                      <RotateCcw className={`h-4 w-4 shrink-0 ${l.estorno_modo ? 'text-amber-600' : 'text-slate-300'}`} />
+                      <span className="w-20 shrink-0 text-xs text-slate-500 tabular-nums">{dataBR(l.data)}</span>
+                      <span className="min-w-0 flex-1 break-words sm:truncate">{l.descricao}</span>
+                      <span className={`font-semibold tabular-nums ${corValor(l.valor)}`}>{comSinal(l.valor)}</span>
+                      <span className="flex w-full items-center gap-1.5 pl-7 text-xs text-slate-500 sm:w-auto sm:pl-0">
+                        <span className="rounded-full bg-amber-100 px-1.5 py-px text-[0.625rem] font-bold text-amber-800">{l.estorno_modo ? 'estorno' : 'estornado'}</span>
+                        {l.estorno_modo && (
+                          <>
+                            <span className="truncate">
+                              {l.estorno_modo === 'pendente' || l.estorno_modo === 'apagou' ? 'total' : 'parcial'}
+                              {orig ? ` de ${orig.descricao} (${dataBR(orig.data)})` : ''}
+                            </span>
+                            <button className="icon-btn h-6 w-6" aria-label="Desfazer estorno" title="Desfazer estorno" onClick={() => desfazerEstorno(l)}>
+                              <Undo2 className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          )}
           {abaAtual === 'conciliadas' && c.pares.length > 0 && (
             <section className="cartao space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -412,6 +466,8 @@ function Classificar({
   contaId,
   sugestao,
   padroes,
+  lancamentos,
+  extratoMes,
   onErro,
   onAviso,
 }: {
@@ -419,6 +475,8 @@ function Classificar({
   contaId: string
   sugestao: (l: LinhaExtrato) => Sugestao
   padroes: HistoricoPadrao[]
+  lancamentos: Lancamento[]
+  extratoMes: LinhaExtrato[]
   onErro: (m: string) => void
   onAviso: (m: string) => void
 }) {
@@ -427,6 +485,7 @@ function Classificar({
   const [edicao, setEdicao] = useState<Record<string, { descricao?: string; classe?: string }>>({})
   const [gravando, setGravando] = useState(false)
   const [compart, setCompart] = useState<LinhaExtrato | null>(null)
+  const [estorno, setEstorno] = useState<LinhaExtrato | null>(null)
   const [verPadroes, setVerPadroes] = useState(false)
   // criar categoria a partir de uma linha: guarda a linha para já selecionar a nova
   const [novaCat, setNovaCat] = useState<LinhaExtrato | null>(null)
@@ -508,33 +567,36 @@ function Classificar({
         <div>
           <h2 className="text-sm font-bold text-slate-800">No extrato, ainda não lançado no app</h2>
           <p className="text-xs text-slate-500">
-            Escreva o <b>Histórico – Conciliação</b> (o do banco fica guardado e o valor não muda), escolha a categoria e lance. Pagou por todos e recebeu PIX de volta? Use{' '}
-            <b>Compartilhada</b>.{' '}
-            <button className="font-semibold text-azul-600 hover:underline" onClick={() => setVerPadroes(true)}>
-              Padrões de histórico ({padroes.length})
-            </button>
+            Escreva o <b>Histórico – Conciliação</b> (o do banco fica guardado e o valor não muda), escolha a categoria e lance. Nos ícones de cada linha:{' '}
+            <Users className="inline h-3 w-3 text-violet-600" /> despesa compartilhada, <RotateCcw className="inline h-3 w-3 text-amber-600" /> estorno, <EyeOff className="inline h-3 w-3" /> ignorar.
           </p>
         </div>
-        {classificadas.length > 0 && (
-          <button className="btn-primary btn-sm" onClick={() => lancarVarias(classificadas)} disabled={gravando}>
-            <Check className="h-3.5 w-3.5" /> Lançar {classificadas.length === 1 ? 'a classificada' : `as ${classificadas.length} classificadas`}
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary btn-sm" onClick={() => setVerPadroes(true)}>
+            <Star className="h-3.5 w-3.5 text-amber-500" /> Históricos padrão ({padroes.length})
           </button>
-        )}
+          {classificadas.length > 0 && (
+            <button className="btn-primary btn-sm" onClick={() => lancarVarias(classificadas)} disabled={gravando}>
+              <Check className="h-3.5 w-3.5" /> Lançar {classificadas.length === 1 ? 'a classificada' : `as ${classificadas.length} classificadas`}
+            </button>
+          )}
+        </div>
       </div>
       <div className="divide-y divide-slate-100">
         {linhas.map((l) => {
           const v = valores(l)
           const tipo = l.valor > 0 ? 'receita' : 'despesa'
           return (
-            <div key={l.id} className="grid grid-cols-1 gap-2 py-3 sm:grid-cols-[5.5rem_minmax(0,1fr)_7.5rem_minmax(0,13rem)_auto] sm:items-center sm:gap-3">
-              <div className="flex items-center justify-between sm:block">
-                <span className="text-xs text-slate-500 tabular-nums">{dataBR(l.data)}</span>
-                <span className={`font-semibold tabular-nums sm:hidden ${corValor(l.valor)}`}>{comSinal(l.valor)}</span>
+            <div key={l.id} className="space-y-1.5 py-3">
+              {/* linha de cima: data, histórico do banco e observações */}
+              <div className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="min-w-0 truncate text-slate-500" title={l.descricao}>
+                  <span className="tabular-nums">{dataBR(l.data)}</span> · <span className="font-semibold">Banco:</span> {l.descricao}
+                </span>
+                {v.sugerido && v.classe && <span className="shrink-0 font-semibold text-azul-600">Como da última vez</span>}
               </div>
-              <div className="min-w-0">
-                <div className="mb-1 truncate text-xs text-slate-500" title={l.descricao}>
-                  <span className="font-semibold">Banco:</span> {l.descricao}
-                </div>
+              {/* controles sempre nas mesmas colunas */}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,14rem)_13.75rem] sm:items-center sm:gap-3">
                 <div className="flex gap-1">
                   <input
                     className="input min-w-0 flex-1 py-2 text-sm"
@@ -548,15 +610,13 @@ function Classificar({
                     type="button"
                     className={`icon-btn shrink-0 ${padraoDe(v.descricao) ? 'text-amber-500' : ''}`}
                     aria-label="Salvar como histórico padrão"
-                    title={padraoDe(v.descricao) ? 'Já é um padrão' : 'Salvar como histórico padrão'}
+                    title={padraoDe(v.descricao) ? 'Já é um histórico padrão' : 'Salvar como histórico padrão'}
                     onClick={() => salvarPadrao(v.descricao, v.classe)}
                   >
                     <Star className={`h-4 w-4 ${padraoDe(v.descricao) ? 'fill-current' : ''}`} />
                   </button>
                 </div>
-              </div>
-              <span className={`hidden text-right font-semibold tabular-nums sm:block ${corValor(l.valor)}`}>{comSinal(l.valor)}</span>
-              <div className="min-w-0">
+                <span className={`text-right font-semibold tabular-nums ${corValor(l.valor)}`}>{comSinal(l.valor)}</span>
                 <select
                   className="input cursor-pointer py-2 text-sm"
                   value={v.classe}
@@ -584,28 +644,35 @@ function Classificar({
                     </optgroup>
                   )}
                 </select>
-                {v.sugerido && v.classe && <div className="mt-0.5 text-[0.6875rem] font-semibold text-azul-600">Como da última vez</div>}
-              </div>
-              <div className="flex items-center justify-end gap-1">
-                <button className="btn-primary btn-sm" onClick={() => lancarVarias([l])} disabled={gravando}>
-                  Lançar
-                </button>
-                {l.valor < 0 && (
-                  <button className="icon-btn text-violet-600" aria-label="Despesa compartilhada" title="Despesa compartilhada (paguei por todos e recebi de volta)" onClick={() => setCompart(l)}>
+                <div className="flex items-center justify-end gap-1">
+                  <button className="btn-primary btn-sm w-[4.5rem] justify-center" onClick={() => lancarVarias([l])} disabled={gravando}>
+                    Lançar
+                  </button>
+                  {/* a compartilhada só vale para saídas; nas entradas o espaço fica vazio para os ícones não mudarem de lugar */}
+                  <button
+                    className={`icon-btn text-violet-600 ${l.valor < 0 ? '' : 'invisible'}`}
+                    aria-label="Despesa compartilhada"
+                    title="Despesa compartilhada (paguei por todos e recebi de volta)"
+                    onClick={() => setCompart(l)}
+                    tabIndex={l.valor < 0 ? 0 : -1}
+                  >
                     <Users className="h-4 w-4" />
                   </button>
-                )}
-                <button className="icon-btn" aria-label="Ignorar esta linha" title="Ignorar" onClick={() => salvar('pes_extrato', l.id, { ignorada: true }).catch((e: Error) => onErro(e.message))}>
-                  <EyeOff className="h-4 w-4" />
-                </button>
-                <button
-                  className="icon-btn text-rose-500"
-                  aria-label="Apagar esta linha do extrato"
-                  title="Apagar linha"
-                  onClick={() => window.confirm('Apagar esta linha do extrato?') && excluir('pes_extrato', l.id).catch((e: Error) => onErro(e.message))}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                  <button className="icon-btn text-amber-600" aria-label="Estorno" title={l.valor > 0 ? 'Estorno de um pagamento (total ou parcial)' : 'Estorno de um recebimento (total ou parcial)'} onClick={() => setEstorno(l)}>
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                  <button className="icon-btn" aria-label="Ignorar esta linha" title="Ignorar" onClick={() => salvar('pes_extrato', l.id, { ignorada: true }).catch((e: Error) => onErro(e.message))}>
+                    <EyeOff className="h-4 w-4" />
+                  </button>
+                  <button
+                    className="icon-btn text-rose-500"
+                    aria-label="Apagar esta linha do extrato"
+                    title="Apagar linha"
+                    onClick={() => window.confirm('Apagar esta linha do extrato?') && excluir('pes_extrato', l.id).catch((e: Error) => onErro(e.message))}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
           )
@@ -628,6 +695,18 @@ function Classificar({
         />
       )}
       {verPadroes && <PadroesForm padroes={padroes} onClose={() => setVerPadroes(false)} />}
+      {estorno && (
+        <EstornoForm
+          estorno={estorno}
+          pendentes={linhas}
+          lancamentos={lancamentos}
+          extratoMes={extratoMes}
+          contaId={contaId}
+          sugestao={valores}
+          onClose={() => setEstorno(null)}
+          onAviso={onAviso}
+        />
+      )}
       {novaCat && (
         <CategoriaForm
           inicial={null}
@@ -794,10 +873,202 @@ function CompartilhadaForm({
   )
 }
 
+/** Este valor desfaz, no todo ou em parte, um pagamento ou recebimento anterior: escolhe qual. */
+function EstornoForm({
+  estorno: e,
+  pendentes,
+  lancamentos,
+  extratoMes,
+  contaId,
+  sugestao,
+  onClose,
+  onAviso,
+}: {
+  estorno: LinhaExtrato
+  pendentes: LinhaExtrato[]
+  lancamentos: Lancamento[]
+  extratoMes: LinhaExtrato[]
+  contaId: string
+  sugestao: (l: LinhaExtrato) => { descricao: string; classe: string }
+  onClose: () => void
+  onAviso: (m: string) => void
+}) {
+  const { categorias } = useApp()
+  const valorE = Math.abs(e.valor)
+  const recebimento = e.valor < 0 // saída estorna um recebimento; entrada estorna um pagamento
+  const limite = somarDias(e.data, -120)
+  // candidatas: linhas do extrato ainda sem lançamento e lançamentos já feitos nesta conta (até 120 dias antes)
+  type Opcao = { chave: string; data: string; descricao: string; valor: number; original: OriginalEstorno; jaLancado: boolean }
+  const opcoes: Opcao[] = [
+    ...pendentes
+      .filter((l) => l.id !== e.id && Math.sign(l.valor) === -Math.sign(e.valor) && Math.abs(l.valor) >= valorE - 0.001 && l.data <= e.data)
+      .map((l) => ({ chave: `l:${l.id}`, data: l.data, descricao: l.descricao, valor: Math.abs(l.valor), original: { linha: l }, jaLancado: false })),
+    ...lancamentos
+      .filter((l) => (l.conta_id === contaId || l.conta_destino_id === contaId) && l.tipo !== 'transferencia' && l.data >= limite && l.data <= e.data)
+      .filter((l) => Math.sign(valorNaConta(l, contaId)) === -Math.sign(e.valor) && l.valor >= valorE - 0.001)
+      .map((l) => {
+        const linha = extratoMes.find((x) => x.lancamento_id === l.id)
+        return { chave: `x:${l.id}`, data: l.data, descricao: l.descricao, valor: l.valor, original: linha ? { linha, lanc: l } : { lanc: l }, jaLancado: true }
+      }),
+  ].sort((a, b) => Number(Math.abs(b.valor - valorE) < 0.005) - Number(Math.abs(a.valor - valorE) < 0.005) || b.data.localeCompare(a.data))
+  const [escolha, setEscolha] = useState(opcoes[0]?.chave ?? '')
+  const op = opcoes.find((o) => o.chave === escolha)
+  const sug = op?.original.linha && !op.jaLancado ? sugestao(op.original.linha) : null
+  const [descricao, setDescricao] = useState('')
+  const [categoria, setCategoria] = useState('')
+  const [erro, setErro] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
+  const liquido = op ? Math.round((op.valor - valorE) * 100) / 100 : 0
+  const precisaClassificar = !!op && !op.jaLancado && liquido > 0
+  const tipoOriginal = recebimento ? 'receita' : 'despesa'
+
+  async function gravar(ev: FormEvent) {
+    ev.preventDefault()
+    setErro(null)
+    if (!op) return setErro('Escolha o que este valor está estornando.')
+    setSalvando(true)
+    try {
+      const desc = (descricao || sug?.descricao || op.descricao).trim()
+      const cat = categoria || (sug?.classe && !sug.classe.startsWith('t:') ? sug.classe : '') || null
+      const plano = planoEstorno({ estorno: e, original: op.original, contaId, descricao: desc, categoriaId: cat })
+      let afetado: string | null = null
+      if (plano.criar) {
+        const novo = await salvar('pes_lancamentos', null, plano.criar)
+        await salvar('pes_extrato', plano.estorno_de!, { lancamento_id: novo.id })
+        afetado = novo.id
+      }
+      if (plano.reduzir) {
+        await salvar('pes_lancamentos', plano.reduzir.id, { valor: plano.reduzir.valor })
+        afetado = plano.reduzir.id
+      }
+      if (plano.apagar) {
+        if (plano.desligar) await salvar('pes_extrato', plano.desligar, { lancamento_id: null })
+        await excluir('pes_lancamentos', plano.apagar)
+        afetado = plano.apagar
+      }
+      await salvar('pes_extrato', e.id, { estorno_de: plano.estorno_de, estorno_modo: plano.modo, estorno_lancamento: afetado })
+      onAviso(liquido === 0 ? `Estorno total registrado: ${op.descricao} ficou zerado.` : `Estorno parcial registrado: ${op.descricao} ficou em ${moeda(liquido)}.`)
+      onClose()
+    } catch (x) {
+      setErro(x instanceof Error ? x.message : String(x))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <Modal
+      titulo={recebimento ? 'Estorno de recebimento' : 'Estorno de pagamento'}
+      onClose={onClose}
+      rodape={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="btn-primary" form="form-estorno" disabled={salvando || !op}>
+            Registrar estorno
+          </button>
+        </>
+      }
+    >
+      <form id="form-estorno" onSubmit={gravar} className="space-y-4">
+        <div className="rounded-xl bg-slate-50 p-3 text-sm">
+          <div className="text-xs text-slate-500">{recebimento ? 'Saiu da conta (devolução de um recebimento)' : 'Voltou para a conta (devolução de um pagamento)'}</div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate">
+              {dataBR(e.data)} · {e.descricao}
+            </span>
+            <b className="tabular-nums">{moeda(valorE)}</b>
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-semibold text-slate-600">Qual {recebimento ? 'recebimento' : 'pagamento'} ele estorna?</div>
+          {opcoes.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+              Não achei {recebimento ? 'recebimento' : 'pagamento'} de {moeda(valorE)} ou mais nesta conta nos últimos 120 dias. Lance o original primeiro (ou importe o extrato do mês dele).
+            </p>
+          ) : (
+            <div className="max-h-60 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200">
+              {opcoes.map((o) => (
+                <label key={o.chave} className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-slate-50">
+                  <input type="radio" name="original" className="h-4 w-4 accent-amber-600" checked={escolha === o.chave} onChange={() => setEscolha(o.chave)} />
+                  <span className="w-20 shrink-0 text-xs text-slate-500 tabular-nums">{dataBR(o.data)}</span>
+                  <span className="min-w-0 flex-1 truncate">{o.descricao}</span>
+                  <span className="shrink-0 text-[0.625rem] font-bold text-slate-400 uppercase">{o.jaLancado ? 'lançado' : 'no extrato'}</span>
+                  <span className="shrink-0 font-semibold tabular-nums">{moeda(o.valor)}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+        {op && (
+          <div className="grid grid-cols-3 gap-2 rounded-xl bg-amber-50 p-3 text-center text-sm">
+            <div>
+              <div className="text-xs text-amber-800">Original</div>
+              <b className="tabular-nums">{moeda(op.valor)}</b>
+            </div>
+            <div>
+              <div className="text-xs text-amber-800">Estornado</div>
+              <b className="tabular-nums">{moeda(valorE)}</b>
+            </div>
+            <div>
+              <div className="text-xs text-amber-800">{liquido === 0 ? 'Estorno total' : 'Fica'}</div>
+              <b className="tabular-nums">{moeda(liquido)}</b>
+            </div>
+          </div>
+        )}
+        {precisaClassificar && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Campo label="Histórico – Conciliação">
+              <input className="input" value={descricao || sug?.descricao || op!.descricao} onChange={(x) => setDescricao(x.target.value)} />
+            </Campo>
+            <Campo label="Categoria">
+              <Selecao
+                value={categoria || (sug?.classe && !sug.classe.startsWith('t:') ? sug.classe : '')}
+                onChange={setCategoria}
+                vazio="Sem categoria"
+                opcoes={categorias.filter((k) => k.tipo === tipoOriginal && k.ativa).map((k) => ({ value: k.id, label: k.nome }))}
+              />
+            </Campo>
+          </div>
+        )}
+        <p className="text-xs text-slate-500">
+          {op?.jaLancado
+            ? liquido === 0
+              ? 'O lançamento original deixa de existir (foi todo devolvido).'
+              : `O lançamento original passa a valer ${moeda(liquido)}.`
+            : liquido === 0
+              ? 'Os dois se anulam: nada entra nas despesas/receitas.'
+              : `Será lançado só o que ficou: ${moeda(liquido)}.`}{' '}
+          O saldo continua batendo com o banco, e dá para desfazer em Conciliadas.
+        </p>
+        <Erro>{erro}</Erro>
+      </form>
+    </Modal>
+  )
+}
+
 /** Lista dos históricos padrão salvos, para apagar os que não usa mais. */
 function PadroesForm({ padroes, onClose }: { padroes: HistoricoPadrao[]; onClose: () => void }) {
   const { categorias } = useApp()
   const [erro, setErro] = useState<string | null>(null)
+  const [texto, setTexto] = useState('')
+  const [categoria, setCategoria] = useState('')
+
+  async function adicionar(ev: FormEvent) {
+    ev.preventDefault()
+    setErro(null)
+    const t = texto.trim()
+    if (!t) return setErro('Escreva o histórico.')
+    if (padroes.some((p) => p.texto.toLowerCase() === t.toLowerCase())) return setErro('Esse histórico já está salvo.')
+    try {
+      await salvar('pes_historicos_padrao', null, { texto: t, categoria_id: categoria || null })
+      setTexto('')
+      setCategoria('')
+    } catch (x) {
+      setErro(x instanceof Error ? x.message : String(x))
+    }
+  }
   return (
     <Modal
       titulo="Padrões de histórico"
@@ -808,7 +1079,17 @@ function PadroesForm({ padroes, onClose }: { padroes: HistoricoPadrao[]; onClose
         </button>
       }
     >
-      <p className="text-sm text-slate-500">Para salvar um novo, escreva o histórico na linha e toque na estrela ao lado. Ao escolher um padrão, a categoria dele vem junto.</p>
+      <form onSubmit={adicionar} className="space-y-2 rounded-xl bg-slate-50 p-3">
+        <div className="text-xs font-bold text-slate-600">Novo histórico padrão</div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,12rem)_auto]">
+          <input className="input py-2 text-sm" value={texto} onChange={(x) => setTexto(x.target.value)} placeholder="Ex.: Almoço com amigos" aria-label="Histórico" />
+          <Selecao value={categoria} onChange={setCategoria} vazio="Sem categoria" opcoes={categorias.filter((k) => k.ativa).map((k) => ({ value: k.id, label: `${k.nome}${k.tipo === 'receita' ? ' (receita)' : ''}` }))} />
+          <button className="btn-primary btn-sm">
+            <Plus className="h-3.5 w-3.5" /> Salvar
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">Também dá para salvar pela estrela ao lado do histórico em cada linha. Ao escolher um padrão, a categoria dele vem junto.</p>
+      </form>
       {padroes.length === 0 ? (
         <p className="py-4 text-center text-sm text-slate-400">Nenhum padrão salvo ainda.</p>
       ) : (
