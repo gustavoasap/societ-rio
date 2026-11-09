@@ -2,23 +2,36 @@
 // quanto ainda posso gastar no mês e projeção dos próximos 12 meses.
 import type { Categoria, Config, Lancamento, Meta, Aporte, Recorrencia } from '../tipos'
 import { progressoMeta, somar } from './calculos'
-import { diasEntre, diasNoMes, mesDe, somarMesesAoMes, ultimoDia } from './datas'
+import { datasPorDias, diasEntre, diasNoMes, mesDe, somarMesesAoMes, ultimoDia } from './datas'
 
 const mesNum = (mes: string) => {
   const [a, m] = mes.split('-').map(Number)
   return a * 12 + (m - 1)
 }
 
-/** A recorrência cai neste mês ("AAAA-MM")? Respeita início, fim e periodicidade (ex.: anual só no mês do início). */
-export function ocorreNoMes(r: Pick<Recorrencia, 'inicio' | 'fim' | 'intervalo_meses' | 'ativa'>, mes: string) {
-  if (!r.ativa) return false
+type RecPeriodo = Pick<Recorrencia, 'inicio' | 'fim' | 'intervalo_meses' | 'ativa'> & { intervalo_dias?: number | null }
+
+/** Quantas vezes a recorrência cai neste mês ("AAAA-MM"): 0 ou 1 nas mensais/periódicas; nas de N em N dias, pode ser 2 ou mais. */
+export function vezesNoMes(r: RecPeriodo, mes: string) {
+  if (!r.ativa) return 0
+  if (r.intervalo_dias) {
+    const ate = r.fim && r.fim < ultimoDia(mes) ? r.fim : ultimoDia(mes)
+    return datasPorDias(r.inicio, r.intervalo_dias, `${mes}-01`, ate).length
+  }
   const desde = mesNum(mes) - mesNum(mesDe(r.inicio))
-  if (desde < 0 || desde % (r.intervalo_meses || 1) !== 0) return false
-  return !r.fim || mesDe(r.fim) >= mes
+  if (desde < 0 || desde % (r.intervalo_meses || 1) !== 0) return 0
+  return !r.fim || mesDe(r.fim) >= mes ? 1 : 0
 }
 
-/** Valor mensal equivalente (provisão): IPVA de R$ 2.400 por ano = R$ 200 por mês. */
-export const mensalizado = (r: Pick<Recorrencia, 'valor' | 'intervalo_meses'>) => Math.round((r.valor / (r.intervalo_meses || 1)) * 100) / 100
+/** A recorrência cai neste mês ("AAAA-MM")? Respeita início, fim e periodicidade (ex.: anual só no mês do início). */
+export const ocorreNoMes = (r: RecPeriodo, mes: string) => vezesNoMes(r, mes) > 0
+
+/**
+ * Valor mensal equivalente (provisão): IPVA de R$ 2.400 por ano = R$ 200 por mês.
+ * De N em N dias: valor × (dias no mês médio ÷ N) — ex.: R$ 200 a cada 15 dias ≈ R$ 405,83 por mês.
+ */
+export const mensalizado = (r: Pick<Recorrencia, 'valor' | 'intervalo_meses'> & { intervalo_dias?: number | null }) =>
+  Math.round((r.intervalo_dias ? (r.valor * 365.25) / 12 / r.intervalo_dias : r.valor / (r.intervalo_meses || 1)) * 100) / 100
 
 /** Recorrência que vale para o plano: ativa, minha, e ainda não terminou. */
 const vigente = (r: Recorrencia, mesAtual: string) => r.ativa && !r.pessoa_id && (!r.fim || mesDe(r.fim) >= mesAtual)
@@ -75,7 +88,10 @@ export interface Plano {
   rendaNecessariaComGuardar: number
   /** folga que a renda atual dá sobre as despesas (0,25 = 25%); null sem despesas */
   folgaAtual: number | null
-  reserva: { alvo: number; confortavel: number; atual: number; falta: number; aporte: number; meses: number }
+  /** reserva: alvo = meses × todas as despesas do mês (fixos, cartão, parcelas, dia a dia); soEssencial = se cortasse o resto */
+  reserva: { alvo: number; soEssencial: number; atual: number; falta: number; aporte: number; meses: number }
+  /** de que é feito o custo de vida mensal (base da reserva) */
+  composicao: { fixosForaCartao: number; fixosCartao: number; comprasCartao: number; outros: number; ajusteOrcamento: number }
   guardar: number
   investir: number
   metas: { meta: Meta; porMes: number }[]
@@ -97,7 +113,10 @@ export function montarPlano(o: {
   config: Config
   saldoReserva: number
   hoje: string
+  /** ids das contas que são cartão de crédito (para separar o que é pago no cartão) */
+  cartoes?: string[]
 }): Plano {
+  const noCartao = new Set(o.cartoes ?? [])
   const mesAtual = mesDe(o.hoje)
   const recs = o.recorrencias.filter((r) => vigente(r, mesAtual))
   const cats = new Map(o.categorias.map((c) => [c.id, c]))
@@ -127,19 +146,29 @@ export function montarPlano(o: {
     }
     return x
   }
+  let fixosCartao = 0
+  let fixosFora = 0
   for (const r of recs.filter((r) => r.tipo === 'despesa')) {
     const x = linha(r.categoria_id ?? '')
     x.recorrente = somar([x.recorrente, mensalizado(r)])
+    if (noCartao.has(r.conta_id)) fixosCartao = somar([fixosCartao, mensalizado(r)])
+    else fixosFora = somar([fixosFora, mensalizado(r)])
   }
+  let mediaCartao = 0
+  let mediaFora = 0
   for (const l of o.lancamentos) {
     if (l.tipo !== 'despesa' || !avulsoReal(l)) continue
     const c = l.categoria_id ? cats.get(l.categoria_id) : undefined
     const nat = l.natureza ?? c?.natureza ?? 'variavel'
     // variáveis: média dos últimos 3 meses; fixas sem recorrência e eventuais: média de 12 meses
     const [desde, meses] = nat === 'variavel' ? [inicio3, h3] : [inicio12, h12]
-    if (!meses || !passado(l, desde)) continue
+    // ainda sem mês fechado: usa o que já foi gasto no mês atual (senão os gastos do dia a dia sumiriam)
+    const conta = meses ? passado(l, desde) : mesDe(l.data) === mesAtual
+    if (!conta) continue
     const x = linha(l.categoria_id ?? '')
-    x.media = somar([x.media, l.valor / meses])
+    x.media = somar([x.media, l.valor / (meses || 1)])
+    if (noCartao.has(l.conta_id)) mediaCartao += l.valor / (meses || 1)
+    else mediaFora += l.valor / (meses || 1)
   }
   for (const c of o.categorias) if (c.tipo === 'despesa' && c.ativa && c.orcamento_mensal) linha(c.id)
   const custos = [...linhas.values()]
@@ -159,9 +188,20 @@ export function montarPlano(o: {
   const provisaoAnuais = somar(recs.filter((r) => r.tipo === 'despesa' && r.intervalo_meses > 1).map(mensalizado))
   const pct = o.config.pct_investimento / 100
 
-  // ---------------- reserva de emergência
-  const alvo = Math.round(custoEssencial * o.config.meses_reserva * 100) / 100
-  const confortavel = Math.round(custoTotal * o.config.meses_reserva * 100) / 100
+  // ---------------- reserva de emergência: todas as despesas do mês (fixos, cartão, parcelas e dia a dia),
+  // porque é isso que continua chegando se a renda parar
+  const alvo = Math.round(custoTotal * o.config.meses_reserva * 100) / 100
+  const soEssencial = Math.round(custoEssencial * o.config.meses_reserva * 100) / 100
+  const parcelasCartao = somar(o.lancamentos.filter((l) => l.tipo === 'despesa' && l.grupo && !l.pessoa_id && noCartao.has(l.conta_id) && mesDe(l.data) === proximoMes).map((l) => l.valor))
+  const comprasCartao = somar([Math.round(mediaCartao * 100) / 100, parcelasCartao])
+  const outros = somar([Math.round(mediaFora * 100) / 100, parcelas, -parcelasCartao])
+  const composicao = {
+    fixosForaCartao: fixosFora,
+    fixosCartao,
+    comprasCartao,
+    outros,
+    ajusteOrcamento: somar([custoTotal, -fixosFora, -fixosCartao, -comprasCartao, -outros]),
+  }
   const falta = Math.max(0, somar([alvo, -o.saldoReserva]))
 
   // ---------------- quanto separar: primeiro completa a reserva (em até 12 meses), o resto vai para investimento
@@ -188,9 +228,10 @@ export function montarPlano(o: {
     rendaNecessaria: Math.ceil(custoTotal * (1 + o.config.margem_folga / 100) * 100) / 100,
     rendaNecessariaComGuardar: Math.ceil(somar([custoTotal, guardar, metasTotal]) * (1 + o.config.margem_folga / 100) * 100) / 100,
     folgaAtual: custoTotal > 0 ? somar([renda.total, -custoTotal]) / custoTotal : null,
+    composicao,
     reserva: {
       alvo,
-      confortavel,
+      soEssencial,
       atual: o.saldoReserva,
       falta,
       aporte: aporteReserva,
@@ -233,9 +274,11 @@ export function projetar(o: { plano: Plano; recorrencias: Recorrencia[]; lancame
   for (let i = 1; i <= (o.meses ?? 12); i++) {
     const mes = somarMesesAoMes(mesAtual, i)
     const noMes = recs.filter((r) => ocorreNoMes(r, mes))
-    const entradas = somar([...noMes.filter((r) => r.tipo === 'receita').map((r) => r.valor), o.plano.renda.variavelMedia])
+    // recorrência de N em N dias pode cair mais de uma vez no mês
+    const vezes = (r: Recorrencia) => r.valor * vezesNoMes(r, mes)
+    const entradas = somar([...noMes.filter((r) => r.tipo === 'receita').map(vezes), o.plano.renda.variavelMedia])
     const parcelas = o.lancamentos.filter((l) => l.tipo === 'despesa' && l.grupo && !l.pessoa_id && mesDe(l.data) === mes).map((l) => l.valor)
-    const saidas = somar([...noMes.filter((r) => r.tipo === 'despesa').map((r) => r.valor), ...parcelas, avulsosMes])
+    const saidas = somar([...noMes.filter((r) => r.tipo === 'despesa').map(vezes), ...parcelas, avulsosMes])
     const resultado = somar([entradas, -saidas])
     patrimonio = somar([patrimonio, resultado])
     lista.push({ mes, entradas, saidas, resultado, patrimonio })
@@ -250,6 +293,38 @@ export interface Disponivel {
   disponivel: number
   porDia: number
   diasRestantes: number
+}
+
+export interface DespesasDoMes {
+  mes: string
+  /** fixos e assinaturas (Fixos e salário), inclusive no cartão, pelas vezes que caem no mês */
+  recorrentes: number
+  /** parcelas já lançadas com data no mês */
+  parcelas: number
+  /** gastos do dia a dia: média do histórico (no mês atual, o maior entre a média e o que já foi gasto) */
+  diaADia: number
+  total: number
+}
+
+/**
+ * Todas as despesas previstas mês a mês, do mês atual para frente: recorrentes (fixos, assinaturas, anuais
+ * no mês em que vencem, de 15 em 15 dias...), parcelas e gastos do dia a dia. É a renda mínima de cada mês.
+ */
+export function despesasPorMes(o: { plano: Plano; recorrencias: Recorrencia[]; lancamentos: Lancamento[]; hoje: string; meses?: number }): DespesasDoMes[] {
+  const mesAtual = mesDe(o.hoje)
+  const recs = o.recorrencias.filter((r) => vigente(r, mesAtual) && r.tipo === 'despesa')
+  const media = somar(o.plano.custos.map((x) => somar([x.estimativa, -x.recorrente])))
+  const lista: DespesasDoMes[] = []
+  for (let i = 0; i < (o.meses ?? 12); i++) {
+    const mes = somarMesesAoMes(mesAtual, i)
+    const recorrentes = somar(recs.map((r) => r.valor * vezesNoMes(r, mes)))
+    const doMes = o.lancamentos.filter((l) => l.tipo === 'despesa' && !l.pessoa_id && mesDe(l.data) === mes)
+    const parcelas = somar(doMes.filter((l) => l.grupo).map((l) => l.valor))
+    const avulsosReais = somar(doMes.filter((l) => !l.grupo && !l.recorrencia_id).map((l) => l.valor))
+    const diaADia = i === 0 ? Math.max(media, avulsosReais) : media
+    lista.push({ mes, recorrentes, parcelas, diaADia, total: somar([recorrentes, parcelas, diaADia]) })
+  }
+  return lista
 }
 
 /**

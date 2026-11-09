@@ -1,5 +1,6 @@
 import { ArrowDownRight, ArrowRight, ArrowUpRight, CalendarClock, CreditCard, Eye, EyeOff, Flag, Landmark, Scale, Target, Users, Wallet } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { Conta, Explicar, Origem } from '../components/Explicar'
 import { GraficoMensal, Legenda } from '../components/Grafico'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Bolinha, Carregando, Progresso, Vazio } from '../components/ui'
@@ -10,7 +11,7 @@ import { contasEmAberto, despesasPorCategoria, progressoEtapas, progressoMeta, r
 import { hoje, mesAtual, mesDe, primeiroDia, somarDias, somarMesesAoMes, ultimoDia } from '../lib/datas'
 import { buscarLancamentos, buscarMetas, buscarObjetivos, useDados } from '../lib/dados'
 import { aReceberDeTerceiros, despesasPorNatureza, ehMeu, faturasDoCartao } from '../lib/financas'
-import { dataBR, moeda, percentual } from '../lib/formato'
+import { dataBR, mesPorExtenso, moeda, percentual } from '../lib/formato'
 import { Link } from '../lib/rotas'
 
 function Titulo({ children, para, rotulo = 'Ver tudo' }: { children: ReactNode; para?: string; rotulo?: string }) {
@@ -54,11 +55,16 @@ export function Inicio() {
   const serie = resumoPorMes(meus, meses)
   const terceiros = aReceberDeTerceiros(todos.filter((l) => l.data <= hj))
   const totalTerceiros = somar([...terceiros.values()].map((t) => t.total))
+  // compras futuras já lançadas nos cartões (entram na fatura, mas ainda não aconteceram)
+  const futurasCartao = (id: string) => somar(todos.filter((l) => l.conta_id === id && l.tipo === 'despesa' && l.data > hj).map((l) => l.valor))
   const cartoes = contas.filter((c) => c.tipo === 'cartao' && c.ativa)
   const proximasFaturas = cartoes
     .map((c) => ({ c, f: faturasDoCartao(c, todos).find((f) => (f.vencimento ?? ultimoDia(f.mes)) >= hj && f.total - f.pago > 0.009) }))
     .filter((x) => x.f)
-  const patrimonio = somar(contas.filter((c) => c.ativa).map((c) => c.saldo))
+  // patrimônio = saldo das contas (cartão = o que devo até hoje) + o que outras pessoas me devem
+  // (a dívida do cartão inclui as compras feitas para terceiros, então o crédito com eles também entra)
+  const saldoContas = somar(contas.filter((c) => c.ativa).map((c) => c.saldo))
+  const patrimonio = somar([saldoContas, totalTerceiros])
   const emAberto = contasEmAberto(todos, hj)
   const topCategorias = despesasPorCategoria(doMes).slice(0, 5)
   const v = (n: number) => (oculto ? 'R$ •••••' : moeda(n))
@@ -81,22 +87,85 @@ export function Inicio() {
 
       <DisponivelMes oculto={oculto} />
 
-      {/* Números do mês */}
+      {/* Números do mês (o rótulo do período fica dentro do mesmo bloco, sem margem negativa) */}
+      <div className="flex flex-col gap-2">
+      <p className="text-xs font-semibold text-slate-500 first-letter:uppercase">
+        {mesPorExtenso(mes)} · mês atual (para média e futuro, veja{' '}
+        <Link para="/plano" className="text-azul-600 hover:underline">
+          Meu plano
+        </Link>
+        )
+      </p>
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Numero rotulo="Patrimônio" valor={v(patrimonio)} icone={<Landmark className="h-4 w-4" />} destaque acao={
+        <Numero rotulo="Patrimônio" valor={v(patrimonio)} icone={<Landmark className="h-4 w-4" />} destaque explica={
+          <>
+            <Conta
+              linhas={[
+                ...contas
+                  .filter((c) => c.ativa)
+                  .map((c) => ({
+                    sinal: c.saldo < 0 ? ('−' as const) : ('+' as const),
+                    rotulo: `${c.nome}${c.tipo === 'cartao' ? ' (cartão: dívida até hoje)' : ''}`,
+                    valor: Math.abs(c.saldo),
+                    dica:
+                      c.tipo === 'cartao'
+                        ? `Compras feitas até hoje − pagamentos de fatura. Inclui compras de terceiros (você deve ao banco).${futurasCartao(c.id) > 0 ? ` A fatura na tela Cartões mostra mais ${moeda(futurasCartao(c.id))} de compras com data futura, que ainda não aconteceram.` : ''}`
+                        : undefined,
+                  })),
+                ...(totalTerceiros > 0 ? [{ sinal: '+' as const, rotulo: 'A receber de terceiros', valor: totalTerceiros, dica: 'Compras que você pagou para outras pessoas e elas ainda vão te devolver.' }] : []),
+              ]}
+              total={{ rotulo: 'Patrimônio hoje', valor: patrimonio }}
+            />
+            <Origem>Saldo de cada conta = saldo inicial + tudo o que já foi pago/recebido até hoje (Contas). Lançamentos futuros ou não pagos ainda não entram.</Origem>
+          </>
+        } acao={
           <button className="icon-btn -m-2 text-white/70 hover:bg-white/10 hover:text-white" onClick={alternarOculto} aria-label={oculto ? 'Mostrar valores' : 'Ocultar valores'}>
             {oculto ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
           </button>
         } />
-        <Numero rotulo="Receitas do mês" valor={v(r.receitas)} icone={<ArrowUpRight className="h-4 w-4 text-emerald-600" />} sub={r.aReceber ? `${v(r.aReceber)} a receber` : undefined} />
-        <Numero rotulo="Despesas do mês" valor={v(r.despesas)} icone={<ArrowDownRight className="h-4 w-4 text-orange-600" />} sub={r.aPagar ? `${v(r.aPagar)} a pagar` : undefined} />
+        <Numero
+          rotulo="Receitas do mês"
+          valor={v(r.receitas)}
+          icone={<ArrowUpRight className="h-4 w-4 text-emerald-600" />}
+          sub={r.aReceber ? `${v(r.aReceber)} a receber` : undefined}
+          explica={
+            <>
+              <Conta linhas={[{ rotulo: 'Já recebido', valor: somar([r.receitas, -r.aReceber]) }, { sinal: '+', rotulo: 'Lançado para este mês, ainda não recebido', valor: r.aReceber }]} total={{ rotulo: 'Receitas do mês', valor: r.receitas }} />
+              <Origem>Receitas com data em {mesPorExtenso(mes)}, só as suas. Transferências entre contas e reembolsos de despesas compartilhadas não entram.</Origem>
+            </>
+          }
+        />
+        <Numero
+          rotulo="Despesas do mês"
+          valor={v(r.despesas)}
+          icone={<ArrowDownRight className="h-4 w-4 text-orange-600" />}
+          sub={r.aPagar ? `${v(r.aPagar)} a pagar` : undefined}
+          explica={
+            <>
+              <Conta
+                linhas={[
+                  { rotulo: 'Fixas', valor: nat.fixa },
+                  { sinal: '+', rotulo: 'Variáveis', valor: nat.variavel },
+                  { sinal: '+', rotulo: 'Eventuais', valor: nat.eventual },
+                ]}
+                total={{ rotulo: 'Despesas do mês', valor: r.despesas }}
+              />
+              <Origem>
+                Despesas com data em {mesPorExtenso(mes)} (no cartão, a data da compra ou da parcela), só as suas. Pagar a fatura do cartão <b>não</b> entra aqui — é
+                transferência; a compra já foi contada. {r.aPagar ? `Ainda a pagar: ${moeda(r.aPagar)}.` : ''}
+              </Origem>
+            </>
+          }
+        />
         <Numero
           rotulo="Resultado do mês"
           valor={v(r.resultado)}
           icone={<Scale className="h-4 w-4" />}
           sub={r.receitas > 0 ? `${r.resultado >= 0 ? 'Sobra' : 'Falta'} de ${percentual(Math.abs(r.resultado) / r.receitas)} da receita` : undefined}
           negativo={r.resultado < 0}
+          explica={<Conta linhas={[{ rotulo: 'Receitas do mês', valor: r.receitas }, { sinal: '−', rotulo: 'Despesas do mês', valor: r.despesas }]} total={{ rotulo: 'Resultado do mês', valor: r.resultado }} />}
         />
+      </div>
       </div>
 
       {/* Classificação das despesas do mês, faturas e terceiros */}
@@ -293,13 +362,18 @@ export function Inicio() {
   )
 }
 
-function Numero({ rotulo, valor, icone, sub, destaque, negativo, acao }: { rotulo: string; valor: string; icone: ReactNode; sub?: string; destaque?: boolean; negativo?: boolean; acao?: ReactNode }) {
+function Numero({ rotulo, valor, icone, sub, destaque, negativo, acao, explica }: { rotulo: string; valor: string; icone: ReactNode; sub?: string; destaque?: boolean; negativo?: boolean; acao?: ReactNode; explica?: ReactNode }) {
   return (
     <div className={destaque ? 'rounded-2xl bg-gradient-to-br from-azul-700 to-azul-900 p-4 text-white shadow-lg shadow-azul-700/20 sm:p-5' : 'cartao'}>
       <div className={`flex items-center justify-between gap-2 text-xs font-semibold ${destaque ? 'text-white/70' : 'text-slate-500'}`}>
         <span className="flex items-center gap-1.5">
           {icone}
           {rotulo}
+          {explica && (
+            <Explicar titulo={rotulo} claro={destaque}>
+              {explica}
+            </Explicar>
+          )}
         </span>
         {acao}
       </div>
@@ -333,6 +407,17 @@ function DisponivelMes({ oculto }: { oculto: boolean }) {
             <div>
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
                 <Wallet className="h-4 w-4 text-azul-600" /> Ainda posso gastar este mês
+                <Explicar titulo="Ainda posso gastar este mês">
+                  <Conta
+                    linhas={[
+                      { rotulo: 'Renda do mês', valor: d.renda, dica: 'O que já entrou no mês ou, se ainda for menor, a renda prevista no Meu plano.' },
+                      { sinal: '−', rotulo: 'Separar (guardar + metas + provisão das anuais)', valor: d.separar, dica: 'Vem de “Todo mês, separe assim” no Meu plano.' },
+                      { sinal: '−', rotulo: 'Já gasto/lançado no mês', valor: d.gasto, dica: 'Despesas suas com data neste mês (inclui compras no cartão).' },
+                    ]}
+                    total={{ rotulo: 'Ainda posso gastar', valor: d.disponivel }}
+                  />
+                  {d.disponivel > 0 && <Origem>Dividido pelos {d.diasRestantes} dias que faltam: cerca de {moeda(d.porDia)} por dia.</Origem>}
+                </Explicar>
               </div>
               <div className={`text-3xl font-extrabold tracking-tight tabular-nums ${d.disponivel < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{v(d.disponivel)}</div>
               {d.disponivel > 0 && (

@@ -11,14 +11,30 @@ export interface LinhaExtrato {
   fitid: string | null
   lancamento_id: string | null
   ignorada: boolean
+  /** Despesa compartilhada: a saída e as entradas (reembolsos) do mesmo grupo */
+  compartilhado_id?: string | null
+  /** Estorno: linha do extrato que esta desfaz, lançamento afetado e como (para desfazer) */
+  estorno_de?: string | null
+  estorno_lancamento?: string | null
+  estorno_modo?: 'pendente' | 'novo' | 'reduziu' | 'apagou' | null
+  /** Operações para desfazer o estorno (lista gravada ao registrar) */
+  estorno_desfazer?: unknown[] | null
 }
 
 export type LinhaLida = Pick<LinhaExtrato, 'data' | 'descricao' | 'valor' | 'fitid'>
+
+/** Banco, agência e conta informados no arquivo (OFX traz em BANKACCTFROM). */
+export interface ContaDoArquivo {
+  banco: string
+  agencia: string
+  numero: string
+}
 
 export interface ExtratoLido {
   linhas: LinhaLida[]
   /** Saldo final informado no arquivo (OFX traz; CSV normalmente não) */
   saldo: { data: string; valor: number } | null
+  conta?: ContaDoArquivo | null
 }
 
 const dois = (n: number) => String(n).padStart(2, '0')
@@ -62,7 +78,28 @@ export function lerOfx(texto: string): ExtratoLido {
   const bal = /<LEDGERBAL>([\s\S]*?)(?:<\/LEDGERBAL>|$)/i.exec(texto)?.[1] ?? ''
   const saldoValor = numero(tag(bal, 'BALAMT'))
   const saldoData = lerData(tag(bal, 'DTASOF').slice(0, 8))
-  return { linhas, saldo: bal && Number.isFinite(saldoValor) && saldoData ? { data: saldoData, valor: saldoValor } : null }
+  const acct = /<(?:BANKACCTFROM|CCACCTFROM)>([\s\S]*?)(?:<\/(?:BANKACCTFROM|CCACCTFROM)>|<BANKTRANLIST>|$)/i.exec(texto)?.[1] ?? ''
+  const conta = acct && tag(acct, 'ACCTID') ? { banco: tag(acct, 'BANKID'), agencia: tag(acct, 'BRANCHID'), numero: tag(acct, 'ACCTID') } : null
+  return { linhas, saldo: bal && Number.isFinite(saldoValor) && saldoData ? { data: saldoData, valor: saldoValor } : null, conta }
+}
+
+const soDigitos = (t: string | null | undefined) => (t ?? '').replace(/\D/g, '').replace(/^0+/, '')
+
+/**
+ * O arquivo é desta conta? Compara banco e agência (quando os dois lados têm) e o número da conta,
+ * aceitando com ou sem dígito e número com a agência na frente (cada banco monta o OFX de um jeito).
+ */
+export function contaBate(cadastro: { banco_codigo?: string | null; agencia?: string | null; numero_conta?: string | null }, arq: ContaDoArquivo): 'bate' | 'nao_bate' | 'sem_dados' {
+  const num = soDigitos(cadastro.numero_conta)
+  if (!num) return 'sem_dados'
+  const banco = soDigitos(cadastro.banco_codigo)
+  if (banco && soDigitos(arq.banco) && banco !== soDigitos(arq.banco)) return 'nao_bate'
+  const ag = soDigitos(cadastro.agencia)
+  const agArq = soDigitos(arq.agencia)
+  if (ag && agArq && !ag.startsWith(agArq) && !agArq.startsWith(ag)) return 'nao_bate'
+  const n = soDigitos(arq.numero)
+  const iguais = (a: string, b: string) => a === b || a === b.slice(0, -1) || (b.length >= 5 && a.endsWith(b))
+  return n && (iguais(n, num) || iguais(num, n)) ? 'bate' : 'nao_bate'
 }
 
 // ---------------------------------------------------------------- CSV / planilha salva como CSV
@@ -185,6 +222,8 @@ export interface Conciliacao {
   /** Está no app, não apareceu no extrato */
   soApp: Lancamento[]
   ignoradas: LinhaExtrato[]
+  /** Linhas de estorno e as linhas que ficaram totalmente estornadas */
+  estornos: LinhaExtrato[]
 }
 
 /**
@@ -200,9 +239,13 @@ export function conciliar(linhas: LinhaExtrato[], lancamentos: Lancamento[], con
   const soExtrato: LinhaExtrato[] = []
   const ignoradas = linhas.filter((l) => l.ignorada)
   const pendentes: LinhaExtrato[] = []
+  // estorno: a própria linha do estorno e a original que ficou sem lançamento (estorno total)
+  const estornadas = new Set(linhas.filter((l) => l.estorno_modo && l.estorno_de).map((l) => l.estorno_de!))
+  const ehEstorno = (l: LinhaExtrato) => !!l.estorno_modo || (estornadas.has(l.id) && !l.lancamento_id)
+  const estornos = linhas.filter((l) => !l.ignorada && ehEstorno(l))
 
   for (const linha of linhas) {
-    if (linha.ignorada) continue
+    if (linha.ignorada || ehEstorno(linha)) continue
     const l = linha.lancamento_id ? porId.get(linha.lancamento_id) : undefined
     if (l && !usados.has(l.id)) {
       usados.add(l.id)
@@ -229,7 +272,37 @@ export function conciliar(linhas: LinhaExtrato[], lancamentos: Lancamento[], con
 
   pares.sort((a, b) => a.linha.data.localeCompare(b.linha.data))
   soExtrato.sort((a, b) => a.data.localeCompare(b.data))
-  return { pares, soExtrato, soApp: lancs.filter((l) => !usados.has(l.id)).sort((a, b) => a.data.localeCompare(b.data)), ignoradas }
+  // a "parte dos outros" de uma despesa compartilhada não tem linha própria no extrato
+  const grupos = new Set(linhas.map((l) => l.compartilhado_id).filter(Boolean))
+  const soApp = lancs.filter((l) => !usados.has(l.id) && !(l.compartilhado_id && grupos.has(l.compartilhado_id)))
+  return { pares, soExtrato, soApp: soApp.sort((a, b) => a.data.localeCompare(b.data)), ignoradas, estornos }
+}
+
+/**
+ * O que foi feito da última vez com uma linha de mesmo histórico: a descrição que você deu e a categoria
+ * (ou a conta de destino, se virou transferência). Serve para já preencher a classificação.
+ */
+export function sugestaoPorHistorico(
+  descricao: string,
+  historico: Pick<LinhaExtrato, 'descricao' | 'lancamento_id'>[],
+  lancamentos: Lancamento[],
+  contaId: string,
+): { descricao: string; categoria_id: string | null; transferir_para: string | null } | null {
+  const alvo = sem(descricao).replace(/\s+/g, ' ').trim()
+  const porId = new Map(lancamentos.map((l) => [l.id, l]))
+  const achados = historico
+    .filter((h) => h.lancamento_id && sem(h.descricao).replace(/\s+/g, ' ').trim() === alvo)
+    .map((h) => porId.get(h.lancamento_id!))
+    .filter((l): l is Lancamento => !!l)
+    .sort((a, b) => b.data.localeCompare(a.data))
+  const l = achados[0]
+  if (!l) {
+    const cat = categoriaPorDescricao(descricao, lancamentos)
+    return cat ? { descricao, categoria_id: cat, transferir_para: null } : null
+  }
+  // transferência: a "outra" conta é o destino (se saiu daqui) ou a origem (se entrou aqui)
+  if (l.tipo === 'transferencia') return { descricao: l.descricao, categoria_id: null, transferir_para: l.conta_id === contaId ? l.conta_destino_id : l.conta_id }
+  return { descricao: l.descricao, categoria_id: l.categoria_id, transferir_para: null }
 }
 
 /** Categoria usada da última vez num lançamento com a mesma descrição (para já sugerir). */
@@ -239,4 +312,197 @@ export function categoriaPorDescricao(descricao: string, lancamentos: Lancamento
     .sort((a, b) => b.data.localeCompare(a.data))
     .find((l) => l.categoria_id && sem(l.descricao).replace(/\s+/g, ' ').trim() === alvo)
   return achado?.categoria_id ?? null
+}
+
+// ---------------------------------------------------------------- despesa compartilhada
+
+export interface NovoLancamento {
+  tipo: 'receita' | 'despesa'
+  descricao: string
+  valor: number
+  data: string
+  conta_id: string
+  categoria_id: string | null
+  pessoa_id: string | null
+  reembolsado: boolean
+  pago: true
+  compartilhado_id: string
+}
+
+/**
+ * Paguei o total (uma saída do extrato) e recebi a parte dos outros (entradas, ex.: vários PIX).
+ * Gera os lançamentos para o saldo bater com o banco e a DRE mostrar só a minha parte:
+ *  - minha parte (despesa, na categoria) → ligada à saída;
+ *  - parte dos outros (despesa em nome da pessoa, já reembolsada) → fora da minha DRE;
+ *  - cada reembolso (receita em nome da pessoa) → ligado à sua entrada, também fora da minha DRE.
+ */
+export function planoCompartilhada(o: {
+  saida: LinhaExtrato
+  entradas: LinhaExtrato[]
+  contaId: string
+  categoriaId: string | null
+  descricao: string
+  pessoaId: string
+  grupo: string
+}): { linhaId: string | null; lanc: NovoLancamento }[] {
+  const cent = (v: number) => Math.round(v * 100)
+  const pago = Math.abs(cent(o.saida.valor))
+  const recebido = o.entradas.reduce((t, e) => t + cent(e.valor), 0)
+  const minha = pago - recebido
+  if (o.saida.valor >= 0) throw new Error('A despesa compartilhada parte de uma saída (valor pago).')
+  if (o.entradas.some((e) => e.valor <= 0)) throw new Error('Os reembolsos precisam ser entradas.')
+  if (minha < 0) throw new Error('Você recebeu mais do que pagou. Confira as entradas marcadas.')
+  const base = { conta_id: o.contaId, pago: true as const, compartilhado_id: o.grupo }
+  const itens: { linhaId: string | null; lanc: NovoLancamento }[] = []
+  if (minha > 0)
+    itens.push({ linhaId: o.saida.id, lanc: { ...base, tipo: 'despesa', descricao: o.descricao, valor: minha / 100, data: o.saida.data, categoria_id: o.categoriaId, pessoa_id: null, reembolsado: false } })
+  if (recebido > 0)
+    itens.push({
+      linhaId: minha > 0 ? null : o.saida.id,
+      lanc: { ...base, tipo: 'despesa', descricao: `${o.descricao} (parte dos outros)`, valor: recebido / 100, data: o.saida.data, categoria_id: o.categoriaId, pessoa_id: o.pessoaId, reembolsado: true },
+    })
+  for (const e of o.entradas)
+    itens.push({ linhaId: e.id, lanc: { ...base, tipo: 'receita', descricao: `Reembolso – ${o.descricao}`, valor: e.valor, data: e.data, categoria_id: null, pessoa_id: o.pessoaId, reembolsado: false } })
+  return itens
+}
+
+// ---------------------------------------------------------------- estorno
+
+export type OriginalEstorno = { linha: LinhaExtrato; lanc?: Lancamento } | { linha?: undefined; lanc: Lancamento }
+
+type NovoLanc = Omit<NovoLancamento, 'compartilhado_id' | 'pessoa_id' | 'reembolsado'> & { compartilhado_id?: string | null; pessoa_id?: string | null; reembolsado?: boolean }
+
+/** Uma mudança nos lançamentos. `ligar`/`desligar` mexem no vínculo da linha do extrato. */
+export type OpEstorno =
+  | { op: 'criar'; lanc: NovoLanc; ligar?: string }
+  | { op: 'valor'; id: string; de: number; para: number }
+  | { op: 'apagar'; lanc: Lancamento; desligar?: string }
+  | { op: 'religar'; linha: string; de: string; para: string }
+
+export interface PlanoEstorno {
+  modo: 'pendente' | 'novo' | 'reduziu' | 'apagou'
+  /** linha do extrato estornada (se a original veio do extrato) */
+  estorno_de: string | null
+  /** quanto sobra do original depois do estorno */
+  liquido: number
+  ops: OpEstorno[]
+}
+
+const cent = (v: number) => Math.round(v * 100)
+const real = (c: number) => c / 100
+
+/**
+ * Um estorno desfaz, no todo ou em parte, um pagamento (saída) ou recebimento (entrada) anterior.
+ *  - original ainda não lançado: lança só o líquido (ou nada, se o estorno foi total);
+ *  - original já lançado: reduz o lançamento para o líquido (ou o apaga, se o estorno foi total);
+ *  - reembolso de despesa compartilhada: o reembolso e a parte dos outros diminuem e a MINHA parte aumenta
+ *    (devolvi dinheiro a quem tinha pago, então a conta ficou mais cara para mim);
+ *  - a própria compra compartilhada: o estorno abate primeiro da minha parte, depois da dos outros.
+ * O saldo continua batendo com o banco. `grupo` são os lançamentos da mesma despesa compartilhada e
+ * `vinculos` diz a qual linha do extrato cada lançamento está ligado.
+ */
+export function planoEstorno(o: {
+  estorno: LinhaExtrato
+  original: OriginalEstorno
+  contaId: string
+  descricao: string
+  categoriaId: string | null
+  grupo?: Lancamento[]
+  vinculos?: Map<string, string>
+}): PlanoEstorno {
+  const e = Math.abs(cent(o.estorno.valor))
+  const { linha, lanc } = o.original
+  const sinalOriginal = linha ? Math.sign(linha.valor) : lanc!.tipo === 'receita' ? 1 : lanc!.conta_destino_id === o.contaId ? 1 : -1
+  if (sinalOriginal === Math.sign(o.estorno.valor)) throw new Error('O estorno precisa ter o sinal contrário: entrada estorna um pagamento, saída estorna um recebimento.')
+  const estorno_de = linha?.id ?? null
+  const maior = (base: number) => {
+    if (e > base) throw new Error(`O estorno (${real(e).toFixed(2)}) é maior que o valor original (${real(base).toFixed(2)}).`)
+  }
+
+  // original ainda não lançado: lança o líquido
+  if (!lanc) {
+    const base = Math.abs(cent(linha!.valor))
+    maior(base)
+    const liquido = real(base - e)
+    if (liquido === 0) return { modo: 'pendente', estorno_de, liquido, ops: [] }
+    return {
+      modo: 'novo',
+      estorno_de,
+      liquido,
+      ops: [{ op: 'criar', ligar: linha!.id, lanc: { tipo: linha!.valor > 0 ? 'receita' : 'despesa', descricao: o.descricao, valor: liquido, data: linha!.data, conta_id: o.contaId, categoria_id: o.categoriaId, pago: true } }],
+    }
+  }
+
+  // mexe num lançamento: novo valor ou apaga (e solta a linha ligada a ele)
+  const ajustar = (l: Lancamento, novo: number): OpEstorno => (novo > 0 ? { op: 'valor', id: l.id, de: l.valor, para: real(novo) } : { op: 'apagar', lanc: l, desligar: o.vinculos?.get(l.id) })
+  const grupo = lanc.compartilhado_id ? (o.grupo ?? []).filter((g) => g.compartilhado_id === lanc.compartilhado_id && g.id !== lanc.id) : []
+  const doGrupo = [lanc, ...grupo]
+  const minha = doGrupo.find((g) => g.tipo === 'despesa' && !g.pessoa_id)
+  const outros = doGrupo.find((g) => g.tipo === 'despesa' && !!g.pessoa_id)
+
+  // reembolso de despesa compartilhada estornado (devolvi parte do PIX que recebi)
+  if (lanc.compartilhado_id && lanc.tipo === 'receita' && lanc.pessoa_id) {
+    const base = cent(lanc.valor)
+    maior(base)
+    const ops: OpEstorno[] = [ajustar(lanc, base - e)]
+    let saidaSolta: string | undefined
+    if (outros) {
+      const op = ajustar(outros, cent(outros.valor) - e)
+      if (op.op === 'apagar') saidaSolta = op.desligar
+      ops.push(op)
+    }
+    if (minha) ops.push({ op: 'valor', id: minha.id, de: minha.valor, para: real(cent(minha.valor) + e) })
+    else {
+      const modelo = outros ?? lanc
+      ops.push({
+        op: 'criar',
+        ligar: saidaSolta,
+        lanc: {
+          tipo: 'despesa',
+          descricao: modelo.descricao.replace(/ \(parte dos outros\)$/, ''),
+          valor: real(e),
+          data: modelo.data,
+          conta_id: modelo.conta_id,
+          categoria_id: modelo.categoria_id,
+          pago: true,
+          compartilhado_id: lanc.compartilhado_id,
+        },
+      })
+      // a saída fica ligada à minha parte nova (o "apagar" acima já a soltou)
+      if (saidaSolta) {
+        const i = ops.findIndex((x) => x.op === 'apagar' && x.lanc.id === outros!.id)
+        if (i >= 0) ops[i] = { ...(ops[i] as Extract<OpEstorno, { op: 'apagar' }>), desligar: undefined }
+      }
+    }
+    const liquido = real(base - e)
+    return { modo: liquido === 0 ? 'apagou' : 'reduziu', estorno_de, liquido, ops }
+  }
+
+  // a própria compra compartilhada estornada: abate da minha parte, depois da dos outros
+  if (lanc.compartilhado_id && lanc.tipo === 'despesa' && (minha || outros)) {
+    const cm = minha ? cent(minha.valor) : 0
+    const co = outros ? cent(outros.valor) : 0
+    maior(cm + co)
+    const daMinha = Math.min(e, cm)
+    const dosOutros = e - daMinha
+    const ops: OpEstorno[] = []
+    if (minha && daMinha > 0) ops.push(ajustar(minha, cm - daMinha))
+    if (outros && dosOutros > 0) ops.push(ajustar(outros, co - dosOutros))
+    // se a minha parte sumiu e a saída estava ligada a ela, passa a ligar na parte dos outros que sobrou
+    const apagouMinha = ops.find((x) => x.op === 'apagar' && x.lanc.id === minha?.id) as Extract<OpEstorno, { op: 'apagar' }> | undefined
+    if (apagouMinha?.desligar && outros && co - dosOutros > 0) {
+      apagouMinha.desligar = undefined
+      ops.push({ op: 'religar', linha: o.vinculos!.get(minha!.id)!, de: minha!.id, para: outros.id })
+    }
+    const liquido = real(cm + co - e)
+    return { modo: liquido === 0 ? 'apagou' : 'reduziu', estorno_de, liquido, ops }
+  }
+
+  // lançamento comum
+  const base = cent(lanc.valor)
+  maior(base)
+  const liquido = real(base - e)
+  const op = ajustar(lanc, base - e)
+  if (op.op === 'apagar' && linha && !op.desligar) op.desligar = linha.id
+  return { modo: liquido === 0 ? 'apagou' : 'reduziu', estorno_de, liquido, ops: [op] }
 }

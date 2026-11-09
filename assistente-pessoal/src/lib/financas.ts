@@ -1,4 +1,4 @@
-import type { Categoria, Conta, Lancamento, Natureza } from '../tipos'
+import type { AjustesFatura, Categoria, Conta, Lancamento, Natureza } from '../tipos'
 import { somar } from './calculos'
 import { diasNoMes, mesDe, somarMeses, somarMesesAoMes } from './datas'
 
@@ -52,18 +52,27 @@ const diaNoMes = (mes: string, dia: number) => {
  * Mês ("AAAA-MM") da fatura em que a compra cai, identificado pelo mês do vencimento.
  * Compra a partir do dia do fechamento vai para a fatura seguinte.
  * Ex.: fecha dia 3, vence dia 10 → compra em 02/09 = fatura de set; compra em 03/09 = fatura de out.
+ * `ajustes` são faturas com datas fora do padrão (ex.: fechou dia 24 em vez de 26 naquele mês).
  */
-export function faturaDe(data: string, fechamento: number | null, vencimento: number | null) {
+export function faturaDe(data: string, fechamento: number | null, vencimento: number | null, ajustes?: AjustesFatura) {
   if (!fechamento || !vencimento) return mesDe(data)
   const dia = Number(data.slice(8, 10))
   const [a, m] = mesDe(data).split('-').map(Number)
   const fechaEste = Math.min(fechamento, diasNoMes(a, m))
   const mesFechamento = dia >= fechaEste ? somarMesesAoMes(mesDe(data), 1) : mesDe(data)
-  return vencimento > fechamento ? mesFechamento : somarMesesAoMes(mesFechamento, 1)
+  let mes = vencimento > fechamento ? mesFechamento : somarMesesAoMes(mesFechamento, 1)
+  if (!ajustes || !Object.keys(ajustes).length) return mes
+  // com datas ajustadas: a compra é da 1ª fatura que fecha depois dela
+  const fecha = (x: string) => datasDaFatura(x, fechamento, vencimento, ajustes).fechamento!
+  for (let i = 0; i < 3 && data >= fecha(mes); i++) mes = somarMesesAoMes(mes, 1)
+  for (let i = 0; i < 3 && data < fecha(somarMesesAoMes(mes, -1)); i++) mes = somarMesesAoMes(mes, -1)
+  return mes
 }
 
-/** Datas de fechamento e vencimento da fatura do mês (mês = vencimento). */
-export function datasDaFatura(mes: string, fechamento: number | null, vencimento: number | null) {
+/** Datas de fechamento e vencimento da fatura do mês (mês = vencimento); usa o ajuste do mês, se houver. */
+export function datasDaFatura(mes: string, fechamento: number | null, vencimento: number | null, ajustes?: AjustesFatura) {
+  const aj = ajustes?.[mes]
+  if (aj) return { fechamento: aj.fechamento, vencimento: aj.vencimento }
   if (!fechamento || !vencimento) return { fechamento: null, vencimento: null }
   const mesFech = vencimento > fechamento ? mes : somarMesesAoMes(mes, -1)
   return { fechamento: diaNoMes(mesFech, fechamento), vencimento: diaNoMes(mes, vencimento) }
@@ -83,18 +92,19 @@ export interface Fatura {
 export function faturasDoCartao(cartao: Conta, lancamentos: Lancamento[]): Fatura[] {
   const F = cartao.dia_fechamento
   const V = cartao.dia_vencimento
+  const A = cartao.ajustes_fatura
   const mapa = new Map<string, Lancamento[]>()
   for (const l of lancamentos) {
     if (l.conta_id !== cartao.id || l.tipo === 'transferencia') continue
-    const m = faturaDe(l.data, F, V)
+    const m = faturaDe(l.data, F, V, A)
     mapa.set(m, [...(mapa.get(m) ?? []), l])
   }
   const pagamentos = lancamentos.filter((l) => l.tipo === 'transferencia' && l.conta_destino_id === cartao.id)
   return [...mapa.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([mes, itens]) => {
-      const d = datasDaFatura(mes, F, V)
-      const proxima = datasDaFatura(somarMesesAoMes(mes, 1), F, V).fechamento
+      const d = datasDaFatura(mes, F, V, A)
+      const proxima = datasDaFatura(somarMesesAoMes(mes, 1), F, V, A).fechamento
       const pago = d.fechamento
         ? somar(pagamentos.filter((p) => p.data >= d.fechamento! && (!proxima || p.data < proxima)).map((p) => p.valor))
         : 0

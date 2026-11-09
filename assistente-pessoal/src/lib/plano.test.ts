@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Categoria, Lancamento, Recorrencia } from '../tipos'
-import { disponivelNoMes, mensalizado, montarPlano, ocorreNoMes, projetar } from './plano'
+import { despesasPorMes, disponivelNoMes, mensalizado, montarPlano, ocorreNoMes, projetar } from './plano'
 
 const cat = (id: string, natureza: Categoria['natureza'], essencial: boolean, orcamento_mensal: number | null = null): Categoria => ({
   id,
@@ -107,6 +107,15 @@ describe('plano financeiro', () => {
     hoje: '2026-10-02',
   })
 
+  it('renda mínima mês a mês: todas as despesas (recorrentes + parcelas + dia a dia), do mês atual para frente', () => {
+    const ms = despesasPorMes({ plano, recorrencias, lancamentos, hoje: '2026-10-02', meses: 3 })
+    expect(ms.map((m) => m.mes)).toEqual(['2026-10', '2026-11', '2026-12'])
+    for (const m of ms) expect(m.total).toBeCloseTo(m.recorrentes + m.parcelas + m.diaADia, 2)
+    // a parcela de 350 só pesa em novembro
+    expect(ms[1].parcelas).toBe(350)
+    expect(ms[0].parcelas).toBe(0)
+  })
+
   it('renda: recorrente + média das receitas avulsas', () => {
     expect(plano.renda).toEqual({ recorrente: 10000, variavelMedia: 300, total: 10300 })
   })
@@ -120,14 +129,17 @@ describe('plano financeiro', () => {
     expect(plano.rendaMinima).toBe(4900)
     expect(plano.provisaoAnuais).toBe(200)
   })
-  it('reserva de emergência de 6 meses de gastos essenciais', () => {
-    expect(plano.reserva.alvo).toBe(29400)
-    expect(plano.reserva.falta).toBe(19400)
-    // guardar 20% da renda (2.060); a reserva leva o necessário para completar em 12 meses
+  it('reserva de emergência: 6 meses de todas as despesas (fixos, cartão, parcelas e dia a dia)', () => {
+    expect(plano.reserva.alvo).toBe(Math.round(plano.custoTotal * 6 * 100) / 100)
+    expect(plano.reserva.soEssencial).toBe(29400)
+    expect(plano.reserva.falta).toBe(Math.round((plano.reserva.alvo - 10000) * 100) / 100)
+    // guardar 20% da renda (2.060); a reserva leva o necessário para completar em 12 meses, limitado ao que se guarda
     expect(plano.guardar).toBe(2060)
-    expect(plano.reserva.aporte).toBe(1616.67)
-    expect(plano.investir).toBe(443.33)
-    expect(plano.reserva.meses).toBe(12)
+    expect(plano.reserva.aporte).toBe(Math.min(2060, Math.ceil((plano.reserva.falta / 12) * 100) / 100))
+    expect(plano.investir).toBe(Math.round((2060 - plano.reserva.aporte) * 100) / 100)
+    // a composição soma o custo de vida
+    const c = plano.composicao
+    expect(Math.round((c.fixosForaCartao + c.fixosCartao + c.comprasCartao + c.outros + c.ajusteOrcamento) * 100) / 100).toBe(plano.custoTotal)
   })
   it('renda necessária para cobrir as despesas com a margem de folga escolhida', () => {
     // despesas 5.850 + 25% de folga = 7.312,50
@@ -167,5 +179,50 @@ describe('plano financeiro', () => {
     expect(d.separar).toBe(2060 + 1000 + 200)
     expect(d.disponivel).toBe(10300 - 3000 - 3260)
     expect(d.diasRestantes).toBe(30)
+  })
+})
+
+describe('recorrência de N em N dias', () => {
+  const faxina = { inicio: '2026-11-09', fim: null, intervalo_meses: 1, intervalo_dias: 15, ativa: true }
+  it('conta quantas vezes cai em cada mês', async () => {
+    const { vezesNoMes } = await import('./plano')
+    expect(vezesNoMes(faxina, '2026-11')).toBe(2) // 09 e 24/11
+    expect(vezesNoMes(faxina, '2026-12')).toBe(2) // 09 e 24/12
+    expect(vezesNoMes(faxina, '2026-10')).toBe(0)
+    expect(vezesNoMes({ ...faxina, intervalo_dias: 7 }, '2026-12')).toBe(4) // 07, 14, 21 e 28/12
+    expect(vezesNoMes({ ...faxina, intervalo_dias: 7 }, '2026-11')).toBe(4) // 09, 16, 23 e 30/11
+    expect(vezesNoMes({ ...faxina, fim: '2026-11-20' }, '2026-11')).toBe(1)
+  })
+  it('valor mensal equivalente: R$ 200 a cada 15 dias ≈ R$ 405,83', async () => {
+    const { mensalizado } = await import('./plano')
+    expect(mensalizado({ valor: 200, intervalo_meses: 1, intervalo_dias: 15 })).toBe(405.83)
+    expect(mensalizado({ valor: 2400, intervalo_meses: 12 })).toBe(200)
+  })
+  it('datas da série', async () => {
+    const { datasPorDias } = await import('./datas')
+    expect(datasPorDias('2026-11-09', 15, '2026-11-10', '2027-01-10')).toEqual(['2026-11-24', '2026-12-09', '2026-12-24', '2027-01-08'])
+  })
+})
+
+describe('reserva considera o cartão de crédito', () => {
+  it('assinaturas e compras no cartão entram na base da reserva', () => {
+    const p = montarPlano({
+      categorias: [cat('ass', 'fixa', false), cat('casa', 'fixa', true), cat('lazer', 'variavel', false)],
+      recorrencias: [rec({ categoria_id: 'casa', valor: 2000, conta_id: 'banco' }), rec({ categoria_id: 'ass', valor: 100, conta_id: 'nubank' })],
+      lancamentos: [lanc({ categoria_id: 'lazer', valor: 300, data: '2026-09-10', conta_id: 'nubank' }), lanc({ categoria_id: 'lazer', valor: 60, data: '2026-09-12', conta_id: 'banco' })],
+      metas: [],
+      aportes: [],
+      config: { meses_reserva: 6, pct_investimento: 20, margem_folga: 20 },
+      saldoReserva: 0,
+      hoje: '2026-10-05',
+      cartoes: ['nubank'],
+    })
+    expect(p.composicao.fixosForaCartao).toBe(2000)
+    expect(p.composicao.fixosCartao).toBe(100)
+    expect(p.composicao.comprasCartao).toBe(300)
+    expect(p.composicao.outros).toBe(60)
+    // 6 × (2.000 + 100 + 300 + 60), não só os essenciais (6 × 2.000)
+    expect(p.reserva.alvo).toBe(14760)
+    expect(p.reserva.soEssencial).toBe(12000)
   })
 })

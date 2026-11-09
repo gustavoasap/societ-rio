@@ -2,7 +2,7 @@ import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
 import { hoje, mesAtual, primeiroDia, somarMesesAoMes, ultimoDia } from '../lib/datas'
 import { buscarConfig, buscarLancamentos, buscarMetas, buscarRecorrencias, useDados } from '../lib/dados'
-import { disponivelNoMes, montarPlano, projetar } from '../lib/plano'
+import { despesasPorMes, disponivelNoMes, montarPlano, projetar } from '../lib/plano'
 
 /** Carrega o que o plano precisa (12 meses para trás e 12 para frente) e monta plano, projeção e disponível do mês. */
 export function usePlano() {
@@ -32,6 +32,7 @@ export function usePlano() {
     config: config.dados,
     saldoReserva,
     hoje: hj,
+    cartoes: contas.filter((c) => c.tipo === 'cartao').map((c) => c.id),
   })
   return {
     carregando: false,
@@ -45,6 +46,7 @@ export function usePlano() {
       temContaReserva: ativas.some((c) => c.reserva),
       projecao: projetar({ plano, recorrencias: recs.dados, lancamentos: lanc.dados, patrimonioAtual: patrimonio, hoje: hj }),
       disponivel: disponivelNoMes({ plano, lancamentos: lanc.dados, hoje: hj }),
+      despesasMes: despesasPorMes({ plano, recorrencias: recs.dados, lancamentos: lanc.dados, hoje: hj }),
     },
   }
 }

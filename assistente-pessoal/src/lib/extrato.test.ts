@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Lancamento } from '../tipos'
-import { categoriaPorDescricao, chaveLinha, conciliar, lerCsv, lerData, lerExtrato, lerOfx, type LinhaExtrato } from './extrato'
+import { categoriaPorDescricao, chaveLinha, conciliar, contaBate, lerCsv, lerData, lerExtrato, lerOfx, planoCompartilhada, planoEstorno, sugestaoPorHistorico, type LinhaExtrato } from './extrato'
 
 const OFX = `OFXHEADER:100
 DATA:OFXSGML
@@ -126,5 +126,188 @@ describe('conciliação', () => {
     const ls = [lanc({ descricao: 'PIX PADARIA', categoria_id: 'alim', data: '2026-09-01' }), lanc({ descricao: 'pix  padaria', categoria_id: 'merc', data: '2026-10-01' })]
     expect(categoriaPorDescricao('Pix Padaria', ls)).toBe('merc')
     expect(categoriaPorDescricao('Outra coisa', ls)).toBeNull()
+  })
+})
+
+describe('dados da conta no OFX', () => {
+  const ofx = (bank: string, branch: string, acct: string) =>
+    `OFXHEADER:100\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL<BANKACCTFROM><BANKID>${bank}<BRANCHID>${branch}<ACCTID>${acct}<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST><STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261003<TRNAMT>-10.00<FITID>1<MEMO>X</STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`
+
+  it('lê banco, agência e conta', () => {
+    expect(lerOfx(ofx('0341', '1234', '12345-6')).conta).toEqual({ banco: '0341', agencia: '1234', numero: '12345-6' })
+    expect(lerOfx(OFX).conta).toBeNull()
+  })
+
+  it('confere com o cadastro (zeros à esquerda, com ou sem dígito, agência na frente)', () => {
+    const itau = { banco_codigo: '341', agencia: '1234', numero_conta: '12345-6' }
+    expect(contaBate(itau, { banco: '0341', agencia: '1234', numero: '12345-6' })).toBe('bate')
+    expect(contaBate(itau, { banco: '0341', agencia: '', numero: '123456' })).toBe('bate')
+    expect(contaBate(itau, { banco: '341', agencia: '1234', numero: '12345' })).toBe('bate')
+    expect(contaBate(itau, { banco: '341', agencia: '', numero: '1234123456' })).toBe('bate')
+    expect(contaBate(itau, { banco: '237', agencia: '1234', numero: '12345-6' })).toBe('nao_bate')
+    expect(contaBate(itau, { banco: '341', agencia: '9999', numero: '12345-6' })).toBe('nao_bate')
+    expect(contaBate(itau, { banco: '341', agencia: '1234', numero: '99999-9' })).toBe('nao_bate')
+    expect(contaBate({ banco_codigo: '341' }, { banco: '341', agencia: '1', numero: '1' })).toBe('sem_dados')
+  })
+})
+
+describe('sugestão pelo histórico do extrato', () => {
+  const l1 = lanc({ id: 'l1', descricao: 'Padaria', categoria_id: 'alim', data: '2026-09-03' })
+  const l2 = lanc({ id: 'l2', tipo: 'transferencia', descricao: 'Fatura Nubank', valor: 900, data: '2026-09-03', conta_id: 'itau', conta_destino_id: 'nubank' })
+  const hist = [
+    { descricao: 'PIX ENVIADO PADARIA PAO QUENTE', lancamento_id: 'l1' },
+    { descricao: 'PAGAMENTO FATURA NU', lancamento_id: 'l2' },
+  ]
+  it('repete a descrição e a categoria dadas da última vez', () => {
+    expect(sugestaoPorHistorico('PIX enviado padaria pao quente', hist, [l1, l2], 'itau')).toEqual({ descricao: 'Padaria', categoria_id: 'alim', transferir_para: null })
+  })
+  it('lembra quando virou transferência (pagamento de fatura)', () => {
+    expect(sugestaoPorHistorico('PAGAMENTO FATURA NU', hist, [l1, l2], 'itau')).toEqual({ descricao: 'Fatura Nubank', categoria_id: null, transferir_para: 'nubank' })
+  })
+  it('sem histórico: nada', () => {
+    expect(sugestaoPorHistorico('TED QUALQUER', hist, [l1, l2], 'itau')).toBeNull()
+  })
+})
+
+describe('despesa compartilhada', () => {
+  const saida = linha({ id: 's', data: '2026-11-01', descricao: 'PIX ENVIADO RESTAURANTE', valor: -89.9 })
+  const pix = [1, 2, 3, 4, 5, 6, 7].map((i) => linha({ id: `p${i}`, data: '2026-11-01', descricao: `PIX RECEBIDO AMIGO ${i}`, valor: 10 }))
+  const plano = planoCompartilhada({ saida, entradas: pix, contaId: 'itau', categoriaId: 'alim', descricao: 'Churrasco', pessoaId: 'rateio', grupo: 'g1' })
+
+  it('minha parte na categoria, parte dos outros e reembolsos em nome da pessoa', () => {
+    expect(plano[0]).toEqual({ linhaId: 's', lanc: expect.objectContaining({ tipo: 'despesa', valor: 19.9, categoria_id: 'alim', pessoa_id: null }) })
+    expect(plano[1]).toEqual({ linhaId: null, lanc: expect.objectContaining({ tipo: 'despesa', valor: 70, pessoa_id: 'rateio', reembolsado: true }) })
+    expect(plano.slice(2).map((x) => [x.linhaId, x.lanc.tipo, x.lanc.valor, x.lanc.pessoa_id])).toEqual(pix.map((p) => [p.id, 'receita', 10, 'rateio']))
+    expect(plano.every((x) => x.lanc.compartilhado_id === 'g1')).toBe(true)
+  })
+
+  it('o saldo bate com o banco (−89,90 + 7 × 10) e a minha DRE só vê 19,90', () => {
+    const efeito = plano.reduce((t, x) => t + (x.lanc.tipo === 'receita' ? 1 : -1) * Math.round(x.lanc.valor * 100), 0)
+    expect(efeito).toBe(Math.round((-89.9 + 70) * 100))
+    expect(plano.filter((x) => !x.lanc.pessoa_id).map((x) => x.lanc.valor)).toEqual([19.9])
+  })
+
+  it('se todos pagaram tudo, a saída fica com a parte dos outros', () => {
+    const r = planoCompartilhada({ saida: linha({ id: 's', valor: -30 }), entradas: [linha({ id: 'a', valor: 30 })], contaId: 'itau', categoriaId: null, descricao: 'Presente', pessoaId: 'x', grupo: 'g' })
+    expect(r.map((x) => [x.linhaId, x.lanc.tipo, x.lanc.valor])).toEqual([
+      ['s', 'despesa', 30],
+      ['a', 'receita', 30],
+    ])
+  })
+
+  it('recebeu mais do que pagou: erro', () => {
+    expect(() => planoCompartilhada({ saida: linha({ valor: -10 }), entradas: [linha({ valor: 20 })], contaId: 'i', categoriaId: null, descricao: 'x', pessoaId: 'p', grupo: 'g' })).toThrow(/mais do que pagou/)
+  })
+
+  it('na conciliação, a parte dos outros não aparece como "só no app"', () => {
+    const parte = lanc({ id: 'outros', valor: 70, data: '2026-11-01', compartilhado_id: 'g1', pessoa_id: 'rateio' })
+    const minha = lanc({ id: 'minha', valor: 19.9, data: '2026-11-01', compartilhado_id: 'g1' })
+    const r = conciliar([linha({ id: 's', data: '2026-11-01', valor: -89.9, lancamento_id: 'minha', compartilhado_id: 'g1' })], [parte, minha], 'itau')
+    expect(r.pares.map((p) => p.lanc.id)).toEqual(['minha'])
+    expect(r.soApp).toEqual([])
+  })
+})
+
+describe('estorno', () => {
+  const pago = linha({ id: 'o', data: '2026-11-02', descricao: 'COMPRA LOJA X', valor: -100 })
+  const args = { contaId: 'itau', descricao: 'Loja X', categoriaId: 'roupas' }
+
+  it('original ainda não lançado, estorno parcial: lança só o líquido', () => {
+    const r = planoEstorno({ ...args, estorno: linha({ id: 'e', valor: 30 }), original: { linha: pago } })
+    expect(r.modo).toBe('novo')
+    expect(r.liquido).toBe(70)
+    expect(r.ops).toEqual([{ op: 'criar', ligar: 'o', lanc: expect.objectContaining({ tipo: 'despesa', valor: 70, data: '2026-11-02', categoria_id: 'roupas' }) }])
+  })
+
+  it('original ainda não lançado, estorno total: não lança nada', () => {
+    expect(planoEstorno({ ...args, estorno: linha({ valor: 100 }), original: { linha: pago } })).toEqual({ modo: 'pendente', estorno_de: 'o', liquido: 0, ops: [] })
+  })
+
+  it('original já lançado: parcial reduz, total apaga e solta a linha', () => {
+    const l = lanc({ id: 'L', valor: 100 })
+    expect(planoEstorno({ ...args, estorno: linha({ valor: 30 }), original: { linha: { ...pago, lancamento_id: 'L' }, lanc: l } }).ops).toEqual([{ op: 'valor', id: 'L', de: 100, para: 70 }])
+    expect(planoEstorno({ ...args, estorno: linha({ valor: 100 }), original: { linha: { ...pago, lancamento_id: 'L' }, lanc: l } }).ops).toEqual([{ op: 'apagar', lanc: l, desligar: 'o' }])
+  })
+
+  it('recebimento estornado (saída) de lançamento sem linha no extrato', () => {
+    const rec = lanc({ id: 'R', tipo: 'receita', valor: 500 })
+    const r = planoEstorno({ ...args, estorno: linha({ valor: -200 }), original: { lanc: rec } })
+    expect([r.estorno_de, r.liquido, r.ops]).toEqual([null, 300, [{ op: 'valor', id: 'R', de: 500, para: 300 }]])
+  })
+
+  it('sinal igual ou estorno maior que o original: erro', () => {
+    expect(() => planoEstorno({ ...args, estorno: linha({ valor: -30 }), original: { linha: pago } })).toThrow(/sinal contrário/)
+    expect(() => planoEstorno({ ...args, estorno: linha({ valor: 150 }), original: { linha: pago } })).toThrow(/maior que o valor original/)
+  })
+
+  it('na conciliação, estorno e original estornada saem de "a classificar"', () => {
+    const r = conciliar([pago, linha({ id: 'e', data: '2026-11-05', valor: 100, estorno_de: 'o', estorno_modo: 'pendente' }), linha({ id: 'x', valor: -5 })], [], 'itau')
+    expect(r.estornos.map((l) => l.id)).toEqual(['o', 'e'])
+    expect(r.soExtrato.map((l) => l.id)).toEqual(['x'])
+  })
+})
+
+describe('estorno em despesa compartilhada (pago 89,90, recebi 7 × 10)', () => {
+  const g = { compartilhado_id: 'g1' }
+  const minha = lanc({ ...g, id: 'minha', descricao: 'Churrasco', valor: 19.9, categoria_id: 'alim' })
+  const outros = lanc({ ...g, id: 'outros', descricao: 'Churrasco (parte dos outros)', valor: 70, pessoa_id: 'rateio', reembolsado: true, categoria_id: 'alim' })
+  const pix = (id: string) => lanc({ ...g, id, tipo: 'receita', descricao: 'Reembolso – Churrasco', valor: 10, pessoa_id: 'rateio' })
+  const grupo = [minha, outros, pix('p1'), pix('p2')]
+  const vinculos = new Map([['minha', 's'], ['p1', 'l1'], ['p2', 'l2']])
+  const base = { contaId: 'itau', descricao: 'x', categoriaId: null, grupo, vinculos }
+  // efeito no saldo de um conjunto de lançamentos (despesa sai, receita entra)
+  const saldo = (ls: { tipo: string; valor: number }[]) => ls.reduce((t, l) => t + (l.tipo === 'receita' ? 1 : -1) * Math.round(l.valor * 100), 0)
+  const aplicar = (ops: ReturnType<typeof planoEstorno>['ops']) => {
+    let ls = grupo.map((l) => ({ ...l }))
+    for (const op of ops) {
+      if (op.op === 'valor') ls = ls.map((l) => (l.id === op.id ? { ...l, valor: op.para } : l))
+      if (op.op === 'apagar') ls = ls.filter((l) => l.id !== op.lanc.id)
+      if (op.op === 'criar') ls.push({ ...lanc({}), ...op.lanc, id: 'nova' })
+    }
+    return ls
+  }
+
+  it('devolvi 5 de um PIX de 10: reembolso 5, parte dos outros 65, minha parte 24,90', () => {
+    const r = planoEstorno({ ...base, estorno: linha({ valor: -5 }), original: { linha: linha({ id: 'l1', valor: 10, lancamento_id: 'p1' }), lanc: pix('p1') } })
+    expect(r.ops).toEqual([
+      { op: 'valor', id: 'p1', de: 10, para: 5 },
+      { op: 'valor', id: 'outros', de: 70, para: 65 },
+      { op: 'valor', id: 'minha', de: 19.9, para: 24.9 },
+    ])
+    const depois = aplicar(r.ops)
+    // antes: −19,90 −70 +10 +10 = −69,90 ; o estorno tira mais 5 da conta
+    expect(saldo(depois)).toBe(saldo(grupo) - 500)
+    expect(depois.filter((l) => !l.pessoa_id).map((l) => l.valor)).toEqual([24.9])
+  })
+
+  it('devolvi o PIX inteiro: reembolso some, minha parte sobe 10', () => {
+    const r = planoEstorno({ ...base, estorno: linha({ valor: -10 }), original: { linha: linha({ id: 'l1', valor: 10, lancamento_id: 'p1' }), lanc: pix('p1') } })
+    expect(r.modo).toBe('apagou')
+    expect(r.ops[0]).toEqual({ op: 'apagar', lanc: pix('p1'), desligar: 'l1' })
+    expect(r.ops.slice(1)).toEqual([
+      { op: 'valor', id: 'outros', de: 70, para: 60 },
+      { op: 'valor', id: 'minha', de: 19.9, para: 29.9 },
+    ])
+  })
+
+  it('sem minha parte (todos pagaram tudo): cria a minha parte e liga a saída nela se a dos outros zerar', () => {
+    const o2 = lanc({ ...g, id: 'outros', descricao: 'Presente (parte dos outros)', valor: 10, pessoa_id: 'rateio', reembolsado: true })
+    const p = lanc({ ...g, id: 'p1', tipo: 'receita', valor: 10, pessoa_id: 'rateio' })
+    const r = planoEstorno({ ...base, grupo: [o2, p], vinculos: new Map([['outros', 's'], ['p1', 'l1']]), estorno: linha({ valor: -10 }), original: { lanc: p } })
+    expect(r.ops).toEqual([
+      { op: 'apagar', lanc: p, desligar: 'l1' },
+      { op: 'apagar', lanc: o2, desligar: undefined },
+      { op: 'criar', ligar: 's', lanc: expect.objectContaining({ tipo: 'despesa', descricao: 'Presente', valor: 10, compartilhado_id: 'g1' }) },
+    ])
+  })
+
+  it('a loja devolveu 30 da compra compartilhada: abate da minha parte e depois da dos outros', () => {
+    const r = planoEstorno({ ...base, estorno: linha({ valor: 30 }), original: { linha: linha({ id: 's', valor: -89.9, lancamento_id: 'minha' }), lanc: minha } })
+    expect(r.liquido).toBe(59.9)
+    expect(r.ops).toEqual([
+      { op: 'apagar', lanc: minha, desligar: undefined },
+      { op: 'valor', id: 'outros', de: 70, para: 59.9 },
+      { op: 'religar', linha: 's', de: 'minha', para: 'outros' },
+    ])
   })
 })

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Aporte, Categoria, Config, Conta, Etapa, Lancamento, Meta, Objetivo, Pessoa, Recorrencia } from '../tipos'
+import type { AjustesFatura, Aporte, Categoria, Config, Conta, Etapa, Lancamento, Meta, Objetivo, Pessoa, Recorrencia } from '../tipos'
 import type { LinhaExtrato } from './extrato'
 import { supabase } from './supabase'
 
@@ -66,12 +66,18 @@ const num = <T extends object>(linhas: T[], campos: (keyof T)[]) =>
 // ---------------------------------------------------------------- leitura
 
 export async function buscarContas() {
-  const [contas, saldos] = await Promise.all([
+  const [contas, saldos, datas] = await Promise.all([
     supabase.from('pes_contas').select('*').order('ordem').order('nome'),
     supabase.from('pes_saldos').select('*'),
+    supabase.from('pes_fatura_datas').select('conta_id, mes, fechamento, vencimento'),
   ])
   const mapa = new Map(ok(saldos).map((s: { conta_id: string; saldo: number }) => [s.conta_id, Number(s.saldo)]))
-  return num(ok(contas) as Conta[], ['saldo_inicial', 'limite']).map((c) => ({ ...c, saldo: mapa.get(c.id) ?? c.saldo_inicial }))
+  // sem a tabela (banco ainda não atualizado) segue só com as datas padrão
+  const ajustes = new Map<string, AjustesFatura>()
+  for (const d of (datas.error ? [] : datas.data) as { conta_id: string; mes: string; fechamento: string; vencimento: string }[]) {
+    ajustes.set(d.conta_id, { ...ajustes.get(d.conta_id), [d.mes.slice(0, 7)]: { fechamento: d.fechamento, vencimento: d.vencimento } })
+  }
+  return num(ok(contas) as Conta[], ['saldo_inicial', 'limite']).map((c) => ({ ...c, saldo: mapa.get(c.id) ?? c.saldo_inicial, ajustes_fatura: ajustes.get(c.id) ?? {} }))
 }
 export type ContaComSaldo = Awaited<ReturnType<typeof buscarContas>>[number]
 
@@ -140,10 +146,73 @@ export async function buscarExtrato(contaId: string, inicio: string, fim: string
   return num(ok(r) as LinhaExtrato[], ['valor'])
 }
 
+/** Extrato do período: de uma conta ou de todas (contaId null). */
+export async function buscarExtratoPeriodo(inicio: string, fim: string, contaId: string | null) {
+  let q = supabase.from('pes_extrato').select('*').gte('data', inicio).lte('data', fim)
+  if (contaId) q = q.eq('conta_id', contaId)
+  const r = await q.order('data').order('criado_em').limit(5000)
+  return num(ok(r) as LinhaExtrato[], ['valor'])
+}
+
+/**
+ * Saldo de uma conta no fim do dia anterior a `inicio` e no fim de `fim`.
+ * Usa o saldo informado pelo banco (OFX ou digitado) mais próximo do período e as linhas do extrato entre as datas;
+ * sem saldo do banco, usa o saldo calculado pelo app (saldo inicial + o que foi pago/recebido).
+ */
+export async function saldosDoPeriodo(conta: { id: string; saldo_inicial: number }, inicio: string, fim: string) {
+  const r = await supabase.from('pes_extrato_saldos').select('data, saldo').eq('conta_id', conta.id).order('data')
+  const brutos = r.error || !Array.isArray(r.data) ? [] : (r.data as { data: string; saldo: number }[])
+  const refs = brutos.map((x) => ({ data: x.data, saldo: Number(x.saldo) }))
+  const dentro = refs.filter((x) => x.data >= inicio && x.data <= fim).at(-1)
+  const antes = refs.filter((x) => x.data < inicio).at(-1)
+  const depois = refs.find((x) => x.data > fim)
+  const ref = dentro ?? antes ?? depois
+  const vespera = new Date(Date.parse(inicio) - 86400000).toISOString().slice(0, 10)
+  if (!ref) {
+    const [anterior, final] = await Promise.all([saldoNaData(conta.id, conta.saldo_inicial, vespera), saldoNaData(conta.id, conta.saldo_inicial, fim)])
+    return { anterior, final, fonte: 'app' as const, ref: null }
+  }
+  const de = ref.data < inicio ? ref.data : inicio
+  const ate = ref.data > fim ? ref.data : fim
+  const linhas = await buscarExtratoPeriodo(de, ate, conta.id)
+  const soma = (f: (d: string) => boolean) => Math.round(linhas.filter((l) => !l.ignorada && f(l.data)).reduce((t, l) => t + Math.round(l.valor * 100), 0)) / 100
+  // saldo do banco é do fim do dia `ref.data`
+  const anterior = ref.data >= inicio ? Math.round((ref.saldo - soma((d) => d >= inicio && d <= ref.data)) * 100) / 100 : Math.round((ref.saldo + soma((d) => d > ref.data && d < inicio)) * 100) / 100
+  const final = Math.round((anterior + soma((d) => d >= inicio && d <= fim)) * 100) / 100
+  return { anterior, final, fonte: 'banco' as const, ref }
+}
+
 /** Todas as chaves já importadas da conta (identificador do banco ou data|valor|descrição). */
 export async function buscarChavesExtrato(contaId: string) {
   const r = await supabase.from('pes_extrato').select('data, valor, descricao, fitid').eq('conta_id', contaId).limit(20000)
   return num(ok(r) as Pick<LinhaExtrato, 'data' | 'valor' | 'descricao' | 'fitid'>[], ['valor'])
+}
+
+export interface HistoricoPadrao {
+  id: string
+  texto: string
+  categoria_id: string | null
+}
+
+/** Históricos salvos para reaproveitar na conciliação. */
+export async function buscarPadroes() {
+  const r = await supabase.from('pes_historicos_padrao').select('id, texto, categoria_id').order('texto')
+  // banco ainda sem a tabela: segue sem padrões
+  return r.error ? [] : (r.data as HistoricoPadrao[])
+}
+
+/** Pessoa usada para a parte dos outros nas despesas compartilhadas (cria na primeira vez). */
+export async function pessoaRateio() {
+  const nome = 'Rateio (compartilhado)'
+  const achada = ok(await supabase.from('pes_pessoas').select('id').eq('nome', nome).maybeSingle()) as { id: string } | null
+  if (achada) return achada.id
+  return (await salvar('pes_pessoas', null, { nome })).id
+}
+
+/** Linhas já conciliadas da conta (histórico do banco → lançamento), para repetir a classificação. */
+export async function buscarHistoricoExtrato(contaId: string) {
+  const r = await supabase.from('pes_extrato').select('descricao, lancamento_id').eq('conta_id', contaId).not('lancamento_id', 'is', null).order('data', { ascending: false }).limit(5000)
+  return ok(r) as Pick<LinhaExtrato, 'descricao' | 'lancamento_id'>[]
 }
 
 /** Saldo informado pelo banco mais recente até `ate`. */
@@ -197,7 +266,7 @@ export async function gerarRecorrencias() {
 
 // ---------------------------------------------------------------- gravação
 
-type Tabela = 'pes_extrato' | 'pes_contas' | 'pes_categorias' | 'pes_lancamentos' | 'pes_metas' | 'pes_meta_aportes' | 'pes_objetivos' | 'pes_etapas' | 'pes_pessoas' | 'pes_recorrencias'
+type Tabela = 'pes_historicos_padrao' | 'pes_extrato' | 'pes_contas' | 'pes_categorias' | 'pes_lancamentos' | 'pes_metas' | 'pes_meta_aportes' | 'pes_objetivos' | 'pes_etapas' | 'pes_pessoas' | 'pes_recorrencias'
 
 export async function salvar<T extends object>(tabela: Tabela, id: string | null | undefined, valores: T) {
   const r = id ? await supabase.from(tabela).update(valores).eq('id', id).select().single() : await supabase.from(tabela).insert(valores).select().single()

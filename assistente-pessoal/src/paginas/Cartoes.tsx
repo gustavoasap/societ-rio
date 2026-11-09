@@ -1,14 +1,17 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { CalendarDays, ChartPie, CircleCheck, CreditCard, Pencil, Plus, Wallet } from 'lucide-react'
+import { Conta, Explicar, Origem } from '../components/Explicar'
 import { LinhaLancamento } from '../components/LinhaLancamento'
-import { Bolinha, Cabecalho, Carregando, Erro, Modal, Progresso, Vazio } from '../components/ui'
+import { Bolinha, Cabecalho, Campo, Carregando, Erro, Modal, Progresso, Vazio } from '../components/ui'
 import { corDe, iconeDe } from '../components/visual'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
 import { hoje, mesAtual, primeiroDia, somarDias, somarMesesAoMes, ultimoDia } from '../lib/datas'
-import { buscarLancamentos, useDados, type ContaComSaldo } from '../lib/dados'
-import { datasDaFatura, faturasDoCartao, faturasPorMes, type Fatura } from '../lib/financas'
-import { dataBR, mesAbreviado, mesPorExtenso, moeda, percentual } from '../lib/formato'
+import { avisarMudanca, buscarLancamentos, useDados, type ContaComSaldo } from '../lib/dados'
+import { datasDaFatura, faturaDe, faturasDoCartao, faturasPorMes, type Fatura } from '../lib/financas'
+import type { Lancamento } from '../tipos'
+import { dataBR, dataValida, mesAbreviado, mesPorExtenso, moeda, percentual } from '../lib/formato'
+import { supabase } from '../lib/supabase'
 import { ContaForm } from './Contas'
 
 export function Cartoes() {
@@ -70,6 +73,7 @@ function CartaoBloco({
 }) {
   const { contas, pessoas, nome, abrirLancamento } = useApp()
   const [resumo, setResumo] = useState(false)
+  const [editDatas, setEditDatas] = useState(false)
   const hj = hoje()
   const faturas = faturasDoCartao(c, lancamentos)
   const atualIdx = Math.max(
@@ -171,12 +175,37 @@ function CartaoBloco({
               </div>
               <aside className="space-y-3 rounded-2xl bg-slate-50 p-4 text-sm">
                 <div>
-                  <div className="text-xs text-slate-500">Total da fatura</div>
+                  <div className="flex items-center gap-1 text-xs text-slate-500">
+                    Total da fatura
+                    <Explicar titulo="Fatura × DRE × Resumo">
+                      <Conta
+                        linhas={[
+                          { rotulo: `Compras e parcelas desta fatura (${f.itens.length})`, valor: f.total },
+                          { sinal: '−', rotulo: 'Pagamentos já registrados', valor: f.pago },
+                        ]}
+                        total={{ rotulo: 'A pagar', valor: Math.max(0, f.total - f.pago) }}
+                      />
+                      <p>
+                        Cada compra desta fatura <b>já é despesa</b> na DRE e no Resumo <b>no mês da compra</b> (regime de competência), na categoria dela.
+                      </p>
+                      <p>
+                        Pagar a fatura é só dinheiro saindo do banco para o cartão (transferência): o saldo do banco cai e a dívida do cartão zera, mas a DRE não muda — senão a
+                        compra contaria duas vezes.
+                      </p>
+                      <Origem>Aqui a fatura leva o nome do mês do vencimento (quando o dinheiro sai). Na DRE, cada compra fica no mês em que foi feita.</Origem>
+                    </Explicar>
+                  </div>
                   <div className="text-2xl font-extrabold text-slate-900 tabular-nums">{moeda(f.total)}</div>
                   {f.vencimento && (
                     <div className="text-xs text-slate-500">
                       {f.fechamento && `Fecha ${dataBR(f.fechamento)} · `}vence {dataBR(f.vencimento)}
+                      {c.ajustes_fatura?.[f.mes] && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-px text-[0.625rem] font-bold text-amber-800">datas alteradas</span>}
                     </div>
+                  )}
+                  {c.dia_fechamento && c.dia_vencimento && (
+                    <button className="mt-0.5 inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-azul-600 hover:underline" onClick={() => setEditDatas(true)}>
+                      <Pencil className="h-3 w-3" /> Alterar datas desta fatura
+                    </button>
                   )}
                 </div>
                 <div className="space-y-1 border-t border-slate-200 pt-2">
@@ -209,8 +238,128 @@ function CartaoBloco({
           )}
         </>
       )}
+      {editDatas && f && <DatasFaturaForm cartao={c} mes={f.mes} lancamentos={lancamentos} onClose={() => setEditDatas(false)} />}
       {resumo && f && <ResumoPorCategoria cartao={c.nome} fatura={f} onClose={() => setResumo(false)} />}
     </section>
+  )
+}
+
+/** Fechamento e vencimento de uma fatura específica, quando fogem do padrão do cartão. */
+function DatasFaturaForm({ cartao: c, mes, lancamentos, onClose }: { cartao: ContaComSaldo; mes: string; lancamentos: Lancamento[]; onClose: () => void }) {
+  const F = c.dia_fechamento
+  const V = c.dia_vencimento
+  const outros = { ...c.ajustes_fatura }
+  delete outros[mes]
+  const padrao = datasDaFatura(mes, F, V)
+  const atual = datasDaFatura(mes, F, V, c.ajustes_fatura)
+  const ajustada = !!c.ajustes_fatura?.[mes]
+  const [fechamento, setFechamento] = useState(atual.fechamento ?? '')
+  const [vencimento, setVencimento] = useState(atual.vencimento ?? '')
+  const [erro, setErro] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
+  // a fatura não pode fechar antes da anterior nem depois da seguinte
+  const fechAnterior = datasDaFatura(somarMesesAoMes(mes, -1), F, V, outros).fechamento!
+  const fechSeguinte = datasDaFatura(somarMesesAoMes(mes, 1), F, V, outros).fechamento!
+
+  // prévia: compras que trocam de fatura com as datas digitadas
+  const okDatas = dataValida(fechamento) && dataValida(vencimento) && vencimento >= fechamento && fechamento > fechAnterior && fechamento < fechSeguinte
+  const novos = { ...outros, [mes]: { fechamento, vencimento } }
+  const mudam = okDatas
+    ? lancamentos
+        .filter((l) => l.conta_id === c.id && l.tipo !== 'transferencia')
+        .map((l) => ({ l, de: faturaDe(l.data, F, V, c.ajustes_fatura), para: faturaDe(l.data, F, V, novos) }))
+        .filter((x) => x.de !== x.para)
+        .sort((a, b) => a.l.data.localeCompare(b.l.data))
+    : []
+
+  async function gravar(e: FormEvent) {
+    e.preventDefault()
+    if (!dataValida(fechamento) || !dataValida(vencimento)) return setErro('Informe as duas datas completas.')
+    if (vencimento < fechamento) return setErro('O vencimento não pode ser antes do fechamento.')
+    if (fechamento <= fechAnterior || fechamento >= fechSeguinte)
+      return setErro(`O fechamento precisa ficar entre ${dataBR(somarDias(fechAnterior, 1))} e ${dataBR(somarDias(fechSeguinte, -1))} (depois da fatura anterior e antes da seguinte).`)
+    setSalvando(true)
+    const r =
+      fechamento === padrao.fechamento && vencimento === padrao.vencimento
+        ? await supabase.from('pes_fatura_datas').delete().eq('conta_id', c.id).eq('mes', `${mes}-01`)
+        : await supabase.from('pes_fatura_datas').upsert({ conta_id: c.id, mes: `${mes}-01`, fechamento, vencimento })
+    setSalvando(false)
+    if (r.error) return setErro(r.error.message)
+    avisarMudanca()
+    onClose()
+  }
+
+  async function voltarPadrao() {
+    setSalvando(true)
+    const r = await supabase.from('pes_fatura_datas').delete().eq('conta_id', c.id).eq('mes', `${mes}-01`)
+    setSalvando(false)
+    if (r.error) return setErro(r.error.message)
+    avisarMudanca()
+    onClose()
+  }
+
+  return (
+    <Modal
+      titulo={`Fatura de ${mesAbreviado(mes)} · ${c.nome}`}
+      onClose={onClose}
+      rodape={
+        <>
+          {ajustada && (
+            <button type="button" className="btn-ghost btn-sm mr-auto" onClick={voltarPadrao} disabled={salvando}>
+              Voltar ao padrão
+            </button>
+          )}
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="btn-primary" form="form-datas-fatura" disabled={salvando}>
+            Salvar
+          </button>
+        </>
+      }
+    >
+      <form id="form-datas-fatura" onSubmit={gravar} className="space-y-4">
+        <p className="text-sm text-slate-500">
+          Vale só para a fatura de {mesPorExtenso(mes)}
+          {padrao.fechamento && padrao.fechamento.slice(0, 7) !== mes ? ` (a que fecha em ${mesPorExtenso(padrao.fechamento.slice(0, 7)).split(' de ')[0]})` : ''}. O padrão do cartão (fecha dia {F}, vence dia {V}) continua para os outros meses.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Fechamento" dica={`Padrão: ${dataBR(padrao.fechamento)}`}>
+            <input className="input" type="date" value={fechamento} onChange={(e) => setFechamento(e.target.value)} required />
+          </Campo>
+          <Campo label="Vencimento" dica={`Padrão: ${dataBR(padrao.vencimento)}`}>
+            <input className="input" type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} required />
+          </Campo>
+        </div>
+        <p className="text-xs text-slate-500">
+          O <b>fechamento</b> é o dia do corte: compras até a véspera ficam nesta fatura; a partir dele, vão para a seguinte. O vencimento é só o dia de pagar.
+        </p>
+        {okDatas && (
+          <div className="rounded-xl bg-azul-50 p-3 text-xs text-azul-900">
+            {mudam.length === 0 ? (
+              'Com essas datas nenhuma compra muda de fatura.'
+            ) : (
+              <>
+                <div className="mb-1 font-bold">Ao salvar, {mudam.length === 1 ? 'esta compra muda' : `estas ${mudam.length} compras mudam`} de fatura:</div>
+                <ul className="space-y-0.5">
+                  {mudam.map(({ l, de, para }) => (
+                    <li key={l.id} className="flex justify-between gap-2">
+                      <span className="truncate">
+                        {dataBR(l.data)} · {l.descricao}
+                      </span>
+                      <span className="shrink-0 font-semibold">
+                        {mesAbreviado(de)} → {mesAbreviado(para)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+        <Erro>{erro}</Erro>
+      </form>
+    </Modal>
   )
 }
 
@@ -274,14 +423,14 @@ function FaturasMesAMes({
   const hj = hoje()
   // vencimento do mês (pelo 1º cartão com dias cadastrados; sem dias, o fim do mês)
   const ref = cartoes.find((c) => c.dia_fechamento && c.dia_vencimento) ?? cartoes[0]
-  const vencDe = (mes: string) => datasDaFatura(mes, ref.dia_fechamento, ref.dia_vencimento).vencimento ?? ultimoDia(mes)
+  const vencDe = (mes: string) => datasDaFatura(mes, ref.dia_fechamento, ref.dia_vencimento, ref.ajustes_fatura).vencimento ?? ultimoDia(mes)
   // fatura sem valor que já venceu não interessa; das futuras, mostra as próximas 4 mesmo zeradas
   const futurasVazias = new Set(meses.filter((m) => vencDe(m) >= hj).slice(0, 4))
   const linhas = faturasPorMes(cartoes, lancamentos, meses).filter((l) => l.total !== 0 || futurasVazias.has(l.mes))
   // a próxima a pagar: a primeira que ainda não venceu (ou vencida com saldo em aberto)
   const proxima = linhas.find((l) => vencDe(l.mes) >= hj) ?? linhas.at(-1)
   const exemplo = cartoes.find((c) => c.dia_fechamento && c.dia_vencimento)
-  const ex = exemplo ? datasDaFatura(somarMesesAoMes(atual, 1), exemplo.dia_fechamento, exemplo.dia_vencimento) : null
+  const ex = exemplo ? datasDaFatura(somarMesesAoMes(atual, 1), exemplo.dia_fechamento, exemplo.dia_vencimento, exemplo.ajustes_fatura) : null
   const varios = cartoes.length > 1
 
   return (
@@ -299,7 +448,7 @@ function FaturasMesAMes({
         {exemplo && ex?.fechamento && ex.vencimento && (
           <>
             {' '}
-            No {exemplo.nome}, a fatura de {mesPorExtenso(somarMesesAoMes(atual, 1)).split(' de ')[0]} junta as compras de {dataBR(somarDias(datasDaFatura(atual, exemplo.dia_fechamento, exemplo.dia_vencimento).fechamento!, 0))} a {dataBR(somarDias(ex.fechamento, -1))}, fecha em {dataBR(ex.fechamento)} e vence em {dataBR(ex.vencimento)}.
+            No {exemplo.nome}, a fatura de {mesPorExtenso(somarMesesAoMes(atual, 1)).split(' de ')[0]} junta as compras de {dataBR(somarDias(datasDaFatura(atual, exemplo.dia_fechamento, exemplo.dia_vencimento, exemplo.ajustes_fatura).fechamento!, 0))} a {dataBR(somarDias(ex.fechamento, -1))}, fecha em {dataBR(ex.fechamento)} e vence em {dataBR(ex.vencimento)}.
           </>
         )}
       </p>
@@ -318,8 +467,8 @@ function FaturasMesAMes({
           <tbody className="divide-y divide-slate-100">
             {linhas.map((l) => {
               const c0 = cartoes[0]
-              const d = datasDaFatura(l.mes, c0.dia_fechamento, c0.dia_vencimento)
-              const anterior = datasDaFatura(somarMesesAoMes(l.mes, -1), c0.dia_fechamento, c0.dia_vencimento).fechamento
+              const d = datasDaFatura(l.mes, c0.dia_fechamento, c0.dia_vencimento, c0.ajustes_fatura)
+              const anterior = datasDaFatura(somarMesesAoMes(l.mes, -1), c0.dia_fechamento, c0.dia_vencimento, c0.ajustes_fatura).fechamento
               const venceu = vencDe(l.mes) < hj
               const situacao = l.total <= 0 ? '—' : l.aPagar <= 0.009 ? 'Paga' : venceu ? 'Vencida' : d.fechamento && d.fechamento <= hoje() ? 'Fechada' : 'Aberta'
               const cor = situacao === 'Paga' ? 'text-emerald-700' : situacao === 'Vencida' ? 'text-rose-600' : situacao === 'Fechada' ? 'text-amber-700' : 'text-azul-700'

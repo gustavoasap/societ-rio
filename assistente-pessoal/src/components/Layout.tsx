@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowLeftRight, ChartColumn, Compass, ChartPie, CreditCard, Ellipsis, FileSpreadsheet, Flag, House, Landmark, LogOut, Plus, Repeat, Scale, Settings, Target, Users, X, type LucideIcon } from 'lucide-react'
 import { useApp } from '../contexto'
+import { BotaoGuia } from './Guia'
 import { Link, useRota } from '../lib/rotas'
 import { supabase } from '../lib/supabase'
 
@@ -80,7 +81,9 @@ export function Layout({ nome, primeiroNome, children }: { nome: string; primeir
               <span className="block text-[0.6875rem] text-white/60">{nome}</span>
             </span>
           </Link>
-          <button className="btn btn-sm ml-auto bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => supabase.auth.signOut()} title="Sair">
+          <span className="ml-auto" />
+          <BotaoGuia rota={rota} />
+          <button className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => supabase.auth.signOut()} title="Sair">
             <LogOut className="h-4 w-4" />
             <span className="hidden sm:inline">Sair</span>
           </button>

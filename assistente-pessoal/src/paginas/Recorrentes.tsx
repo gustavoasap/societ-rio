@@ -6,7 +6,7 @@ import { Bolinha, Cabecalho, Campo, CampoValor, Carregando, Erro, Modal, Segment
 import { COR_NATUREZA, corDe, iconeDe } from '../components/visual'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
-import { dataDaRecorrencia, hoje, type ModoDiaUtil } from '../lib/datas'
+import { dataDaRecorrencia, hoje, somarMesesAoMes, type ModoDiaUtil } from '../lib/datas'
 import { avisarMudanca, buscarRecorrencias, gerarRecorrencias, salvar, useDados } from '../lib/dados'
 import { dataBR, moeda } from '../lib/formato'
 import { mensalizado } from '../lib/plano'
@@ -17,7 +17,7 @@ import { FREQUENCIAS, NATUREZAS, rotuloDe, type Natureza, type Recorrencia } fro
 export function Recorrentes() {
   const { categorias, contas, pessoas } = useApp()
   const d = useDados(buscarRecorrencias, [])
-  const [edit, setEdit] = useState<Recorrencia | { tipo: 'receita' | 'despesa' } | null>(null)
+  const [edit, setEdit] = useState<Recorrencia | NovaRec | null>(null)
 
   if (d.carregando) return <Carregando />
   const lista = d.dados ?? []
@@ -33,19 +33,21 @@ export function Recorrentes() {
   const variaveis = somar(variaveisPrev.map((c) => c.orcamento_mensal!))
   const sobra = somar([receitas, -fixos, -variaveis])
 
-  const grupo = (titulo: string, itens: Recorrencia[], tipo: 'receita' | 'despesa') => (
+  const ehCartao = (r: Recorrencia) => contas.find((c) => c.id === r.conta_id)?.tipo === 'cartao'
+  const cartaoPadrao = contas.find((c) => c.ativa && c.tipo === 'cartao')?.id
+  const grupo = (titulo: string, itens: Recorrencia[], tipo: 'receita' | 'despesa', cartao = false) => (
     <section className="cartao">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
           {tipo === 'receita' ? <ArrowUpRight className="h-4 w-4 text-emerald-600" /> : <ArrowDownRight className="h-4 w-4 text-orange-600" />}
           {titulo}
         </h2>
-        <button className="btn-secondary btn-sm" onClick={() => setEdit({ tipo })}>
+        <button className="btn-secondary btn-sm" onClick={() => setEdit({ tipo, cartao, conta_id: cartao ? cartaoPadrao : undefined })}>
           <Plus className="h-3.5 w-3.5" /> Adicionar
         </button>
       </div>
       {itens.length === 0 ? (
-        <p className="py-4 text-center text-sm text-slate-400">{tipo === 'receita' ? 'Cadastre seu salário / pró-labore.' : 'Cadastre aluguel, condomínio, escola, plano de saúde, assinaturas, IPVA, IPTU...'}</p>
+        <p className="py-4 text-center text-sm text-slate-400">{tipo === 'receita' ? 'Cadastre seu salário / pró-labore.' : cartao ? 'Assinaturas e cobranças fixas que caem no cartão (streaming, academia, apps...).' : 'Cadastre aluguel, condomínio, escola, plano de saúde, faxina, IPVA, IPTU... (o que não é pago no cartão).'}</p>
       ) : (
         <div className="divide-y divide-slate-100">
           {itens.map((r) => {
@@ -60,8 +62,8 @@ export function Recorrentes() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-slate-800">{r.descricao}</span>
                   <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-slate-500">
-                    <span>{r.dia_util ? `${r.dia}º dia útil` : `dia ${r.dia}`}</span>
-                    {r.intervalo_meses > 1 && <span className="rounded-full bg-amber-100 px-1.5 font-semibold text-amber-800">{FREQUENCIAS.find((f) => f.value === r.intervalo_meses)?.curto}</span>}·<span>{conta?.tipo === 'cartao' ? `💳 ${conta.nome}` : (conta?.nome ?? '?')}</span>
+                    <span>{r.intervalo_dias ? (r.intervalo_dias === 7 ? 'toda semana' : `a cada ${r.intervalo_dias} dias`) : r.dia_util ? `${r.dia}º dia útil` : `dia ${r.dia}`}</span>
+                    {!r.intervalo_dias && r.intervalo_meses > 1 && <span className="rounded-full bg-amber-100 px-1.5 font-semibold text-amber-800">{FREQUENCIAS.find((f) => f.value === r.intervalo_meses)?.curto}</span>}·<span>{conta?.tipo === 'cartao' ? `💳 ${conta.nome}` : (conta?.nome ?? '?')}</span>
                     {tipo === 'despesa' && (
                       <span className="inline-flex items-center gap-1">
                         · <span className="h-2 w-2 rounded-sm" style={{ background: COR_NATUREZA[n] }} />
@@ -114,9 +116,15 @@ export function Recorrentes() {
           'receita',
         )}
         {grupo(
-          'Despesas recorrentes (fixas, assinaturas, anuais...)',
-          lista.filter((r) => r.tipo === 'despesa'),
+          'Despesas recorrentes (fora do cartão)',
+          lista.filter((r) => r.tipo === 'despesa' && !ehCartao(r)),
           'despesa',
+        )}
+        {grupo(
+          'Despesas cartão de crédito',
+          lista.filter((r) => r.tipo === 'despesa' && ehCartao(r)),
+          'despesa',
+          true,
         )}
       </div>
 
@@ -159,7 +167,10 @@ function Plano({ rotulo, valor, destaque, dica }: { rotulo: string; valor: numbe
   )
 }
 
-function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 'receita' | 'despesa' }; onClose: () => void }) {
+/** Nova recorrência: tipo e, no bloco do cartão, o cartão já escolhido. */
+type NovaRec = { tipo: 'receita' | 'despesa'; cartao?: boolean; conta_id?: string }
+
+function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | NovaRec; onClose: () => void }) {
   const { contas, categorias } = useApp()
   const edicao = 'id' in inicial ? inicial : null
   const [tipo, setTipo] = useState(inicial.tipo)
@@ -168,7 +179,8 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
   const [dia, setDia] = useState(edicao?.dia ?? 5)
   const [diaUtil, setDiaUtil] = useState<ModoDiaUtil | null>(edicao?.dia_util ?? null)
   const [intervalo, setIntervalo] = useState(edicao?.intervalo_meses ?? 1)
-  const [contaId, setContaId] = useState(edicao?.conta_id ?? contas.find((c) => c.ativa && c.tipo !== 'cartao')?.id ?? contas[0]?.id ?? '')
+  const [intervaloDias, setIntervaloDias] = useState<number | null>(edicao?.intervalo_dias ?? null)
+  const [contaId, setContaId] = useState(edicao?.conta_id ?? (inicial as NovaRec).conta_id ?? contas.find((c) => c.ativa && c.tipo !== 'cartao')?.id ?? contas[0]?.id ?? '')
   const [categoriaId, setCategoriaId] = useState(edicao?.categoria_id ?? '')
   const [natureza, setNatureza] = useState<Natureza | ''>(edicao?.natureza ?? '')
   const [pessoaId, setPessoaId] = useState(edicao?.pessoa_id ?? '')
@@ -189,15 +201,17 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
     if (!contaId) return setErro('Cadastre uma conta primeiro.')
     const desc = descricao.trim() || cat?.nome || ''
     if (!desc) return setErro('Informe uma descrição.')
-    if (!dia || dia < 1 || dia > (diaUtil ? 23 : 31)) return setErro(diaUtil ? 'Informe qual dia útil (de 1 a 23).' : 'Informe o dia do mês (de 1 a 31).')
-    const d = Math.floor(dia)
+    if (!intervaloDias && (!dia || dia < 1 || dia > (diaUtil ? 23 : 31))) return setErro(diaUtil ? 'Informe qual dia útil (de 1 a 23).' : 'Informe o dia do mês (de 1 a 31).')
+    // de N em N dias: conta a partir da data de início (o "dia" fica só de referência)
+    const d = intervaloDias ? Number(inicio.slice(8, 10)) : Math.floor(dia)
     const campos = {
       tipo,
       descricao: desc,
       valor,
       dia: d,
-      dia_util: diaUtil,
-      intervalo_meses: intervalo,
+      dia_util: intervaloDias ? null : diaUtil,
+      intervalo_meses: intervaloDias ? 1 : intervalo,
+      intervalo_dias: intervaloDias,
       conta_id: contaId,
       categoria_id: categoriaId || null,
       natureza: natureza || null,
@@ -209,7 +223,19 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
     setSalvando(true)
     try {
       await salvar('pes_recorrencias', edicao?.id, campos)
-      if (edicao) {
+      // mudou o calendário (por dias ⇄ por mês, intervalo ou início de uma por dias): refaz as datas futuras
+      const mudouAgenda =
+        !!edicao && ((edicao.intervalo_dias ?? null) !== intervaloDias || (!!intervaloDias && (edicao.inicio !== inicio || edicao.intervalo_dias !== intervaloDias)))
+      if (edicao && mudouAgenda) {
+        const hj = hoje()
+        const del = await supabase.from('pes_lancamentos').delete().eq('recorrencia_id', edicao.id).gt('data', hj)
+        if (del.error) throw new Error(del.error.message)
+        // o gerador recomeça: por dias, depois de hoje; por mês, no mês atual (se a data ainda não passou) ou no próximo
+        const mesHoje = hj.slice(0, 7)
+        const gerado = intervaloDias ? hj : dataDaRecorrencia(mesHoje, d, diaUtil) > hj ? `${somarMesesAoMes(mesHoje, -1)}-01` : `${mesHoje}-01`
+        await salvar('pes_recorrencias', edicao.id, { gerado_ate: gerado })
+      }
+      if (edicao && !mudouAgenda) {
         // atualiza os meses já lançados daqui para frente (reajuste, troca de conta, dia...)
         const hj = hoje()
         const { data: futuros, error } = await supabase.from('pes_lancamentos').select('id, competencia').eq('recorrencia_id', edicao.id).gte('data', hj)
@@ -224,7 +250,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
               categoria_id: campos.categoria_id,
               natureza: campos.natureza,
               pessoa_id: campos.pessoa_id,
-              ...(l.competencia ? { data: dataDaRecorrencia(l.competencia.slice(0, 7), d, diaUtil) } : {}),
+              ...(l.competencia && !intervaloDias ? { data: dataDaRecorrencia(l.competencia.slice(0, 7), d, diaUtil) } : {}),
             })
             .eq('id', l.id)
         }
@@ -263,7 +289,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
 
   return (
     <Modal
-      titulo={edicao ? 'Editar recorrência' : tipo === 'receita' ? 'Nova receita recorrente' : 'Nova despesa recorrente'}
+      titulo={edicao ? 'Editar recorrência' : tipo === 'receita' ? 'Nova receita recorrente' : (inicial as NovaRec).cartao ? 'Nova despesa no cartão de crédito' : 'Nova despesa recorrente'}
       onClose={onClose}
       rodape={
         <>
@@ -305,12 +331,19 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
         <Campo label="Descrição">
           <input className="input" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder={tipo === 'receita' ? 'Ex.: Pró-labore ASAP' : 'Ex.: Aluguel, condomínio, Netflix'} autoFocus={!edicao} />
         </Campo>
-        <Campo label="Valor mensal">
+        <Campo label={intervaloDias ? "Valor de cada vez" : intervalo > 1 ? "Valor de cada vez" : "Valor mensal"}>
           <CampoValor valor={valor} onChange={setValor} />
         </Campo>
         <div className="rounded-xl bg-azul-50 p-3">
           <div className="mb-2 text-xs font-semibold text-slate-600">{tipo === 'receita' ? 'Quando cai na conta' : 'Quando vence'}</div>
-          <CampoDia dia={dia} setDia={setDia} modo={diaUtil} setModo={setDiaUtil} aPartirDe={inicio} intervalo={intervalo} setIntervalo={setIntervalo} valor={valor} />
+          <CampoDia dia={dia} setDia={setDia} modo={diaUtil} setModo={setDiaUtil} aPartirDe={inicio} intervalo={intervalo} setIntervalo={setIntervalo} intervaloDias={intervaloDias}
+            setIntervaloDias={(n) => {
+              // nova recorrência por dias: o mais comum é "a partir de hoje" (o padrão era o dia 1º do mês)
+              if (n && !intervaloDias && !edicao && inicio === hoje().slice(0, 8) + '01') setInicio(hoje())
+              setIntervaloDias(n)
+            }}
+            valor={valor}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Campo label="Categoria">
@@ -327,7 +360,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
               <SeletorPessoa valor={pessoaId} onChange={setPessoaId} />
             </Campo>
           )}
-          <Campo label="Começa em">
+          <Campo label={intervaloDias ? 'Começa em (1ª data da série)' : 'Começa em'}>
             <input className="input" type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} required />
           </Campo>
           <Campo label="Termina em (opcional)">
