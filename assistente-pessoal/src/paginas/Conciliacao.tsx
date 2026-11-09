@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { ArrowRight, Check, CircleAlert, EyeOff, FileUp, Landmark, Pencil, Plus, RotateCcw, Scale, Star, Trash2, Undo2, Users } from 'lucide-react'
+import { ArrowRight, Check, CircleAlert, EyeOff, FileUp, Landmark, MessageSquareText, Pencil, Plus, RotateCcw, Scale, Star, Trash2, Undo2, Users } from 'lucide-react'
 import { CategoriaForm } from '../components/CategoriaForm'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Cabecalho, Campo, CampoValor, Carregando, Erro, Modal, Segmentado, Selecao, SeletorMes, Vazio } from '../components/ui'
@@ -9,6 +9,7 @@ import {
   avisarMudanca,
   buscarChavesExtrato,
   buscarExtrato,
+  buscarExtratoPeriodo,
   buscarHistoricoExtrato,
   buscarLancamentos,
   buscarPadroes,
@@ -61,7 +62,8 @@ export function Conciliacao() {
   const [novaLinha, setNovaLinha] = useState(false)
   const [editSaldo, setEditSaldo] = useState(false)
   const [ocupado, setOcupado] = useState(false)
-  const [aba, setAba] = useState<'classificar' | 'conciliadas' | 'soApp' | 'ignoradas' | null>(null)
+  const [aba, setAba] = useState<'classificar' | 'conciliadas' | 'soApp' | 'ignoradas' | 'extrato' | null>(null)
+  const [editLanc, setEditLanc] = useState<{ lanc: Lancamento; banco?: string } | null>(null)
   const [editConta, setEditConta] = useState(false)
   const arquivo = useRef<HTMLInputElement>(null)
 
@@ -297,6 +299,7 @@ export function Conciliacao() {
                 ['conciliadas', 'Conciliadas', c.pares.length + c.estornos.length, 'text-emerald-600'],
                 ['soApp', 'Só no app', soAppDoMes.length, 'text-rose-600'],
                 ['ignoradas', 'Ignoradas', c.ignoradas.length, 'text-slate-500'],
+                ['extrato', 'Extrato', extrato.dados!.length, 'text-azul-700'],
               ] as const
             ).map(([k, rotulo, n, cor]) => (
               <button
@@ -383,9 +386,12 @@ export function Conciliacao() {
                     <span className="flex w-full items-center gap-1.5 pl-7 text-xs text-slate-500 sm:w-auto sm:pl-0">
                       <ArrowRight className="h-3 w-3 shrink-0" />
                       <span className="truncate">
-                        {p.lanc.descricao} ({dataBR(p.lanc.data)})
+                        {p.lanc.descricao} ({dataBR(p.lanc.data)}){p.lanc.observacao ? ` · ${p.lanc.observacao}` : ''}
                       </span>
                       {p.sugerido && <span className="rounded-full bg-amber-100 px-1.5 py-px text-[0.625rem] font-bold text-amber-800">sugerido</span>}
+                      <button className="icon-btn h-6 w-6 text-azul-600" aria-label="Editar histórico, observação e categoria" title="Editar (sem desconciliar)" onClick={() => setEditLanc({ lanc: p.lanc, banco: p.linha.descricao })}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
                       {p.linha.compartilhado_id && <span className="rounded-full bg-violet-100 px-1.5 py-px text-[0.625rem] font-bold text-violet-800">compartilhada</span>}
                       {p.linha.compartilhado_id && p.linha.valor < 0 && (
                         <button className="icon-btn h-6 w-6" aria-label="Desfazer despesa compartilhada" title="Desfazer a despesa compartilhada" onClick={() => desfazerCompartilhada(p.linha.compartilhado_id!)}>
@@ -430,6 +436,17 @@ export function Conciliacao() {
             </section>
           )}
 
+          {abaAtual === 'extrato' && (
+            <ExtratoAba
+              conta={conta!}
+              inicio={inicio}
+              fim={fim}
+              lancamentos={todos}
+              saldoBanco={saldoBanco.dados ?? null}
+              onEditar={(lanc, banco) => setEditLanc({ lanc, banco })}
+            />
+          )}
+
           {abaAtual === 'ignoradas' && c.ignoradas.length === 0 && <Vazio icone={EyeOff}>Nenhuma linha ignorada.</Vazio>}
           {abaAtual === 'ignoradas' && c.ignoradas.length > 0 && (
             <section className="cartao space-y-2">
@@ -451,6 +468,7 @@ export function Conciliacao() {
         </>
       )}
 
+      {editLanc && <EditarConciliada lanc={editLanc.lanc} banco={editLanc.banco} padroes={padroes.dados ?? []} onClose={() => setEditLanc(null)} />}
       {editConta && conta && <ContaForm inicial={conta} onClose={() => setEditConta(false)} />}
       {novaLinha && <NovaLinhaForm contaId={contaId} mes={mes} onClose={() => setNovaLinha(false)} />}
       {editSaldo && (
@@ -487,7 +505,8 @@ function Classificar({
 }) {
   const { categorias, contas } = useApp()
   // o que foi digitado em cada linha (sem nada digitado, vale a sugestão)
-  const [edicao, setEdicao] = useState<Record<string, { descricao?: string; classe?: string }>>({})
+  const [edicao, setEdicao] = useState<Record<string, { descricao?: string; classe?: string; obs?: string }>>({})
+  const [obsAberta, setObsAberta] = useState<Set<string>>(new Set())
   const [gravando, setGravando] = useState(false)
   const [compart, setCompart] = useState<LinhaExtrato | null>(null)
   const [estorno, setEstorno] = useState<LinhaExtrato | null>(null)
@@ -515,10 +534,11 @@ function Classificar({
     return {
       descricao: e.descricao ?? s?.descricao ?? l.descricao,
       classe: e.classe ?? (s?.transferir_para ? `t:${s.transferir_para}` : (s?.categoria_id ?? '')),
+      obs: e.obs ?? '',
       sugerido: !!s && e.descricao === undefined && e.classe === undefined,
     }
   }
-  const mudar = (id: string, campo: 'descricao' | 'classe', v: string) =>
+  const mudar = (id: string, campo: 'descricao' | 'classe' | 'obs', v: string) =>
     setEdicao((x) => {
       const novo = { ...x[id], [campo]: v }
       // escolheu um histórico padrão: traz a categoria dele, se ainda não escolheu outra
@@ -542,8 +562,9 @@ function Classificar({
           conta_destino_id: l.valor < 0 ? v.classe.slice(2) : contaId,
           categoria_id: null,
           pago: true,
+          observacao: v.obs.trim() || null,
         }
-      : { tipo: l.valor > 0 ? ('receita' as const) : ('despesa' as const), descricao, valor, data: l.data, conta_id: contaId, categoria_id: v.classe || null, pago: true }
+      : { tipo: l.valor > 0 ? ('receita' as const) : ('despesa' as const), descricao, valor, data: l.data, conta_id: contaId, categoria_id: v.classe || null, pago: true, observacao: v.obs.trim() || null }
     const novo = await salvar('pes_lancamentos', null, dados)
     await salvar('pes_extrato', l.id, { lancamento_id: novo.id })
   }
@@ -587,6 +608,12 @@ function Classificar({
           )}
         </div>
       </div>
+      <div className="hidden grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,14rem)_13.75rem] gap-3 border-b border-slate-200 pb-1 text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase sm:grid">
+        <span>Seu histórico (Histórico – Conciliação) · ★ padrão · 💬 observação</span>
+        <span className="text-right">Valor</span>
+        <span>Categoria</span>
+        <span className="text-right">Ações</span>
+      </div>
       <div className="divide-y divide-slate-100">
         {linhas.map((l) => {
           const v = valores(l)
@@ -619,6 +646,15 @@ function Classificar({
                     onClick={() => salvarPadrao(v.descricao, v.classe)}
                   >
                     <Star className={`h-4 w-4 ${padraoDe(v.descricao) ? 'fill-current' : ''}`} />
+                  </button>
+                  <button
+                    type="button"
+                    className={`icon-btn shrink-0 ${v.obs ? 'text-azul-600' : ''}`}
+                    aria-label="Observação (seu histórico livre)"
+                    title="Observação: anote o que foi (ex.: “Compra de 2 coxinhas no clube”)"
+                    onClick={() => setObsAberta((x) => new Set(x).add(l.id))}
+                  >
+                    <MessageSquareText className="h-4 w-4" />
                   </button>
                 </div>
                 <span className={`text-right font-semibold tabular-nums ${corValor(l.valor)}`}>{comSinal(l.valor)}</span>
@@ -679,6 +715,16 @@ function Classificar({
                   </button>
                 </div>
               </div>
+              {(obsAberta.has(l.id) || v.obs) && (
+                <input
+                  className="input py-2 text-sm"
+                  value={v.obs}
+                  onChange={(e) => mudar(l.id, 'obs', e.target.value)}
+                  placeholder="Observação (seu histórico livre): ex.: Compra de 2 coxinhas no clube"
+                  aria-label="Observação"
+                  autoFocus={!v.obs}
+                />
+              )}
             </div>
           )
         })}
@@ -1198,6 +1244,204 @@ function PadroesForm({ padroes, onClose }: { padroes: HistoricoPadrao[]; onClose
       )}
       <Erro>{erro}</Erro>
     </Modal>
+  )
+}
+
+/** Edita o lançamento de uma linha conciliada (histórico, observação, categoria) sem desfazer a conciliação. */
+function EditarConciliada({ lanc, banco, padroes, onClose }: { lanc: Lancamento; banco?: string; padroes: HistoricoPadrao[]; onClose: () => void }) {
+  const { categorias } = useApp()
+  const [descricao, setDescricao] = useState(lanc.descricao)
+  const [observacao, setObservacao] = useState(lanc.observacao ?? '')
+  const [categoria, setCategoria] = useState(lanc.categoria_id ?? '')
+  const [erro, setErro] = useState<string | null>(null)
+  const transf = lanc.tipo === 'transferencia'
+
+  async function gravar(ev: FormEvent) {
+    ev.preventDefault()
+    if (!descricao.trim()) return setErro('Informe o histórico.')
+    try {
+      await salvar('pes_lancamentos', lanc.id, { descricao: descricao.trim(), observacao: observacao.trim() || null, ...(transf ? {} : { categoria_id: categoria || null }) })
+      onClose()
+    } catch (x) {
+      setErro(x instanceof Error ? x.message : String(x))
+    }
+  }
+
+  return (
+    <Modal
+      titulo="Editar conciliada"
+      onClose={onClose}
+      rodape={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="btn-primary" form="form-edit-conc">
+            Salvar
+          </button>
+        </>
+      }
+    >
+      <form id="form-edit-conc" onSubmit={gravar} className="space-y-4">
+        <div className="rounded-xl bg-slate-50 p-3 text-sm">
+          <div className="text-xs text-slate-500">Histórico do banco (não muda)</div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate">
+              {dataBR(lanc.data)} · {banco ?? '—'}
+            </span>
+            <b className="tabular-nums">{moeda(lanc.valor)}</b>
+          </div>
+        </div>
+        <Campo label="Histórico – Conciliação (título do lançamento)">
+          <input className="input" list="padroes-edit" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+          <datalist id="padroes-edit">
+            {padroes.map((p) => (
+              <option key={p.id} value={p.texto} />
+            ))}
+          </datalist>
+        </Campo>
+        <Campo label="Observação (seu histórico livre)" dica="Para lembrar no futuro o que foi. Ex.: Compra de 2 coxinhas no clube.">
+          <textarea className="input min-h-20" value={observacao} onChange={(e) => setObservacao(e.target.value)} />
+        </Campo>
+        {!transf && (
+          <Campo label="Categoria">
+            <Selecao value={categoria} onChange={setCategoria} vazio="Sem categoria" opcoes={categorias.filter((k) => k.tipo === lanc.tipo && (k.ativa || k.id === categoria)).map((k) => ({ value: k.id, label: k.nome }))} />
+          </Campo>
+        )}
+        <p className="text-xs text-slate-500">A conciliação continua: só o texto, a observação e a categoria mudam. Valor e data seguem o banco.</p>
+        <Erro>{erro}</Erro>
+      </form>
+    </Modal>
+  )
+}
+
+/** O extrato do mês dentro do app: de uma conta (com saldo dia a dia, se o saldo do banco for conhecido) ou de todas. */
+function ExtratoAba({
+  conta,
+  inicio,
+  fim,
+  lancamentos,
+  saldoBanco,
+  onEditar,
+}: {
+  conta: { id: string; nome: string }
+  inicio: string
+  fim: string
+  lancamentos: Lancamento[]
+  saldoBanco: { data: string; saldo: number } | null
+  onEditar: (l: Lancamento, banco: string) => void
+}) {
+  const { contas, categorias } = useApp()
+  const [todas, setTodas] = useState(false)
+  const linhas = useDados(() => buscarExtratoPeriodo(inicio, fim, todas ? null : conta.id), [inicio, fim, todas, conta.id])
+  const porId = new Map(lancamentos.map((l) => [l.id, l]))
+  const lista = (linhas.dados ?? []).filter((l) => !l.ignorada)
+  const entradas = lista.filter((l) => l.valor > 0).reduce((t, l) => t + l.valor, 0)
+  const saidas = lista.filter((l) => l.valor < 0).reduce((t, l) => t - l.valor, 0)
+  // saldo dia a dia: só para uma conta e se o saldo do banco no mês for conhecido (volta a partir dele)
+  let saldoInicial: number | null = null
+  if (!todas && saldoBanco) {
+    const ate = lista.filter((l) => l.data <= saldoBanco.data).reduce((t, l) => t + l.valor, 0)
+    saldoInicial = Math.round((saldoBanco.saldo - ate) * 100) / 100
+  }
+  // saldo depois de cada linha (calculado antes de desenhar)
+  const saldos = lista.reduce<number[]>((acc, l) => [...acc, Math.round(((acc.at(-1) ?? saldoInicial ?? 0) + l.valor) * 100) / 100], [])
+
+  return (
+    <section className="cartao space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-slate-800">Extrato de {mesPorExtenso(inicio.slice(0, 7))}</h2>
+        <div className="w-full sm:w-72">
+          <Segmentado
+            valor={todas ? 'todas' : 'uma'}
+            onChange={(v) => setTodas(v === 'todas')}
+            opcoes={[
+              { value: 'uma', label: conta.nome },
+              { value: 'todas', label: 'Todas as contas' },
+            ]}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-center text-sm">
+        <div className="rounded-xl bg-emerald-50 p-2">
+          <div className="text-xs text-emerald-700">Entradas</div>
+          <b className="text-emerald-700 tabular-nums">{moeda(entradas)}</b>
+        </div>
+        <div className="rounded-xl bg-slate-50 p-2">
+          <div className="text-xs text-slate-500">Saídas</div>
+          <b className="tabular-nums">{moeda(saidas)}</b>
+        </div>
+        <div className="rounded-xl bg-azul-50 p-2">
+          <div className="text-xs text-azul-700">Líquido</div>
+          <b className="text-azul-800 tabular-nums">{comSinal(Math.round((entradas - saidas) * 100) / 100)}</b>
+        </div>
+      </div>
+      {linhas.carregando ? (
+        <Carregando />
+      ) : lista.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400">Nenhuma linha de extrato neste mês.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[44rem] text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
+                <th className="py-1.5 pr-2">Data</th>
+                {todas && <th className="py-1.5 pr-2">Conta</th>}
+                <th className="py-1.5 pr-2">Histórico do banco</th>
+                <th className="py-1.5 pr-2">Seu histórico / observação</th>
+                <th className="py-1.5 pr-2">Categoria</th>
+                <th className="py-1.5 text-right">Valor</th>
+                {saldoInicial !== null && <th className="py-1.5 pl-2 text-right">Saldo</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {saldoInicial !== null && (
+                <tr className="text-xs text-slate-500">
+                  <td className="py-1.5" colSpan={5}>
+                    Saldo anterior
+                  </td>
+                  <td className="py-1.5 pl-2 text-right font-semibold tabular-nums">{moeda(saldoInicial)}</td>
+                </tr>
+              )}
+              {lista.map((l, i) => {
+                const lanc = l.lancamento_id ? porId.get(l.lancamento_id) : undefined
+                const cat = lanc?.categoria_id ? categorias.find((k) => k.id === lanc.categoria_id) : undefined
+                const estado = lanc ? 'conciliada' : l.estorno_modo || l.estorno_de ? 'estorno' : 'a classificar'
+                return (
+                  <tr key={l.id} className="align-top">
+                    <td className="py-2 pr-2 text-xs whitespace-nowrap text-slate-500 tabular-nums">{dataBR(l.data)}</td>
+                    {todas && <td className="py-2 pr-2 text-xs text-slate-600">{contas.find((k) => k.id === l.conta_id)?.nome ?? '?'}</td>}
+                    <td className="max-w-56 py-2 pr-2 text-xs break-words text-slate-500">{l.descricao}</td>
+                    <td className="py-2 pr-2">
+                      {lanc ? (
+                        <button className="group text-left" onClick={() => onEditar(lanc, l.descricao)} title="Editar histórico, observação e categoria">
+                          <span className="font-medium text-slate-800 group-hover:underline">{lanc.descricao}</span>
+                          <Pencil className="ml-1 inline h-3 w-3 text-slate-300 group-hover:text-azul-600" />
+                          {lanc.observacao && <span className="block text-xs text-slate-500">{lanc.observacao}</span>}
+                        </button>
+                      ) : (
+                        <span className={`rounded-full px-1.5 py-px text-[0.625rem] font-bold ${estado === 'estorno' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`}>{estado}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-2 text-xs text-slate-600">{lanc?.tipo === 'transferencia' ? 'Transferência' : lanc?.compartilhado_id && lanc.tipo === 'receita' ? 'Reembolso (compartilhada)' : (cat?.nome ?? (lanc ? 'Sem categoria' : ''))}</td>
+                    <td className={`py-2 text-right font-semibold whitespace-nowrap tabular-nums ${corValor(l.valor)}`}>{comSinal(l.valor)}</td>
+                    {saldoInicial !== null && <td className="py-2 pl-2 text-right text-xs whitespace-nowrap text-slate-600 tabular-nums">{moeda(saldos[i])}</td>}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-slate-400">
+        {todas
+          ? 'Todas as contas com extrato importado ou digitado neste mês.'
+          : saldoInicial === null
+            ? 'Para ver o saldo dia a dia, informe o saldo do banco no quadro de cima (o OFX já traz).'
+            : `Saldo dia a dia calculado de trás para frente a partir do saldo do banco em ${dataBR(saldoBanco!.data)}.`}{' '}
+        Toque no seu histórico para editar sem desconciliar.
+      </p>
+    </section>
   )
 }
 

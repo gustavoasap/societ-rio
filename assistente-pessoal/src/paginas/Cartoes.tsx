@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { CalendarDays, ChartPie, CircleCheck, CreditCard, Pencil, Plus, Wallet } from 'lucide-react'
+import { Conta, Explicar, Origem } from '../components/Explicar'
 import { LinhaLancamento } from '../components/LinhaLancamento'
 import { Bolinha, Cabecalho, Campo, Carregando, Erro, Modal, Progresso, Vazio } from '../components/ui'
 import { corDe, iconeDe } from '../components/visual'
@@ -174,7 +175,26 @@ function CartaoBloco({
               </div>
               <aside className="space-y-3 rounded-2xl bg-slate-50 p-4 text-sm">
                 <div>
-                  <div className="text-xs text-slate-500">Total da fatura</div>
+                  <div className="flex items-center gap-1 text-xs text-slate-500">
+                    Total da fatura
+                    <Explicar titulo="Fatura × DRE × Resumo">
+                      <Conta
+                        linhas={[
+                          { rotulo: `Compras e parcelas desta fatura (${f.itens.length})`, valor: f.total },
+                          { sinal: '−', rotulo: 'Pagamentos já registrados', valor: f.pago },
+                        ]}
+                        total={{ rotulo: 'A pagar', valor: Math.max(0, f.total - f.pago) }}
+                      />
+                      <p>
+                        Cada compra desta fatura <b>já é despesa</b> na DRE e no Resumo <b>no mês da compra</b> (regime de competência), na categoria dela.
+                      </p>
+                      <p>
+                        Pagar a fatura é só dinheiro saindo do banco para o cartão (transferência): o saldo do banco cai e a dívida do cartão zera, mas a DRE não muda — senão a
+                        compra contaria duas vezes.
+                      </p>
+                      <Origem>Aqui a fatura leva o nome do mês do vencimento (quando o dinheiro sai). Na DRE, cada compra fica no mês em que foi feita.</Origem>
+                    </Explicar>
+                  </div>
                   <div className="text-2xl font-extrabold text-slate-900 tabular-nums">{moeda(f.total)}</div>
                   {f.vencimento && (
                     <div className="text-xs text-slate-500">
