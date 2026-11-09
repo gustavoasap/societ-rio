@@ -129,14 +129,17 @@ describe('plano financeiro', () => {
     expect(plano.rendaMinima).toBe(4900)
     expect(plano.provisaoAnuais).toBe(200)
   })
-  it('reserva de emergência de 6 meses de gastos essenciais', () => {
-    expect(plano.reserva.alvo).toBe(29400)
-    expect(plano.reserva.falta).toBe(19400)
-    // guardar 20% da renda (2.060); a reserva leva o necessário para completar em 12 meses
+  it('reserva de emergência: 6 meses de todas as despesas (fixos, cartão, parcelas e dia a dia)', () => {
+    expect(plano.reserva.alvo).toBe(Math.round(plano.custoTotal * 6 * 100) / 100)
+    expect(plano.reserva.soEssencial).toBe(29400)
+    expect(plano.reserva.falta).toBe(Math.round((plano.reserva.alvo - 10000) * 100) / 100)
+    // guardar 20% da renda (2.060); a reserva leva o necessário para completar em 12 meses, limitado ao que se guarda
     expect(plano.guardar).toBe(2060)
-    expect(plano.reserva.aporte).toBe(1616.67)
-    expect(plano.investir).toBe(443.33)
-    expect(plano.reserva.meses).toBe(12)
+    expect(plano.reserva.aporte).toBe(Math.min(2060, Math.ceil((plano.reserva.falta / 12) * 100) / 100))
+    expect(plano.investir).toBe(Math.round((2060 - plano.reserva.aporte) * 100) / 100)
+    // a composição soma o custo de vida
+    const c = plano.composicao
+    expect(Math.round((c.fixosForaCartao + c.fixosCartao + c.comprasCartao + c.outros + c.ajusteOrcamento) * 100) / 100).toBe(plano.custoTotal)
   })
   it('renda necessária para cobrir as despesas com a margem de folga escolhida', () => {
     // despesas 5.850 + 25% de folga = 7.312,50
@@ -198,5 +201,28 @@ describe('recorrência de N em N dias', () => {
   it('datas da série', async () => {
     const { datasPorDias } = await import('./datas')
     expect(datasPorDias('2026-11-09', 15, '2026-11-10', '2027-01-10')).toEqual(['2026-11-24', '2026-12-09', '2026-12-24', '2027-01-08'])
+  })
+})
+
+describe('reserva considera o cartão de crédito', () => {
+  it('assinaturas e compras no cartão entram na base da reserva', () => {
+    const p = montarPlano({
+      categorias: [cat('ass', 'fixa', false), cat('casa', 'fixa', true), cat('lazer', 'variavel', false)],
+      recorrencias: [rec({ categoria_id: 'casa', valor: 2000, conta_id: 'banco' }), rec({ categoria_id: 'ass', valor: 100, conta_id: 'nubank' })],
+      lancamentos: [lanc({ categoria_id: 'lazer', valor: 300, data: '2026-09-10', conta_id: 'nubank' }), lanc({ categoria_id: 'lazer', valor: 60, data: '2026-09-12', conta_id: 'banco' })],
+      metas: [],
+      aportes: [],
+      config: { meses_reserva: 6, pct_investimento: 20, margem_folga: 20 },
+      saldoReserva: 0,
+      hoje: '2026-10-05',
+      cartoes: ['nubank'],
+    })
+    expect(p.composicao.fixosForaCartao).toBe(2000)
+    expect(p.composicao.fixosCartao).toBe(100)
+    expect(p.composicao.comprasCartao).toBe(300)
+    expect(p.composicao.outros).toBe(60)
+    // 6 × (2.000 + 100 + 300 + 60), não só os essenciais (6 × 2.000)
+    expect(p.reserva.alvo).toBe(14760)
+    expect(p.reserva.soEssencial).toBe(12000)
   })
 })

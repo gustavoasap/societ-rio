@@ -126,6 +126,10 @@ const GUIAS: Record<string, Guia> = {
             <li>
               <b>Todo mês, separe assim</b>: reserva de emergência, investimentos (% da renda), provisão das despesas anuais e cada meta.
             </li>
+            <li>
+              <b>Reserva de emergência</b>: meses escolhidos × todas as despesas do mês — fixos, fatura do cartão (assinaturas, compras e parcelas) e o resto do dia a
+              dia — porque é isso que continua chegando se a renda parar.
+            </li>
           </ul>
         ),
       },

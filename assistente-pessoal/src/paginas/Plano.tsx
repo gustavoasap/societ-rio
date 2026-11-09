@@ -177,7 +177,7 @@ export function Plano() {
               <>
                 <Conta
                   linhas={[
-                    { rotulo: `Reserva mínima (${config.meses_reserva} × gastos essenciais ${moeda(plano.custoEssencial)})`, valor: r.alvo },
+                    { rotulo: `Reserva (${config.meses_reserva} × despesas do mês ${moeda(plano.custoTotal)})`, valor: r.alvo },
                     { sinal: '−', rotulo: 'O que você já tem nas contas da reserva', valor: r.atual },
                     { rotulo: 'Falta', valor: r.falta },
                     { sinal: '÷', rotulo: '12 meses (prazo para completar)', valor: moeda(Math.ceil((r.falta / 12) * 100) / 100) },
@@ -319,18 +319,27 @@ export function Plano() {
           <div className="flex items-end justify-between gap-2">
             <div>
               <div className="flex items-center gap-1 text-xs text-slate-500">
-                Mínimo ({config.meses_reserva} × gastos essenciais)
+                Reserva ({config.meses_reserva} × todas as despesas do mês)
                 <Explicar titulo="Reserva de emergência">
-                  <Conta linhas={[{ rotulo: 'Gastos essenciais por mês', valor: plano.custoEssencial }, { sinal: '×', rotulo: 'Meses sem susto', valor: String(config.meses_reserva) }]} total={{ rotulo: 'Reserva mínima', valor: r.alvo }} />
-                  <Conta linhas={[{ rotulo: 'Custo de vida completo', valor: plano.custoTotal }, { sinal: '×', rotulo: 'Meses', valor: String(config.meses_reserva) }]} total={{ rotulo: 'Reserva confortável', valor: r.confortavel }} />
-                  <Origem>Mínima: viver só com o essencial. Confortável: manter o padrão de vida atual. O que você já tem vem das contas marcadas como reserva.</Origem>
+                  <Conta linhas={[
+                    { rotulo: 'Despesas fixas fora do cartão (aluguel, faxina...)', valor: plano.composicao.fixosForaCartao },
+                    { sinal: '+', rotulo: 'Fixas no cartão (assinaturas)', valor: plano.composicao.fixosCartao },
+                    { sinal: '+', rotulo: 'Compras e parcelas no cartão (média)', valor: plano.composicao.comprasCartao },
+                    { sinal: '+', rotulo: 'Outros gastos do dia a dia (Pix, débito...)', valor: plano.composicao.outros },
+                    ...(Math.abs(plano.composicao.ajusteOrcamento) >= 0.01 ? [{ sinal: '+' as const, rotulo: 'Ajuste pelo limite do Orçamento', valor: plano.composicao.ajusteOrcamento }] : []),
+                  ]} total={{ rotulo: 'Despesas por mês', valor: plano.custoTotal }} />
+                  <Conta linhas={[{ rotulo: 'Despesas por mês', valor: plano.custoTotal }, { sinal: '×', rotulo: 'Meses sem susto', valor: String(config.meses_reserva) }]} total={{ rotulo: 'Reserva de emergência', valor: r.alvo }} />
+                  <Origem>
+                    Conta tudo o que continua chegando se a renda parar: os fixos, a fatura do cartão (assinaturas, compras e parcelas) e o resto do dia a dia. O que você já tem
+                    vem das contas marcadas como reserva em Contas.
+                  </Origem>
                 </Explicar>
               </div>
               <div className="text-2xl font-extrabold text-slate-900 tabular-nums">{moeda(r.alvo)}</div>
             </div>
             <div className="text-right text-xs text-slate-500">
-              Confortável (padrão atual)
-              <div className="text-sm font-bold text-slate-700 tabular-nums">{moeda(r.confortavel)}</div>
+              Se cortar o não essencial
+              <div className="text-sm font-bold text-slate-700 tabular-nums">{moeda(r.soEssencial)}</div>
             </div>
           </div>
           <div className="my-2">
