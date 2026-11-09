@@ -143,3 +143,38 @@ describe('faturas mês a mês', () => {
     expect(datasDaFatura('2026-11', 26, 3)).toEqual({ fechamento: '2026-10-26', vencimento: '2026-11-03' })
   })
 })
+
+describe('fatura com datas ajustadas num mês', () => {
+  // Nubank: padrão fecha 26, vence 3. Em dezembro/26 fechou dia 24/11 e venceu 02/12.
+  const aj = { '2026-12': { fechamento: '2026-11-24', vencimento: '2026-12-02' } }
+
+  it('usa as datas do ajuste só naquele mês', () => {
+    expect(datasDaFatura('2026-12', 26, 3, aj)).toEqual({ fechamento: '2026-11-24', vencimento: '2026-12-02' })
+    expect(datasDaFatura('2027-01', 26, 3, aj)).toEqual({ fechamento: '2026-12-26', vencimento: '2027-01-03' })
+    expect(datasDaFatura('2026-11', 26, 3, aj)).toEqual({ fechamento: '2026-10-26', vencimento: '2026-11-03' })
+  })
+
+  it('fechou antes: compras de 24 e 25/11 já vão para a fatura seguinte', () => {
+    expect(faturaDe('2026-11-23', 26, 3, aj)).toBe('2026-12')
+    expect(faturaDe('2026-11-24', 26, 3, aj)).toBe('2027-01')
+    expect(faturaDe('2026-11-25', 26, 3, aj)).toBe('2027-01')
+    expect(faturaDe('2026-11-26', 26, 3, aj)).toBe('2027-01')
+    expect(faturaDe('2026-10-26', 26, 3, aj)).toBe('2026-12')
+  })
+
+  it('fechou depois: compras até a véspera continuam na fatura do mês', () => {
+    const tarde = { '2026-12': { fechamento: '2026-11-28', vencimento: '2026-12-05' } }
+    expect(faturaDe('2026-11-26', 26, 3, tarde)).toBe('2026-12')
+    expect(faturaDe('2026-11-27', 26, 3, tarde)).toBe('2026-12')
+    expect(faturaDe('2026-11-28', 26, 3, tarde)).toBe('2027-01')
+  })
+
+  it('a fatura do cartão segue o ajuste', () => {
+    const nubank: Conta = { id: 'n', nome: 'Nubank', tipo: 'cartao', instituicao: null, saldo_inicial: 0, limite: null, cor: 'roxo', ativa: true, ordem: 0, dia_fechamento: 26, dia_vencimento: 3, reserva: false, ajustes_fatura: aj }
+    const fs = faturasDoCartao(nubank, [lanc({ conta_id: 'n', valor: 100, data: '2026-11-20' }), lanc({ conta_id: 'n', valor: 50, data: '2026-11-25' })])
+    expect(fs.map((f) => [f.mes, f.total, f.fechamento, f.vencimento])).toEqual([
+      ['2026-12', 100, '2026-11-24', '2026-12-02'],
+      ['2027-01', 50, '2026-12-26', '2027-01-03'],
+    ])
+  })
+})

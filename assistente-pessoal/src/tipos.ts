@@ -19,7 +19,11 @@ export interface Conta {
   dia_vencimento: number | null
   /** Conta que forma a reserva de emergência */
   reserva: boolean
+  /** Faturas do cartão com datas fora do padrão, por mês da fatura ("AAAA-MM") */
+  ajustes_fatura?: AjustesFatura
 }
+
+export type AjustesFatura = Record<string, { fechamento: string; vencimento: string }>
 
 export interface Categoria {
   id: string
