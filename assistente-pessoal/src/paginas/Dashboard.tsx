@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowRight, CreditCard, Users } from 'lucide-react'
 import { AbasAnalise } from '../components/Abas'
+import { Conta, Explicar, Origem } from '../components/Explicar'
 import { GraficoMensal, Legenda } from '../components/Grafico'
 import { Cabecalho, Carregando, Erro, Progresso, Segmentado } from '../components/ui'
 import { COR_NATUREZA, corDe } from '../components/visual'
@@ -78,20 +79,62 @@ export function Dashboard() {
       {lanc.erro && <Erro>{lanc.erro}</Erro>}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi rotulo="Receita média / mês" valor={moeda(receita / n)} sub={`Total ${moeda(receita)}`} />
-        <Kpi rotulo="Despesa média / mês" valor={moeda(despesa / n)} sub={`Total ${moeda(despesa)}`} />
+        <Kpi
+          rotulo="Receita média / mês"
+          valor={moeda(receita / n)}
+          sub={`Total ${moeda(receita)}`}
+          explica={
+            <>
+              <Conta
+                linhas={[...meses.map((m, i) => ({ sinal: '+' as const, rotulo: mesAbreviado(m), valor: dre.receitaTotal[i] }))]}
+                total={{ rotulo: `Total ÷ ${n} ${n === 1 ? 'mês' : 'meses'}`, valor: receita / n }}
+              />
+              <Origem>Receitas suas com data em cada mês do período (as de terceiros e transferências não entram). Meses sem lançamento entram como zero na média.</Origem>
+            </>
+          }
+        />
+        <Kpi
+          rotulo="Despesa média / mês"
+          valor={moeda(despesa / n)}
+          sub={`Total ${moeda(despesa)}`}
+          explica={
+            <>
+              <Conta
+                linhas={[...meses.map((m, i) => ({ sinal: '+' as const, rotulo: mesAbreviado(m), valor: dre.despesaTotal[i] }))]}
+                total={{ rotulo: `Total ÷ ${n} ${n === 1 ? 'mês' : 'meses'}`, valor: despesa / n }}
+              />
+              <Origem>Despesas suas pela data da compra (no cartão também), as mesmas da DRE. Pagamento de fatura não entra (é transferência). Meses sem lançamento entram como zero.</Origem>
+            </>
+          }
+        />
         <Kpi
           rotulo="Taxa de poupança"
           valor={receita > 0 ? percentual(resultado / receita) : '—'}
           sub={`${resultado >= 0 ? 'Sobrou' : 'Faltou'} ${moeda(Math.abs(resultado))} no período`}
           alerta={resultado < 0}
           destaque
+          explica={
+            <>
+              <Conta linhas={[{ rotulo: 'Receitas do período', valor: receita }, { sinal: '−', rotulo: 'Despesas do período', valor: despesa }]} total={{ rotulo: 'Sobra (resultado)', valor: resultado }} />
+              <Conta linhas={[{ rotulo: 'Sobra', valor: resultado }, { sinal: '÷', rotulo: 'Receitas', valor: receita }]} total={{ rotulo: 'Taxa de poupança', valor: receita > 0 ? percentual(resultado / receita) : '—' }} />
+              <Origem>Quanto da receita sobrou no período. Referência comum: 20% ou mais.</Origem>
+            </>
+          }
         />
         <Kpi
           rotulo="Custo fixo / receita"
           valor={receita > 0 ? percentual(nat.fixa / receita) : '—'}
           sub={`${moeda(nat.fixa / n)} por mês`}
           alerta={receita > 0 && nat.fixa / receita > 0.6}
+          explica={
+            <>
+              <Conta linhas={[{ rotulo: 'Despesas fixas do período', valor: nat.fixa }, { sinal: '÷', rotulo: 'Receitas do período', valor: receita }]} total={{ rotulo: 'Custo fixo / receita', valor: receita > 0 ? percentual(nat.fixa / receita) : '—' }} />
+              <Origem>
+                “Fixa” vem da classificação do lançamento ou da categoria (Ajustes → Categorias). Mostra quanto da renda já está comprometido antes do dia a dia; acima de 60% é sinal de atenção.
+                Média por mês: {moeda(nat.fixa / n)}.
+              </Origem>
+            </>
+          }
         />
       </div>
 
@@ -241,10 +284,17 @@ function Titulo({ children, icone, para }: { children: ReactNode; icone: ReactNo
   )
 }
 
-function Kpi({ rotulo, valor, sub, alerta, destaque }: { rotulo: string; valor: string; sub?: string; alerta?: boolean; destaque?: boolean }) {
+function Kpi({ rotulo, valor, sub, alerta, destaque, explica }: { rotulo: string; valor: string; sub?: string; alerta?: boolean; destaque?: boolean; explica?: ReactNode }) {
   return (
     <div className={destaque ? 'rounded-2xl bg-gradient-to-br from-azul-700 to-azul-900 p-4 text-white shadow-lg shadow-azul-700/20 sm:p-5' : 'cartao'}>
-      <div className={`text-xs font-semibold ${destaque ? 'text-white/70' : 'text-slate-500'}`}>{rotulo}</div>
+      <div className={`flex items-center gap-1 text-xs font-semibold ${destaque ? 'text-white/70' : 'text-slate-500'}`}>
+        <span className="flex-1">{rotulo}</span>
+        {explica && (
+          <Explicar titulo={rotulo} claro={destaque}>
+            {explica}
+          </Explicar>
+        )}
+      </div>
       <div className={`mt-1.5 text-lg font-extrabold tracking-tight tabular-nums sm:text-2xl ${alerta ? (destaque ? 'text-rose-300' : 'text-rose-600') : destaque ? 'text-white' : 'text-slate-900'}`}>{valor}</div>
       {sub && <div className={`mt-0.5 text-xs ${destaque ? 'text-white/60' : 'text-slate-400'}`}>{sub}</div>}
     </div>

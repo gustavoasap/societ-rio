@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { AlertTriangle, CalendarRange, CircleCheck, HeartPulse, Info, Plane, Plus, Shield, Sparkles, Target, TrendingUp, Wallet } from 'lucide-react'
 import { AbasAnalise } from '../components/Abas'
 import { Conta, Explicar, Origem } from '../components/Explicar'
-import { Cabecalho, Carregando, Erro, Progresso, Segmentado } from '../components/ui'
+import { Cabecalho, Carregando, Erro, Modal, Progresso, Segmentado } from '../components/ui'
 import { usePlano } from '../components/usePlano'
 import { useApp } from '../contexto'
 import { somar } from '../lib/calculos'
@@ -15,10 +15,12 @@ import { MetaForm } from './Metas'
 export function Plano() {
   const { nome } = useApp()
   const p = usePlano()
+  const [visaoMes, setVisaoMes] = useState(false)
   const [metaForm, setMetaForm] = useState<null | { nome: string; valor_alvo?: number; icone?: string; cor?: string; descricao?: string; prazo?: string }>(null)
 
   if (p.carregando || !p.dados) return p.erro ? <Erro>{p.erro}</Erro> : <Carregando />
-  const { plano, config, projecao, temContaReserva } = p.dados
+  const { plano, config, projecao, temContaReserva, despesasMes } = p.dados
+  const doMes = despesasMes[0]
   const r = plano.reserva
   const semRenda = plano.renda.total === 0
   const viagem = plano.metas.find((m) => m.meta.icone === 'plane' || /viag/i.test(m.meta.nome))
@@ -100,16 +102,25 @@ export function Plano() {
         />
         <Grande
           rotulo="Renda mínima para viver"
-          valor={plano.rendaMinima}
-          sub="Só os gastos essenciais"
+          valor={doMes.total}
+          sub={`Todas as despesas previstas em ${mesPorExtenso(doMes.mes).split(' de ')[0]}`}
           icone={<HeartPulse className="h-4 w-4 text-rose-500" />}
+          acao={
+            <button className="mt-2 inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-azul-600 hover:underline" onClick={() => setVisaoMes(true)}>
+              <CalendarRange className="h-3.5 w-3.5" /> Visão por mês
+            </button>
+          }
           explica={
             <>
               <Conta
-                linhas={plano.custos.filter((x) => x.essencial).map((x) => ({ sinal: '+' as const, rotulo: x.nome, valor: x.estimativa }))}
-                total={{ rotulo: 'Renda mínima (essenciais)', valor: plano.rendaMinima }}
+                linhas={[
+                  { rotulo: 'Fixos e recorrentes do mês (inclusive no cartão)', valor: doMes.recorrentes, dica: 'Tudo o que está em Fixos e salário e cai neste mês (anuais só no mês do vencimento; de 15 em 15 dias, 2 ou 3 vezes).' },
+                  { sinal: '+', rotulo: 'Parcelas com data no mês', valor: doMes.parcelas },
+                  { sinal: '+', rotulo: 'Gastos do dia a dia', valor: doMes.diaADia, dica: 'O maior entre a média dos meses anteriores e o que já foi gasto neste mês.' },
+                ]}
+                total={{ rotulo: `Renda mínima de ${mesPorExtenso(doMes.mes)}`, valor: doMes.total }}
               />
-              <Origem>Só as categorias marcadas como essenciais em Ajustes → Categorias (moradia, mercado, saúde...). É o mínimo para manter o básico se a renda cair.</Origem>
+              <Origem>Considera todas as suas despesas (essenciais ou não, recorrentes ou não), porque todas serão pagas. Como muda de mês para mês, use “Visão por mês” para ver os próximos.</Origem>
             </>
           }
         />
@@ -124,12 +135,12 @@ export function Plano() {
                 linhas={[
                   { rotulo: 'Custo de vida por mês', valor: plano.custoTotal },
                   { sinal: '+', rotulo: 'Metas (quanto guardar por mês)', valor: plano.metasTotal },
-                  { sinal: '÷', rotulo: `(1 − ${config.pct_investimento}% para investir)`, valor: `${(1 - config.pct_investimento / 100).toLocaleString('pt-BR')}` },
+                  { sinal: '+', rotulo: `Guardar ${config.pct_investimento}% da renda ideal (investimento + reserva)`, valor: somar([plano.rendaIdeal, -plano.custoTotal, -plano.metasTotal]) },
                 ]}
                 total={{ rotulo: 'Renda ideal', valor: plano.rendaIdeal }}
               />
               <Origem>
-                Dividir por (1 − {config.pct_investimento}%) garante que, ganhando isso, {config.pct_investimento}% da renda ({moeda(plano.rendaIdeal * config.pct_investimento / 100)}) sobra para investir depois de pagar o custo de vida e as metas.
+                Ganhando {moeda(plano.rendaIdeal)}, você paga o custo de vida e as metas e ainda sobram {config.pct_investimento}% dessa renda ({moeda(somar([plano.rendaIdeal, -plano.custoTotal, -plano.metasTotal]))}) para guardar. O % você escolhe em “Quanto guardar da renda”.
               </Origem>
             </>
           }
@@ -351,19 +362,15 @@ export function Plano() {
           <h2 className="mb-1 flex items-center gap-2 text-base font-extrabold text-slate-900">
             <TrendingUp className="h-5 w-5 text-azul-600" /> Quanto guardar da renda
           </h2>
-          <p className="mb-3 text-sm text-slate-500">Percentual da renda que vai para o futuro (reserva + investimentos). Referência comum: 20% (regra 50/30/20).</p>
+          <p className="mb-3 text-sm text-slate-500">Percentual da renda que vai para o futuro (reserva + investimentos). Referência comum: 20% (regra 50/30/20). Escolha um atalho ou digite qualquer valor até 90%.</p>
           <div className="mb-4">
-            <Segmentado
-              valor={String(Math.round(config.pct_investimento))}
-              onChange={(v) => salvarConfig({ pct_investimento: Number(v) })}
-              opcoes={['10', '15', '20', '25', '30'].map((v) => ({ value: v, label: `${v}%` }))}
-            />
+            <PctGuardar valor={config.pct_investimento} />
           </div>
           <div className="mb-1 text-xs font-semibold text-slate-600">Como sua renda está dividida hoje (regra 50/30/20)</div>
           <Divisao rotulo="Necessidades (essenciais)" valor={plano.regra.necessidades} ideal={0.5} cor="bg-rose-500" />
           <Divisao rotulo="Estilo de vida (não essenciais)" valor={plano.regra.desejos} ideal={0.3} cor="bg-amber-500" />
           <Divisao rotulo="Futuro (guardar + metas)" valor={plano.regra.poupanca} ideal={0.2} cor="bg-emerald-500" minimo />
-          <p className="mt-2 text-xs text-slate-400">Referência, não regra: o importante é o plano fechar com folga.</p>
+          <p className="mt-2 text-xs text-slate-400">Referência, não regra: o importante é o plano fechar com folga. “Necessidades” usa as categorias marcadas como essenciais.</p>
         </section>
       </div>
 
@@ -371,8 +378,8 @@ export function Plano() {
       <section className="cartao">
         <h2 className="mb-1 text-base font-extrabold text-slate-900">De onde vem o custo de vida</h2>
         <p className="mb-3 text-sm text-slate-500">
-          Fixos e anuais vêm de “Fixos e salário” (anuais divididos por 12). Os demais gastos usam a média {plano.historicoMeses ? `dos últimos ${plano.historicoMeses} ${plano.historicoMeses === 1 ? 'mês' : 'meses'}` : '(ainda sem histórico)'} ou o limite do Orçamento, o que for maior.
-          Marque em Ajustes → Categorias quais são essenciais.
+          Todas as despesas, essenciais ou não. Fixos e anuais vêm de “Fixos e salário” (anuais divididos por 12, inclusive os pagos no cartão). Os demais gastos usam a média{' '}
+          {plano.historicoMeses ? `dos últimos ${plano.historicoMeses} ${plano.historicoMeses === 1 ? 'mês' : 'meses'}` : 'do mês atual (ainda não há mês fechado)'} ou o limite do Orçamento, o que for maior.
         </p>
         {plano.custos.length === 0 ? (
           <p className="py-4 text-center text-sm text-slate-400">Cadastre seus fixos e lance alguns gastos para o app calcular.</p>
@@ -461,12 +468,56 @@ export function Plano() {
         )}
       </section>
 
+      {visaoMes && (
+        <Modal
+          titulo="Renda mínima · visão por mês"
+          onClose={() => setVisaoMes(false)}
+          rodape={
+            <button type="button" className="btn-secondary" onClick={() => setVisaoMes(false)}>
+              Fechar
+            </button>
+          }
+        >
+          <p className="text-sm text-slate-600">Todas as despesas previstas em cada mês: é quanto você precisa ganhar naquele mês para pagar tudo.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs tabular-nums sm:text-sm">
+              <thead>
+                <tr className="text-xs text-slate-500">
+                  <th className="py-1.5 text-left font-semibold">Mês</th>
+                  <th className="py-1.5 text-right font-semibold">Fixos</th>
+                  <th className="py-1.5 text-right font-semibold">Parcelas</th>
+                  <th className="py-1.5 text-right font-semibold">Dia a dia</th>
+                  <th className="py-1.5 text-right font-semibold">Renda mínima</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {despesasMes.map((m, i) => (
+                  <tr key={m.mes} className={i === 0 ? 'bg-azul-50/60 font-semibold' : ''}>
+                    <td className="py-1.5 text-slate-700 first-letter:uppercase">
+                      {mesAbreviado(m.mes)}
+                      {i === 0 && <span className="ml-1 text-[0.625rem] font-bold text-azul-700">atual</span>}
+                    </td>
+                    <td className="py-1.5 text-right">{moeda(m.recorrentes)}</td>
+                    <td className="py-1.5 text-right">{moeda(m.parcelas)}</td>
+                    <td className="py-1.5 text-right">{moeda(m.diaADia)}</td>
+                    <td className="py-1.5 text-right font-bold text-azul-800">{moeda(m.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-slate-500">
+            Dia a dia = média dos gastos que não são fixos nem parcelas (no mês atual, o maior entre a média e o que já foi gasto). Parcelas e fixos seguem o que já está
+            cadastrado: quando uma parcela termina, o mês seguinte fica mais leve.
+          </p>
+        </Modal>
+      )}
       {metaForm && <MetaForm inicial={null} sugestao={metaForm} onClose={() => setMetaForm(null)} />}
     </div>
   )
 }
 
-function Grande({ rotulo, valor, sub, destaque, icone, explica }: { rotulo: string; valor: number; sub?: string; destaque?: boolean; icone?: ReactNode; explica?: ReactNode }) {
+function Grande({ rotulo, valor, sub, destaque, icone, explica, acao }: { rotulo: string; valor: number; sub?: string; destaque?: boolean; icone?: ReactNode; explica?: ReactNode; acao?: ReactNode }) {
   return (
     <div className={destaque ? 'rounded-2xl bg-gradient-to-br from-azul-700 to-azul-900 p-4 text-white shadow-lg shadow-azul-700/20 sm:p-5' : 'cartao'}>
       <div className={`flex items-center gap-1.5 text-xs font-semibold ${destaque ? 'text-white/70' : 'text-slate-500'}`}>
@@ -480,6 +531,7 @@ function Grande({ rotulo, valor, sub, destaque, icone, explica }: { rotulo: stri
       </div>
       <div className={`mt-1.5 text-lg font-extrabold tracking-tight tabular-nums sm:text-2xl ${destaque ? '' : 'text-slate-900'}`}>{moeda(valor)}</div>
       {sub && <div className={`mt-0.5 text-xs ${destaque ? 'text-white/60' : 'text-slate-400'}`}>{sub}</div>}
+      {acao}
     </div>
   )
 }
@@ -648,5 +700,35 @@ function RendaNecessaria({
         </div>
       </div>
     </section>
+  )
+}
+
+/** % da renda para guardar: atalhos e campo livre (até 90%). */
+function PctGuardar({ valor }: { valor: number }) {
+  const [texto, setTexto] = useState(String(Math.round(valor)))
+  const aplicar = (v: number) => {
+    const n = Math.max(0, Math.min(90, Math.round(v)))
+    setTexto(String(n))
+    if (n !== Math.round(valor)) salvarConfig({ pct_investimento: n })
+  }
+  const atalhos = ['10', '20', '30', '40', '50']
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <Segmentado valor={atalhos.includes(texto) ? texto : ''} onChange={(v) => aplicar(Number(v))} opcoes={atalhos.map((v) => ({ value: v, label: `${v}%` }))} />
+      </div>
+      <label className="relative w-full shrink-0 sm:w-24">
+        <input
+          className="input pr-7 text-right tabular-nums"
+          inputMode="numeric"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value.replace(/\D/g, '').slice(0, 2))}
+          onBlur={() => aplicar(Number(texto || 0))}
+          onKeyDown={(e) => e.key === 'Enter' && aplicar(Number(texto || 0))}
+          aria-label="Percentual para guardar"
+        />
+        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-slate-400">%</span>
+      </label>
+    </div>
   )
 }

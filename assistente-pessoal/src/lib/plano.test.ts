@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Categoria, Lancamento, Recorrencia } from '../tipos'
-import { disponivelNoMes, mensalizado, montarPlano, ocorreNoMes, projetar } from './plano'
+import { despesasPorMes, disponivelNoMes, mensalizado, montarPlano, ocorreNoMes, projetar } from './plano'
 
 const cat = (id: string, natureza: Categoria['natureza'], essencial: boolean, orcamento_mensal: number | null = null): Categoria => ({
   id,
@@ -105,6 +105,15 @@ describe('plano financeiro', () => {
     config: { meses_reserva: 6, pct_investimento: 20, margem_folga: 25 },
     saldoReserva: 10000,
     hoje: '2026-10-02',
+  })
+
+  it('renda mínima mês a mês: todas as despesas (recorrentes + parcelas + dia a dia), do mês atual para frente', () => {
+    const ms = despesasPorMes({ plano, recorrencias, lancamentos, hoje: '2026-10-02', meses: 3 })
+    expect(ms.map((m) => m.mes)).toEqual(['2026-10', '2026-11', '2026-12'])
+    for (const m of ms) expect(m.total).toBeCloseTo(m.recorrentes + m.parcelas + m.diaADia, 2)
+    // a parcela de 350 só pesa em novembro
+    expect(ms[1].parcelas).toBe(350)
+    expect(ms[0].parcelas).toBe(0)
   })
 
   it('renda: recorrente + média das receitas avulsas', () => {

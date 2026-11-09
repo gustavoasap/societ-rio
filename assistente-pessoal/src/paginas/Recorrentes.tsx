@@ -17,7 +17,7 @@ import { FREQUENCIAS, NATUREZAS, rotuloDe, type Natureza, type Recorrencia } fro
 export function Recorrentes() {
   const { categorias, contas, pessoas } = useApp()
   const d = useDados(buscarRecorrencias, [])
-  const [edit, setEdit] = useState<Recorrencia | { tipo: 'receita' | 'despesa' } | null>(null)
+  const [edit, setEdit] = useState<Recorrencia | NovaRec | null>(null)
 
   if (d.carregando) return <Carregando />
   const lista = d.dados ?? []
@@ -33,19 +33,21 @@ export function Recorrentes() {
   const variaveis = somar(variaveisPrev.map((c) => c.orcamento_mensal!))
   const sobra = somar([receitas, -fixos, -variaveis])
 
-  const grupo = (titulo: string, itens: Recorrencia[], tipo: 'receita' | 'despesa') => (
+  const ehCartao = (r: Recorrencia) => contas.find((c) => c.id === r.conta_id)?.tipo === 'cartao'
+  const cartaoPadrao = contas.find((c) => c.ativa && c.tipo === 'cartao')?.id
+  const grupo = (titulo: string, itens: Recorrencia[], tipo: 'receita' | 'despesa', cartao = false) => (
     <section className="cartao">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
           {tipo === 'receita' ? <ArrowUpRight className="h-4 w-4 text-emerald-600" /> : <ArrowDownRight className="h-4 w-4 text-orange-600" />}
           {titulo}
         </h2>
-        <button className="btn-secondary btn-sm" onClick={() => setEdit({ tipo })}>
+        <button className="btn-secondary btn-sm" onClick={() => setEdit({ tipo, cartao, conta_id: cartao ? cartaoPadrao : undefined })}>
           <Plus className="h-3.5 w-3.5" /> Adicionar
         </button>
       </div>
       {itens.length === 0 ? (
-        <p className="py-4 text-center text-sm text-slate-400">{tipo === 'receita' ? 'Cadastre seu salário / pró-labore.' : 'Cadastre aluguel, condomínio, escola, plano de saúde, assinaturas, IPVA, IPTU...'}</p>
+        <p className="py-4 text-center text-sm text-slate-400">{tipo === 'receita' ? 'Cadastre seu salário / pró-labore.' : cartao ? 'Assinaturas e cobranças fixas que caem no cartão (streaming, academia, apps...).' : 'Cadastre aluguel, condomínio, escola, plano de saúde, faxina, IPVA, IPTU... (o que não é pago no cartão).'}</p>
       ) : (
         <div className="divide-y divide-slate-100">
           {itens.map((r) => {
@@ -114,9 +116,15 @@ export function Recorrentes() {
           'receita',
         )}
         {grupo(
-          'Despesas recorrentes (fixas, assinaturas, anuais...)',
-          lista.filter((r) => r.tipo === 'despesa'),
+          'Despesas recorrentes (fora do cartão)',
+          lista.filter((r) => r.tipo === 'despesa' && !ehCartao(r)),
           'despesa',
+        )}
+        {grupo(
+          'Despesas cartão de crédito',
+          lista.filter((r) => r.tipo === 'despesa' && ehCartao(r)),
+          'despesa',
+          true,
         )}
       </div>
 
@@ -159,7 +167,10 @@ function Plano({ rotulo, valor, destaque, dica }: { rotulo: string; valor: numbe
   )
 }
 
-function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 'receita' | 'despesa' }; onClose: () => void }) {
+/** Nova recorrência: tipo e, no bloco do cartão, o cartão já escolhido. */
+type NovaRec = { tipo: 'receita' | 'despesa'; cartao?: boolean; conta_id?: string }
+
+function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | NovaRec; onClose: () => void }) {
   const { contas, categorias } = useApp()
   const edicao = 'id' in inicial ? inicial : null
   const [tipo, setTipo] = useState(inicial.tipo)
@@ -169,7 +180,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
   const [diaUtil, setDiaUtil] = useState<ModoDiaUtil | null>(edicao?.dia_util ?? null)
   const [intervalo, setIntervalo] = useState(edicao?.intervalo_meses ?? 1)
   const [intervaloDias, setIntervaloDias] = useState<number | null>(edicao?.intervalo_dias ?? null)
-  const [contaId, setContaId] = useState(edicao?.conta_id ?? contas.find((c) => c.ativa && c.tipo !== 'cartao')?.id ?? contas[0]?.id ?? '')
+  const [contaId, setContaId] = useState(edicao?.conta_id ?? (inicial as NovaRec).conta_id ?? contas.find((c) => c.ativa && c.tipo !== 'cartao')?.id ?? contas[0]?.id ?? '')
   const [categoriaId, setCategoriaId] = useState(edicao?.categoria_id ?? '')
   const [natureza, setNatureza] = useState<Natureza | ''>(edicao?.natureza ?? '')
   const [pessoaId, setPessoaId] = useState(edicao?.pessoa_id ?? '')
@@ -278,7 +289,7 @@ function RecorrenciaForm({ inicial, onClose }: { inicial: Recorrencia | { tipo: 
 
   return (
     <Modal
-      titulo={edicao ? 'Editar recorrência' : tipo === 'receita' ? 'Nova receita recorrente' : 'Nova despesa recorrente'}
+      titulo={edicao ? 'Editar recorrência' : tipo === 'receita' ? 'Nova receita recorrente' : (inicial as NovaRec).cartao ? 'Nova despesa no cartão de crédito' : 'Nova despesa recorrente'}
       onClose={onClose}
       rodape={
         <>

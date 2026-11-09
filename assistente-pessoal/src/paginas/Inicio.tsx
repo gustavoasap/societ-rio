@@ -55,11 +55,16 @@ export function Inicio() {
   const serie = resumoPorMes(meus, meses)
   const terceiros = aReceberDeTerceiros(todos.filter((l) => l.data <= hj))
   const totalTerceiros = somar([...terceiros.values()].map((t) => t.total))
+  // compras futuras já lançadas nos cartões (entram na fatura, mas ainda não aconteceram)
+  const futurasCartao = (id: string) => somar(todos.filter((l) => l.conta_id === id && l.tipo === 'despesa' && l.data > hj).map((l) => l.valor))
   const cartoes = contas.filter((c) => c.tipo === 'cartao' && c.ativa)
   const proximasFaturas = cartoes
     .map((c) => ({ c, f: faturasDoCartao(c, todos).find((f) => (f.vencimento ?? ultimoDia(f.mes)) >= hj && f.total - f.pago > 0.009) }))
     .filter((x) => x.f)
-  const patrimonio = somar(contas.filter((c) => c.ativa).map((c) => c.saldo))
+  // patrimônio = saldo das contas (cartão = o que devo até hoje) + o que outras pessoas me devem
+  // (a dívida do cartão inclui as compras feitas para terceiros, então o crédito com eles também entra)
+  const saldoContas = somar(contas.filter((c) => c.ativa).map((c) => c.saldo))
+  const patrimonio = somar([saldoContas, totalTerceiros])
   const emAberto = contasEmAberto(todos, hj)
   const topCategorias = despesasPorCategoria(doMes).slice(0, 5)
   const v = (n: number) => (oculto ? 'R$ •••••' : moeda(n))
@@ -95,7 +100,20 @@ export function Inicio() {
         <Numero rotulo="Patrimônio" valor={v(patrimonio)} icone={<Landmark className="h-4 w-4" />} destaque explica={
           <>
             <Conta
-              linhas={contas.filter((c) => c.ativa).map((c) => ({ sinal: c.saldo < 0 ? ('−' as const) : ('+' as const), rotulo: `${c.nome}${c.tipo === 'cartao' ? ' (cartão: o que deve)' : ''}`, valor: Math.abs(c.saldo) }))}
+              linhas={[
+                ...contas
+                  .filter((c) => c.ativa)
+                  .map((c) => ({
+                    sinal: c.saldo < 0 ? ('−' as const) : ('+' as const),
+                    rotulo: `${c.nome}${c.tipo === 'cartao' ? ' (cartão: dívida até hoje)' : ''}`,
+                    valor: Math.abs(c.saldo),
+                    dica:
+                      c.tipo === 'cartao'
+                        ? `Compras feitas até hoje − pagamentos de fatura. Inclui compras de terceiros (você deve ao banco).${futurasCartao(c.id) > 0 ? ` A fatura na tela Cartões mostra mais ${moeda(futurasCartao(c.id))} de compras com data futura, que ainda não aconteceram.` : ''}`
+                        : undefined,
+                  })),
+                ...(totalTerceiros > 0 ? [{ sinal: '+' as const, rotulo: 'A receber de terceiros', valor: totalTerceiros, dica: 'Compras que você pagou para outras pessoas e elas ainda vão te devolver.' }] : []),
+              ]}
               total={{ rotulo: 'Patrimônio hoje', valor: patrimonio }}
             />
             <Origem>Saldo de cada conta = saldo inicial + tudo o que já foi pago/recebido até hoje (Contas). Lançamentos futuros ou não pagos ainda não entram.</Origem>
