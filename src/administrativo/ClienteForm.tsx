@@ -1,23 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Check, History, Plus, RotateCcw, XCircle } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
+import { Check, RotateCcw, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatarData, mascaraCnpj } from '../lib/format'
 import { Field, Modal, Select } from '../components/ui'
 import { encerrarCliente } from './acoes'
-import {
-  ETAPAS,
-  INSCRICOES,
-  OPCOES_ETAPA,
-  REGIMES,
-  SEGMENTOS,
-  STATUS_CLIENTE,
-  hojeISO,
-  moeda,
-  type Cliente,
-  type Honorario,
-  type ParceiroResumo,
-  EMPRESAS,
-} from './tipos'
+import { INSCRICOES, REGIMES, SEGMENTOS, hojeISO, type Cliente, type ParceiroResumo, EMPRESAS } from './tipos'
 import { CampoData } from '../components/CampoData'
 
 type Dados = Omit<Cliente, 'id' | 'codigo' | 'created_at'>
@@ -45,8 +32,6 @@ const VAZIO: Dados = {
   procuracao: 'pendente',
   certificado_digital: null,
   onboarding: 'pendente',
-  licenciamento: null,
-  makrosystem: null,
   link_drive: null,
   observacoes: null,
 }
@@ -65,28 +50,11 @@ export function ClienteForm({
   onSalvo: () => void
 }) {
   const [d, setD] = useState<Dados>(() => (cliente ? { ...VAZIO, ...cliente } : VAZIO))
-  const [honorarios, setHonorarios] = useState<Honorario[]>([])
-  const [novoHonorario, setNovoHonorario] = useState({ valor: '', inicio: hojeISO(), dia: '', descricao: '' })
-  const [reajustando, setReajustando] = useState(!cliente)
   const [encerrando, setEncerrando] = useState(false)
   const [dataEncerramento, setDataEncerramento] = useState(hojeISO())
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
 
-  useEffect(() => {
-    if (!cliente) return
-    supabase
-      .from('adm_honorarios')
-      .select('*')
-      .eq('cliente_id', cliente.id)
-      .order('vigencia_inicio', { ascending: false })
-      .then(({ data, error }) => {
-        if (error) setErro(error.message)
-        else setHonorarios((data as Honorario[]) ?? [])
-      })
-  }, [cliente])
-
-  const vigente = honorarios.find((h) => !h.vigencia_fim)
   const set = <K extends keyof Dados>(k: K, v: Dados[K]) => setD((s) => ({ ...s, [k]: v }))
 
   async function salvar(e: FormEvent) {
@@ -94,33 +62,18 @@ export function ClienteForm({
     setErro(null)
     const cnpj = (d.cnpj ?? '').replace(/\D/g, '')
     if (cnpj && cnpj.length !== 14) return setErro('O CNPJ precisa ter 14 dígitos.')
-    const valor = Number(novoHonorario.valor.replace(/\./g, '').replace(',', '.'))
-    if (reajustando && novoHonorario.valor && (!Number.isFinite(valor) || valor < 0)) return setErro('Informe um honorário válido, por exemplo 360,00.')
-    const dia = novoHonorario.dia ? Number(novoHonorario.dia) : null
-    if (dia !== null && (dia < 1 || dia > 31)) return setErro('O dia de vencimento vai de 1 a 31.')
 
     setSalvando(true)
     const { id: _id, codigo: _codigo, created_at: _criado, updated_at: _atualizado, ...resto } = d as Dados & Partial<Cliente> & { updated_at?: string }
-    const dados = { ...resto, cnpj: cnpj || null }
+    // Contrato assinado, certificado, procuração, onboarding e data de assinatura são editados no Expandir
+    const { status: _st, procuracao: _pr, certificado_digital: _cd, onboarding: _on, data_assinatura: _as, ...cadastro } = resto
+    const dados = cliente ? { ...cadastro, cnpj: cnpj || null } : { ...resto, cnpj: cnpj || null }
     const r = cliente
       ? await supabase.from('adm_clientes').update(dados).eq('id', cliente.id).select('id').single()
       : await supabase.from('adm_clientes').insert(dados).select('id').single()
     if (r.error) {
       setSalvando(false)
       return setErro(r.error.code === '23505' ? 'Já existe um cliente com esse CNPJ.' : r.error.message)
-    }
-    if (reajustando && novoHonorario.valor) {
-      const h = await supabase.rpc('adm_reajustar_honorario', {
-        p_cliente: r.data.id,
-        p_valor: valor,
-        p_inicio: novoHonorario.inicio,
-        p_dia: dia,
-        p_descricao: texto(novoHonorario.descricao),
-      })
-      if (h.error) {
-        setSalvando(false)
-        return setErro(h.error.message)
-      }
     }
     setSalvando(false)
     onSalvo()
@@ -197,24 +150,38 @@ export function ClienteForm({
       <form id="form-cliente" onSubmit={salvar} className="space-y-4">
         <section className="grid gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70 sm:grid-cols-6">
           <Field label="Razão social" className="sm:col-span-4">
-            <input id="razao-social" className="input uppercase" value={d.razao_social} onChange={(e) => set('razao_social', e.target.value.toUpperCase())} required />
+            <input
+              id="razao-social"
+              className="input uppercase"
+              value={d.razao_social}
+              onChange={(e) => set('razao_social', e.target.value.toUpperCase())}
+              required
+            />
           </Field>
           <Field label="CNPJ" className="sm:col-span-2">
-            <input id="cnpj" className="input font-mono" value={mascaraCnpj(d.cnpj ?? '')} onChange={(e) => set('cnpj', e.target.value)} placeholder="00.000.000/0000-00" />
+            <input
+              id="cnpj"
+              className="input font-mono"
+              value={mascaraCnpj(d.cnpj ?? '')}
+              onChange={(e) => set('cnpj', e.target.value)}
+              placeholder="00.000.000/0000-00"
+            />
           </Field>
-          <Field label="Nome fantasia" className="sm:col-span-3">
-            <input id="nome-fantasia" className="input uppercase" value={d.nome_fantasia ?? ''} onChange={(e) => set('nome_fantasia', texto(e.target.value.toUpperCase()))} />
-          </Field>
-          <Field label="Situação" className="sm:col-span-3">
-            <Select
-              value={d.status}
-              onChange={(v) => set('status', v as Dados['status'])}
-              opcoes={STATUS_CLIENTE.filter((s) => s.value !== 'encerrado' || d.status === 'encerrado')}
-              disabled={d.status === 'encerrado'}
+          <Field label="Nome fantasia" className="sm:col-span-6">
+            <input
+              id="nome-fantasia"
+              className="input uppercase"
+              value={d.nome_fantasia ?? ''}
+              onChange={(e) => set('nome_fantasia', texto(e.target.value.toUpperCase()))}
             />
           </Field>
           <Field label="Responsável" className="sm:col-span-2">
-            <input id="responsavel" className="input uppercase" value={d.responsavel ?? ''} onChange={(e) => set('responsavel', e.target.value.toUpperCase() || null)} />
+            <input
+              id="responsavel"
+              className="input uppercase"
+              value={d.responsavel ?? ''}
+              onChange={(e) => set('responsavel', e.target.value.toUpperCase() || null)}
+            />
           </Field>
           <Field label="E-mail" className="sm:col-span-2">
             <input id="email" type="email" className="input" value={d.email ?? ''} onChange={(e) => set('email', texto(e.target.value))} />
@@ -225,11 +192,13 @@ export function ClienteForm({
           <Field label="Data de abertura" className="sm:col-span-2">
             <CampoData id="data-abertura" className="input" value={d.data_abertura ?? ''} onChange={(v) => set('data_abertura', v || null)} />
           </Field>
-          <Field label="Assinatura do contrato" className="sm:col-span-2">
-            <CampoData id="data-assinatura" className="input" value={d.data_assinatura ?? ''} onChange={(v) => set('data_assinatura', v || null)} />
-          </Field>
           <Field label="Início dos serviços" className="sm:col-span-2">
-            <CampoData id="data-inicio-servicos" className="input" value={d.data_inicio_servicos ?? ''} onChange={(v) => set('data_inicio_servicos', v || null)} />
+            <CampoData
+              id="data-inicio-servicos"
+              className="input"
+              value={d.data_inicio_servicos ?? ''}
+              onChange={(v) => set('data_inicio_servicos', v || null)}
+            />
           </Field>
           <Field label="Empresa" className="sm:col-span-2">
             <Select value={d.empresa ?? ''} onChange={(v) => set('empresa', v || null)} opcoes={EMPRESAS} vazio="Não informada" />
@@ -260,7 +229,12 @@ export function ClienteForm({
             </datalist>
           </Field>
           <Field label="Parceiro" className="sm:col-span-2">
-            <Select value={d.parceiro_id ?? ''} onChange={(v) => set('parceiro_id', v || null)} opcoes={parceiros.map((p) => ({ value: p.id, label: p.nome }))} vazio="Nenhum" />
+            <Select
+              value={d.parceiro_id ?? ''}
+              onChange={(v) => set('parceiro_id', v || null)}
+              opcoes={parceiros.map((p) => ({ value: p.id, label: p.nome }))}
+              vazio="Nenhum"
+            />
           </Field>
           <Field label="Regime tributário" className="sm:col-span-2">
             <Select value={d.regime_tributario ?? ''} onChange={(v) => set('regime_tributario', v || null)} opcoes={REGIMES} vazio="Não informado" />
@@ -275,81 +249,19 @@ export function ClienteForm({
             <input id="inscricao" className="input font-mono" value={d.inscricao ?? ''} onChange={(e) => set('inscricao', texto(e.target.value))} />
           </Field>
           <Field label="Pasta no Drive" className="sm:col-span-3">
-            <input id="link-drive" className="input" value={d.link_drive ?? ''} onChange={(e) => set('link_drive', texto(e.target.value))} placeholder="https://drive.google.com/..." />
+            <input
+              id="link-drive"
+              className="input"
+              value={d.link_drive ?? ''}
+              onChange={(e) => set('link_drive', texto(e.target.value))}
+              placeholder="https://drive.google.com/..."
+            />
           </Field>
         </section>
 
-        <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
-          <h3 className="mb-3 text-sm font-bold text-slate-800">Implantação</h3>
-          <div className="grid gap-4 sm:grid-cols-5">
-            {ETAPAS.map((et) => (
-              <Field key={et.campo} label={et.label}>
-                <Select value={d[et.campo] ?? ''} onChange={(v) => set(et.campo, (v || null) as Dados['procuracao'])} opcoes={OPCOES_ETAPA} vazio="Não informado" />
-              </Field>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="flex items-center gap-2 text-sm font-bold text-slate-800">
-              <History className="h-4 w-4 text-slate-400" />
-              Honorário mensal
-              {vigente && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 ring-1 ring-emerald-200">vigente: {moeda(Number(vigente.valor))}</span>}
-            </h3>
-            {cliente && !reajustando && d.status !== 'encerrado' && (
-              <button type="button" className="btn-secondary btn-sm" onClick={() => setReajustando(true)}>
-                <Plus className="h-3.5 w-3.5" />
-                {vigente ? 'Reajustar honorário' : 'Informar honorário'}
-              </button>
-            )}
-          </div>
-          {reajustando && (
-            <div className="mb-3 grid gap-3 rounded-xl bg-brand-50 p-3 ring-1 ring-brand-100 sm:grid-cols-4">
-              <Field label="Valor mensal (R$)">
-                <input id="honorario-valor" className="input" inputMode="decimal" value={novoHonorario.valor} onChange={(e) => setNovoHonorario((s) => ({ ...s, valor: e.target.value }))} placeholder="360,00" />
-              </Field>
-              <Field label="Vale a partir de">
-                <CampoData id="honorario-inicio" className="input" value={novoHonorario.inicio} onChange={(v) => setNovoHonorario((s) => ({ ...s, inicio: v }))} />
-              </Field>
-              <Field label="Dia de vencimento">
-                <input id="honorario-dia" type="number" min={1} max={31} className="input" value={novoHonorario.dia} onChange={(e) => setNovoHonorario((s) => ({ ...s, dia: e.target.value }))} placeholder="10" />
-              </Field>
-              <Field label="Observação">
-                <input id="honorario-descricao" className="input" value={novoHonorario.descricao} onChange={(e) => setNovoHonorario((s) => ({ ...s, descricao: e.target.value }))} placeholder="Ex.: reajuste anual" />
-              </Field>
-              {vigente && <p className="text-xs text-brand-700 sm:col-span-4">O honorário atual termina na véspera da nova data, e o histórico é mantido.</p>}
-            </div>
-          )}
-          {honorarios.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
-                  <tr>
-                    <th className="py-1.5 pr-3">Valor</th>
-                    <th className="px-3 py-1.5">Vigência</th>
-                    <th className="px-3 py-1.5">Vencimento</th>
-                    <th className="py-1.5 pl-3">Observação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {honorarios.map((h) => (
-                    <tr key={h.id} className={h.vigencia_fim ? 'text-slate-400' : 'text-slate-700'}>
-                      <td className="py-2 pr-3 font-semibold tabular-nums">{moeda(Number(h.valor))}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {formatarData(h.vigencia_inicio)} a {h.vigencia_fim ? formatarData(h.vigencia_fim) : 'hoje'}
-                      </td>
-                      <td className="px-3 py-2">{h.dia_vencimento ? `dia ${h.dia_vencimento}` : '—'}</td>
-                      <td className="py-2 pl-3">{h.descricao ?? ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            !reajustando && <p className="text-sm text-slate-400">Nenhum honorário informado.</p>
-          )}
-        </section>
+        <p className="rounded-xl bg-brand-50 px-4 py-2.5 text-xs text-brand-800 ring-1 ring-brand-100">
+          Contrato assinado, certificado digital, procuração, onboarding e honorários são informados no botão <b>Expandir</b> do cliente, na lista.
+        </p>
 
         <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
           <Field label="Observações">

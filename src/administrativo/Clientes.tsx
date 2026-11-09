@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowDown, ArrowUp, Archive, Download, ExternalLink, House, LayoutDashboard, LogOut, Pencil, Plus, Search, Users } from 'lucide-react'
+import { ArrowDown, ArrowUp, Archive, ChevronDown, Download, ExternalLink, House, LayoutDashboard, LogOut, Pencil, Plus, Search, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Link } from '../lib/rotas'
 import { comRetentativa } from '../lib/retentar'
 import { formatarData } from '../lib/format'
 import { Select } from '../components/ui'
 import { ClienteForm } from './ClienteForm'
+import { ClienteExpandido } from './ClienteExpandido'
 import { encerrarCliente } from './acoes'
 import { Painel } from './Painel'
 import {
@@ -37,7 +38,13 @@ const COR_ETAPA: Record<Etapa | 'vazio', string> = {
   na: 'bg-slate-300',
   vazio: 'bg-slate-200',
 }
-const TEXTO_ETAPA: Record<Etapa | 'vazio', string> = { concluida: 'concluída', pdf_enviado: 'PDF enviado', pendente: 'pendente', na: 'não se aplica', vazio: 'não informado' }
+const TEXTO_ETAPA: Record<Etapa | 'vazio', string> = {
+  concluida: 'concluída',
+  pdf_enviado: 'PDF enviado',
+  pendente: 'pendente',
+  na: 'não se aplica',
+  vazio: 'não informado',
+}
 
 function csv(linhas: (string | number | null)[][]) {
   return linhas.map((l) => l.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n')
@@ -58,6 +65,7 @@ export function Clientes({ session }: { session: Session }) {
   const [fPendencia, setFPendencia] = useState('')
   const [ordem, setOrdem] = useState<{ campo: Ordem; asc: boolean }>({ campo: 'codigo', asc: true })
   const [editando, setEditando] = useState<Cliente | 'novo' | null>(null)
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set())
   const [encerrando, setEncerrando] = useState<Cliente | null>(null)
   const [dataEnc, setDataEnc] = useState(hojeISO())
 
@@ -102,7 +110,13 @@ export function Clientes({ session }: { session: Session }) {
       return txt.includes(t) || (dig.length >= 3 && (c.cnpj ?? '').includes(dig))
     })
     const val = (c: Cliente) =>
-      ordem.campo === 'honorario' ? (vigentes.get(c.id)?.valor ?? -1) : ordem.campo === 'codigo' ? c.codigo : ordem.campo === 'razao_social' ? c.razao_social : (c.data_assinatura ?? '')
+      ordem.campo === 'honorario'
+        ? (vigentes.get(c.id)?.valor ?? -1)
+        : ordem.campo === 'codigo'
+          ? c.codigo
+          : ordem.campo === 'razao_social'
+            ? c.razao_social
+            : (c.data_assinatura ?? '')
     return [...filtrada].sort((a, b) => {
       const x = val(a)
       const y = val(b)
@@ -112,6 +126,28 @@ export function Clientes({ session }: { session: Session }) {
   }, [aba, ativos, inativos, busca, fStatus, fParceiro, fRegime, fPendencia, ordem, vigentes])
 
   const totalLista = lista.reduce((s, c) => s + (vigentes.get(c.id)?.valor ?? 0), 0)
+
+  function alternar(id: string) {
+    setExpandidos((x) => {
+      const n = new Set(x)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }
+
+  /** Grava um campo editado no expandir (atualiza a tela na hora). */
+  async function atualizarCampo(c: Cliente, campo: keyof Cliente, valor: string | null) {
+    setClientes((l) => l.map((x) => (x.id === c.id ? { ...x, [campo]: valor } : x)))
+    const { error } = await supabase
+      .from('adm_clientes')
+      .update({ [campo]: valor })
+      .eq('id', c.id)
+    if (error) {
+      setErro(error.message)
+      carregar()
+    }
+  }
 
   async function mudarStatus(c: Cliente, status: StatusCliente) {
     if (status === 'encerrado') {
@@ -145,7 +181,28 @@ export function Clientes({ session }: { session: Session }) {
   }
 
   function exportar() {
-    const cab = ['Código', 'Empresa', 'CNPJ', 'Razão social', 'Situação', 'Abertura', 'Início dos serviços', 'Assinatura', 'Carência (meses)', 'Encerramento', 'Situação do encerramento', 'Responsável', 'E-mail', 'Telefone', 'Parceiro', 'Regime', 'Honorário mensal', 'Dia vencimento', ...ETAPAS.map((e) => e.label), 'Drive']
+    const cab = [
+      'Código',
+      'Empresa',
+      'CNPJ',
+      'Razão social',
+      'Situação',
+      'Abertura',
+      'Início dos serviços',
+      'Assinatura',
+      'Carência (meses)',
+      'Encerramento',
+      'Situação do encerramento',
+      'Responsável',
+      'E-mail',
+      'Telefone',
+      'Parceiro',
+      'Regime',
+      'Honorário mensal',
+      'Dia vencimento',
+      ...ETAPAS.map((e) => e.label),
+      'Drive',
+    ]
     const linhas = lista.map((c) => {
       const v = vigentes.get(c.id)
       return [
@@ -247,7 +304,9 @@ export function Clientes({ session }: { session: Session }) {
             >
               <I className="h-4 w-4" />
               {label}
-              {n !== undefined && <span className={`rounded-full px-1.5 text-xs tabular-nums ${aba === id ? 'bg-slate-200 text-slate-600' : 'bg-white/15'}`}>{n}</span>}
+              {n !== undefined && (
+                <span className={`rounded-full px-1.5 text-xs tabular-nums ${aba === id ? 'bg-slate-200 text-slate-600' : 'bg-white/15'}`}>{n}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -264,13 +323,37 @@ export function Clientes({ session }: { session: Session }) {
             <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
               <div className="relative min-w-60 flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input id="busca-clientes" className="input pl-10" placeholder="Buscar por razão social, CNPJ, responsável, e-mail ou código" value={busca} onChange={(e) => setBusca(e.target.value)} />
+                <input
+                  id="busca-clientes"
+                  className="input pl-10"
+                  placeholder="Buscar por razão social, CNPJ, responsável, e-mail ou código"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                />
               </div>
               {aba === 'ativos' && (
-                <Select value={fStatus} onChange={setFStatus} opcoes={STATUS_CLIENTE.filter((s) => s.value !== 'encerrado')} vazio="Todas as situações" className="input w-auto" />
+                <Select
+                  value={fStatus}
+                  onChange={setFStatus}
+                  opcoes={STATUS_CLIENTE.filter((s) => s.value !== 'encerrado')}
+                  vazio="Todas as situações"
+                  className="input w-auto"
+                />
               )}
-              <Select value={fParceiro} onChange={setFParceiro} opcoes={[...parceiros.map((p) => ({ value: p.id, label: p.nome })), { value: 'nenhum', label: 'Sem parceiro' }]} vazio="Todos os parceiros" className="input w-auto" />
-              <Select value={fRegime} onChange={setFRegime} opcoes={[...REGIMES, { value: 'nao_informado', label: 'Regime não informado' }]} vazio="Todos os regimes" className="input w-auto" />
+              <Select
+                value={fParceiro}
+                onChange={setFParceiro}
+                opcoes={[...parceiros.map((p) => ({ value: p.id, label: p.nome })), { value: 'nenhum', label: 'Sem parceiro' }]}
+                vazio="Todos os parceiros"
+                className="input w-auto"
+              />
+              <Select
+                value={fRegime}
+                onChange={setFRegime}
+                opcoes={[...REGIMES, { value: 'nao_informado', label: 'Regime não informado' }]}
+                vazio="Todos os regimes"
+                className="input w-auto"
+              />
               {aba === 'ativos' && (
                 <Select
                   value={fPendencia}
@@ -293,7 +376,6 @@ export function Clientes({ session }: { session: Session }) {
                     <tr>
                       {cabecalho('codigo', 'Cód.', 'pl-5')}
                       {cabecalho('razao_social', 'Cliente')}
-                      <th className="px-3 py-3 tracking-wide uppercase">Responsável</th>
                       <th className="px-3 py-3 tracking-wide uppercase">Parceiro</th>
                       <th className="px-3 py-3 tracking-wide uppercase">Situação</th>
                       {cabecalho('data_assinatura', 'Assinatura')}
@@ -306,64 +388,102 @@ export function Clientes({ session }: { session: Session }) {
                     {lista.map((c) => {
                       const v = vigentes.get(c.id)
                       return (
-                        <tr key={c.id} className="transition hover:bg-slate-50/70">
-                          <td className="py-3 pr-3 pl-5 font-mono text-xs text-slate-400 tabular-nums">{String(c.codigo).padStart(3, '0')}</td>
-                          <td className="min-w-64 px-3 py-3">
-                            <button className="cursor-pointer text-left font-semibold text-slate-900 hover:text-brand-600" onClick={() => setEditando(c)}>
-                              {c.razao_social}
-                            </button>
-                            <div className="font-mono text-xs text-slate-400">{formatarCnpj(c.cnpj) || 'CNPJ não informado'}</div>
-                          </td>
-                          <td className="max-w-52 px-3 py-3">
-                            <div className="truncate text-slate-700">{c.responsavel ?? '—'}</div>
-                            <div className="truncate text-xs text-slate-400">{c.email ?? ''}</div>
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap text-slate-600">{nomeParceiro(c.parceiro_id) || <span className="text-slate-300">—</span>}</td>
-                          <td className="px-3 py-3">
-                            {c.status === 'encerrado' ? (
-                              <span className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold whitespace-nowrap ${COR_STATUS.encerrado}`}>
-                                Encerrado em {formatarData(c.data_encerramento)}
-                              </span>
-                            ) : (
-                              <Select
-                                value={c.status}
-                                onChange={(s) => mudarStatus(c, s as StatusCliente)}
-                                opcoes={STATUS_CLIENTE}
-                                className={`w-48 rounded-full border py-1 pl-3 text-xs font-semibold outline-none ${COR_STATUS[c.status]}`}
-                              />
-                            )}
-                            {c.situacao_encerramento && <div className="mt-1 pl-1 text-xs font-semibold text-rose-600">{c.situacao_encerramento}</div>}
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap text-slate-600 tabular-nums">{formatarData(c.data_assinatura)}</td>
-                          <td className="px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-900 tabular-nums">
-                            {v ? moeda(v.valor) : <span className="font-normal text-slate-300">—</span>}
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex gap-1">
-                              {ETAPAS.map((e) => {
-                                const st = c[e.campo] ?? 'vazio'
-                                return <span key={e.campo} className={`h-2.5 w-2.5 rounded-full ${COR_ETAPA[st]}`} title={`${e.label}: ${TEXTO_ETAPA[st]}`} aria-label={`${e.label}: ${TEXTO_ETAPA[st]}`} />
-                              })}
-                            </div>
-                          </td>
-                          <td className="py-3 pr-5 pl-3">
-                            <div className="flex justify-end gap-1">
-                              {c.link_drive && (
-                                <a className="icon-btn" href={c.link_drive} target="_blank" rel="noopener noreferrer" title="Abrir pasta no Drive" aria-label="Abrir pasta no Drive">
-                                  <ExternalLink className="h-4 w-4" />
-                                </a>
-                              )}
-                              <button className="icon-btn" onClick={() => setEditando(c)} title="Editar" aria-label="Editar cliente">
-                                <Pencil className="h-4 w-4" />
+                        <Fragment key={c.id}>
+                          <tr className={`transition ${expandidos.has(c.id) ? 'bg-brand-50/40' : 'hover:bg-slate-50/70'}`}>
+                            <td className="py-3 pr-3 pl-5 font-mono text-xs text-slate-400 tabular-nums">{String(c.codigo).padStart(3, '0')}</td>
+                            <td className="min-w-64 px-3 py-3">
+                              <button className="cursor-pointer text-left font-semibold text-slate-900 hover:text-brand-600" onClick={() => setEditando(c)}>
+                                {c.razao_social}
                               </button>
-                            </div>
-                          </td>
-                        </tr>
+                              <div className="font-mono text-xs text-slate-400">{formatarCnpj(c.cnpj) || 'CNPJ não informado'}</div>
+                              {c.responsavel && (
+                                <div className="mt-0.5 text-xs text-slate-500" title={c.email ?? undefined}>
+                                  {c.responsavel}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-3 whitespace-nowrap text-slate-600">
+                              {nomeParceiro(c.parceiro_id) || <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="px-3 py-3">
+                              <span className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold whitespace-nowrap ${COR_STATUS[c.status]}`}>
+                                {c.status === 'encerrado' ? `Encerrado em ${formatarData(c.data_encerramento)}` : labelDe(STATUS_CLIENTE, c.status)}
+                              </span>
+                              {c.situacao_encerramento && <div className="mt-1 pl-1 text-xs font-semibold text-rose-600">{c.situacao_encerramento}</div>}
+                            </td>
+                            <td className="px-3 py-3 whitespace-nowrap text-slate-600 tabular-nums">{formatarData(c.data_assinatura)}</td>
+                            <td className="px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-900 tabular-nums">
+                              {v ? moeda(v.valor) : <span className="font-normal text-slate-300">—</span>}
+                            </td>
+                            <td className="px-3 py-3">
+                              <div className="flex flex-col gap-0.5">
+                                {ETAPAS.map((e) => {
+                                  const st = c[e.campo] ?? 'vazio'
+                                  return (
+                                    <span
+                                      key={e.campo}
+                                      className="flex items-center gap-1.5 text-xs whitespace-nowrap"
+                                      title={`${e.label}: ${TEXTO_ETAPA[st]}`}
+                                    >
+                                      <span className={`h-2 w-2 shrink-0 rounded-full ${COR_ETAPA[st]}`} />
+                                      <span className="text-slate-500">{e.label}:</span>
+                                      <span
+                                        className={`font-semibold ${st === 'concluida' ? 'text-emerald-700' : st === 'pendente' ? 'text-amber-700' : st === 'pdf_enviado' ? 'text-sky-700' : 'text-slate-400'}`}
+                                      >
+                                        {TEXTO_ETAPA[st]}
+                                      </span>
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                            </td>
+                            <td className="py-3 pr-5 pl-3">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  className={`btn-sm btn ${expandidos.has(c.id) ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`}
+                                  onClick={() => alternar(c.id)}
+                                  aria-expanded={expandidos.has(c.id)}
+                                >
+                                  {expandidos.has(c.id) ? 'Recolher' : 'Expandir'}
+                                  <ChevronDown className={`h-3.5 w-3.5 transition ${expandidos.has(c.id) ? 'rotate-180' : ''}`} />
+                                </button>
+                                {c.link_drive && (
+                                  <a
+                                    className="icon-btn"
+                                    href={c.link_drive}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Abrir pasta no Drive"
+                                    aria-label="Abrir pasta no Drive"
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                )}
+                                <button className="icon-btn" onClick={() => setEditando(c)} title="Editar" aria-label="Editar cliente">
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {expandidos.has(c.id) && (
+                            <tr className="bg-brand-50/40">
+                              <td colSpan={8} className="px-5 pt-1 pb-5">
+                                <ClienteExpandido
+                                  cliente={c}
+                                  vigente={v}
+                                  onCampo={(campo, valor) => atualizarCampo(c, campo, valor)}
+                                  onStatus={(st) => mudarStatus(c, st)}
+                                  onHonorario={carregar}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       )
                     })}
                     {lista.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="p-10 text-center text-sm text-slate-400">
+                        <td colSpan={8} className="p-10 text-center text-sm text-slate-400">
                           {aba === 'inativos' ? 'Nenhum cliente inativo com esses filtros.' : 'Nenhum cliente encontrado com esses filtros.'}
                         </td>
                       </tr>

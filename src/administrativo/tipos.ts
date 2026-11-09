@@ -26,8 +26,6 @@ export interface Cliente {
   procuracao: Etapa | null
   certificado_digital: Etapa | null
   onboarding: Etapa | null
-  licenciamento: Etapa | null
-  makrosystem: Etapa | null
   link_drive: string | null
   observacoes: string | null
   created_at?: string
@@ -87,12 +85,11 @@ export const INSCRICOES = [
   { value: 'ambas', label: 'Estadual e municipal' },
 ]
 
-export const ETAPAS: { campo: 'procuracao' | 'certificado_digital' | 'onboarding' | 'licenciamento' | 'makrosystem'; label: string }[] = [
-  { campo: 'procuracao', label: 'Procuração' },
+/** Etapas de implantação, na ordem do expandir (o contrato assinado vem antes, pelo campo status). */
+export const ETAPAS: { campo: 'certificado_digital' | 'procuracao' | 'onboarding'; label: string }[] = [
   { campo: 'certificado_digital', label: 'Certificado digital' },
-  { campo: 'onboarding', label: 'Onboarding ASAP' },
-  { campo: 'licenciamento', label: 'Licenciamento' },
-  { campo: 'makrosystem', label: 'Makrosystem' },
+  { campo: 'procuracao', label: 'Procuração' },
+  { campo: 'onboarding', label: 'Onboarding' },
 ]
 
 export const OPCOES_ETAPA: { value: Etapa; label: string }[] = [
