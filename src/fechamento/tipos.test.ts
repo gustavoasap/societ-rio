@@ -29,3 +29,9 @@ describe('fechamento mensal', () => {
     expect(novoIdOpcao('Pendente', ['pendente', 'pendente_2'])).toBe('pendente_3')
   })
 })
+
+describe('opções padrão', () => {
+  it('inclui N/A cinza, que conta como concluído', () => {
+    expect(opcaoAtual({ opcoes: OPCOES_PADRAO }, 'na')).toMatchObject({ label: 'N/A', cor: 'cinza', concluido: true })
+  })
+})

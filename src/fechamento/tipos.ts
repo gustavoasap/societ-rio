@@ -32,6 +32,8 @@ export const OPCOES_PADRAO: Opcao[] = [
   { id: 'pendente', label: 'Pendente', cor: 'vermelho', concluido: false },
   { id: 'andamento', label: 'Em andamento', cor: 'amarelo', concluido: false },
   { id: 'concluido', label: 'Concluído', cor: 'verde', concluido: true },
+  // Não se aplica: não deixa a empresa "pendente" nessa obrigação
+  { id: 'na', label: 'N/A', cor: 'cinza', concluido: true },
 ]
 
 export interface Obrigacao {

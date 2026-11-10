@@ -152,7 +152,7 @@ export function ObrigacaoForm({
             type="button"
             className="btn-secondary btn-sm"
             onClick={() => setOpcoes(OPCOES_PADRAO.map((o) => ({ ...o })))}
-            title="Voltar para Pendente, Em andamento e Concluído"
+            title="Voltar para Pendente, Em andamento, Concluído e N/A"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Padrão
