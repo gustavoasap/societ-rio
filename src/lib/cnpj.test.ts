@@ -62,3 +62,40 @@ describe('consulta de CNPJ', () => {
     expect(d.fonte).toBe('CNPJá')
   })
 })
+
+describe('campos do cartão CNPJ', () => {
+  it('preenche abertura, endereço, situação, e-mail e telefone', async () => {
+    const { camposDoCartao } = await import('./cnpj')
+    const d = deBrasilApi(
+      {
+        cnpj: '64951291000186',
+        razao_social: 'Primsell Ltda',
+        nome_fantasia: '',
+        descricao_situacao_cadastral: 'Ativa',
+        data_inicio_atividade: '2026-02-05',
+        logradouro: 'RUA A',
+        numero: '1',
+        municipio: 'SAO PAULO',
+        uf: 'SP',
+        cep: '01001000',
+        email: 'X@Y.COM',
+        ddd_telefone_1: '1133334444',
+      },
+      'Minha Receita',
+    )
+    expect(camposDoCartao(d)).toEqual({
+      razao_social: 'PRIMSELL LTDA',
+      nome_fantasia: null,
+      data_abertura: '2026-02-05',
+      endereco: 'RUA A, 1 - SAO PAULO/SP - CEP 01001-000',
+      situacao_cadastral: 'ATIVA',
+      email: 'x@y.com',
+      telefone: '(11) 3333-4444',
+    })
+    expect(d.fonte).toBe('Minha Receita')
+  })
+  it('sem e-mail na Receita não apaga o e-mail', async () => {
+    const { camposDoCartao } = await import('./cnpj')
+    expect('email' in camposDoCartao(deBrasilApi({ cnpj: '1', razao_social: 'A' }))).toBe(false)
+  })
+})

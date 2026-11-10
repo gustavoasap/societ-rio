@@ -35,7 +35,7 @@ export interface DadosCnpj {
   telefones: string[]
   email: string | null
   socios: SocioReceita[]
-  fonte: 'BrasilAPI' | 'CNPJá'
+  fonte: 'Minha Receita' | 'BrasilAPI' | 'CNPJá'
 }
 
 const txt = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
@@ -50,8 +50,8 @@ function telefoneBR(v: string | null | undefined) {
 
 type Obj = Record<string, unknown>
 
-/** Converte a resposta da BrasilAPI (/api/cnpj/v1/{cnpj}). */
-export function deBrasilApi(d: Obj): DadosCnpj {
+/** Converte a resposta da BrasilAPI (/api/cnpj/v1/{cnpj}) — mesmo formato da Minha Receita. */
+export function deBrasilApi(d: Obj, fonte: DadosCnpj['fonte'] = 'BrasilAPI'): DadosCnpj {
   const qsa = Array.isArray(d.qsa) ? (d.qsa as Obj[]) : []
   const sec = Array.isArray(d.cnaes_secundarios) ? (d.cnaes_secundarios as Obj[]) : []
   const tipoLog = txt(d.descricao_tipo_de_logradouro)
@@ -88,7 +88,7 @@ export function deBrasilApi(d: Obj): DadosCnpj {
       desde: iso(s.data_entrada_sociedade),
       faixaEtaria: txt(s.faixa_etaria),
     })),
-    fonte: 'BrasilAPI',
+    fonte,
   }
 }
 
@@ -160,20 +160,56 @@ async function obter(url: string, sinal?: AbortSignal) {
   return (await r.json()) as Obj
 }
 
-/** Consulta o CNPJ (14 dígitos). Tenta a BrasilAPI e, se falhar, a CNPJá. */
-export async function consultarCnpj(cnpj: string, sinal?: AbortSignal): Promise<DadosCnpj> {
+const FONTES: { nome: DadosCnpj['fonte']; url: (c: string) => string; ler: (d: Obj) => DadosCnpj; lenta?: boolean }[] = [
+  { nome: 'Minha Receita', url: (c) => `https://minhareceita.org/${c}`, ler: (d) => deBrasilApi(d, 'Minha Receita') },
+  { nome: 'BrasilAPI', url: (c) => `https://brasilapi.com.br/api/cnpj/v1/${c}`, ler: (d) => deBrasilApi(d, 'BrasilAPI') },
+  // A CNPJá aberta permite poucas consultas por minuto: só como reserva
+  { nome: 'CNPJá', url: (c) => `https://open.cnpja.com/office/${c}`, ler: deCnpja, lenta: true },
+]
+
+/**
+ * Consulta o CNPJ (14 dígitos) nas fontes públicas da Receita, em ordem. Se a primeira resposta
+ * vier sem e-mail ou telefone, tenta completar com as outras (o Cartão CNPJ traz esses dados).
+ * `emLote`: não usa a fonte lenta só para completar e-mail (evita bloqueio em consultas em massa).
+ */
+export async function consultarCnpj(cnpj: string, sinal?: AbortSignal, { emLote = false }: { emLote?: boolean } = {}): Promise<DadosCnpj> {
   const d = cnpj.replace(/\D/g, '')
   if (d.length !== 14) throw new Error('CNPJ precisa ter 14 dígitos.')
-  try {
-    return deBrasilApi(await obter(`https://brasilapi.com.br/api/cnpj/v1/${d}`, sinal))
-  } catch (e1) {
-    if (sinal?.aborted) throw e1
-    if (e1 instanceof Error && e1.message.startsWith('CNPJ não encontrado')) throw e1
+  let dados: DadosCnpj | null = null
+  let ultimoErro: unknown = null
+  for (const f of FONTES) {
+    if (dados && dados.email && dados.telefones.length) break
+    if (dados && f.lenta && emLote) break
     try {
-      return deCnpja(await obter(`https://open.cnpja.com/office/${d}`, sinal))
-    } catch (e2) {
-      if (sinal?.aborted) throw e2
-      throw new Error(`Não foi possível consultar a Receita agora (${e2 instanceof Error ? e2.message : 'erro'}). Tente novamente em instantes.`)
+      const r = f.ler(await obter(f.url(d), sinal))
+      const atual = dados as DadosCnpj | null
+      dados = !atual
+        ? r
+        : {
+            ...atual,
+            email: atual.email ?? r.email,
+            telefones: atual.telefones.length ? atual.telefones : r.telefones,
+          }
+    } catch (e) {
+      if (sinal?.aborted) throw e
+      if (e instanceof Error && e.message.startsWith('CNPJ não encontrado') && !dados) throw e
+      ultimoErro = e
     }
+  }
+  if (dados) return dados
+  throw new Error(`Não foi possível consultar a Receita agora (${ultimoErro instanceof Error ? ultimoErro.message : 'erro'}). Tente novamente em instantes.`)
+}
+
+/** Campos do cadastro do cliente preenchidos com os dados da Receita (Cartão CNPJ). */
+export function camposDoCartao(d: DadosCnpj) {
+  return {
+    razao_social: d.razaoSocial.toUpperCase(),
+    nome_fantasia: d.nomeFantasia ? d.nomeFantasia.toUpperCase() : null,
+    data_abertura: d.abertura,
+    endereco: enderecoTexto(d.endereco) || null,
+    situacao_cadastral: d.situacao ? d.situacao.toUpperCase() : null,
+    // E-mail e telefone só são trocados quando a Receita informa (não apaga o que já existe)
+    ...(d.email ? { email: d.email } : {}),
+    ...(d.telefones[0] ? { telefone: d.telefones[0] } : {}),
   }
 }

@@ -1,19 +1,41 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowDown, ArrowUp, Archive, ChevronDown, Download, ExternalLink, House, LayoutDashboard, LogOut, Pencil, Plus, Search, Users } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Archive,
+  ChevronDown,
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
+  House,
+  LayoutDashboard,
+  LogOut,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Users,
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Link } from '../lib/rotas'
 import { comRetentativa } from '../lib/retentar'
 import { formatarData } from '../lib/format'
 import { Select } from '../components/ui'
 import { ClienteForm } from './ClienteForm'
+import { AtualizarTodas } from './AtualizarTodas'
+import { baixarArquivo, gerarXlsx, TIPO_XLSX } from '../lib/planilha'
 import { ClienteExpandido } from './ClienteExpandido'
 import { encerrarCliente } from './acoes'
 import { Painel } from './Painel'
 import {
   COR_STATUS,
   ETAPAS,
+  INSCRICOES,
+  OPCOES_ETAPA,
   REGIMES,
+  SEGMENTOS,
   STATUS_CLIENTE,
   formatarCnpj,
   hojeISO,
@@ -73,6 +95,8 @@ export function Clientes({ session }: { session: Session }) {
   const [ordem, setOrdem] = useState<{ campo: Ordem; asc: boolean }>({ campo: 'codigo', asc: true })
   const [editando, setEditando] = useState<Cliente | 'novo' | null>(null)
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set())
+  const [menuExportar, setMenuExportar] = useState(false)
+  const [atualizandoTodas, setAtualizandoTodas] = useState(false)
   const [encerrando, setEncerrando] = useState<Cliente | null>(null)
   const [dataEnc, setDataEnc] = useState(hojeISO())
 
@@ -187,60 +211,67 @@ export function Clientes({ session }: { session: Session }) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  function exportar() {
-    const cab = [
-      'Código',
-      'Empresa',
-      'CNPJ',
-      'Razão social',
-      'Situação',
-      'Abertura',
-      'Início dos serviços',
-      'Assinatura',
-      'Carência (meses)',
-      'Encerramento',
-      'Situação do encerramento',
-      'Responsável',
-      'E-mail',
-      'Telefone',
-      'Parceiro',
-      'Regime',
-      'Honorário mensal',
-      'Dia vencimento',
-      ...ETAPAS.map((e) => e.label),
-      'Drive',
+  /** Planilha com TODOS os clientes cadastrados (ativos e inativos): uma coluna por informação. */
+  function exportar(formato: 'xlsx' | 'csv') {
+    setMenuExportar(false)
+    const colunas: {
+      titulo: string
+      tipo?: 'texto' | 'moeda' | 'data' | 'numero'
+      largura?: number
+      valor: (c: Cliente) => string | number | null | undefined
+    }[] = [
+      { titulo: 'Código', largura: 8, valor: (c) => String(c.codigo).padStart(3, '0') },
+      { titulo: 'Empresa', largura: 9, valor: (c) => c.empresa },
+      { titulo: 'CNPJ', largura: 20, valor: (c) => formatarCnpj(c.cnpj) },
+      { titulo: 'Razão social', largura: 44, valor: (c) => c.razao_social },
+      { titulo: 'Nome fantasia', largura: 28, valor: (c) => c.nome_fantasia },
+      { titulo: 'Situação', largura: 22, valor: (c) => labelDe(STATUS_CLIENTE, c.status) },
+      { titulo: 'Situação cadastral (Receita)', largura: 16, valor: (c) => c.situacao_cadastral },
+      { titulo: 'Data de abertura', tipo: 'data', largura: 13, valor: (c) => c.data_abertura },
+      { titulo: 'Início dos serviços', tipo: 'data', largura: 13, valor: (c) => c.data_inicio_servicos },
+      { titulo: 'Assinatura do contrato', tipo: 'data', largura: 13, valor: (c) => c.data_assinatura },
+      { titulo: 'Carência (meses)', tipo: 'numero', largura: 10, valor: (c) => c.carencia_meses },
+      { titulo: 'Encerramento', tipo: 'data', largura: 13, valor: (c) => c.data_encerramento },
+      { titulo: 'Situação do encerramento', largura: 20, valor: (c) => c.situacao_encerramento },
+      { titulo: 'Responsável', largura: 32, valor: (c) => c.responsavel },
+      { titulo: 'E-mail', largura: 32, valor: (c) => c.email },
+      { titulo: 'Telefone', largura: 16, valor: (c) => c.telefone },
+      { titulo: 'Endereço', largura: 60, valor: (c) => c.endereco },
+      { titulo: 'Parceiro', largura: 18, valor: (c) => nomeParceiro(c.parceiro_id) },
+      { titulo: 'Regime tributário', largura: 16, valor: (c) => labelDe(REGIMES, c.regime_tributario) },
+      { titulo: 'Segmento', largura: 12, valor: (c) => labelDe(SEGMENTOS, c.segmento) },
+      { titulo: 'Tipo de inscrição', largura: 14, valor: (c) => labelDe(INSCRICOES, c.tipo_inscricao) },
+      { titulo: 'Número da inscrição', largura: 18, valor: (c) => c.inscricao },
+      ...ETAPAS.map((e) => ({ titulo: e.label, largura: 14, valor: (c: Cliente) => (c[e.campo] ? labelDe(OPCOES_ETAPA, c[e.campo]) : '') })),
+      { titulo: 'Honorário mensal', tipo: 'moeda', largura: 15, valor: (c) => vigentes.get(c.id)?.valor ?? null },
+      { titulo: 'Dia de vencimento', tipo: 'numero', largura: 10, valor: (c) => vigentes.get(c.id)?.dia_vencimento ?? null },
+      { titulo: 'Pasta no Drive', largura: 30, valor: (c) => c.link_drive },
+      { titulo: 'Observações', largura: 40, valor: (c) => c.observacoes },
+      { titulo: 'Atualizado na Receita em', tipo: 'data', largura: 14, valor: (c) => c.receita_atualizada_em?.slice(0, 10) },
     ]
-    const linhas = lista.map((c) => {
-      const v = vigentes.get(c.id)
-      return [
-        c.codigo,
-        c.empresa,
-        formatarCnpj(c.cnpj),
-        c.razao_social,
-        labelDe(STATUS_CLIENTE, c.status),
-        formatarData(c.data_abertura),
-        formatarData(c.data_inicio_servicos),
-        formatarData(c.data_assinatura),
-        c.carencia_meses ?? '',
-        formatarData(c.data_encerramento),
-        c.situacao_encerramento,
-        c.responsavel,
-        c.email,
-        c.telefone,
-        nomeParceiro(c.parceiro_id),
-        labelDe(REGIMES, c.regime_tributario),
-        v ? moeda(v.valor) : '',
-        v?.dia_vencimento ?? '',
-        ...ETAPAS.map((e) => TEXTO_ETAPA[c[e.campo] ?? 'vazio']),
-        c.link_drive,
-      ]
-    })
-    const blob = new Blob(['﻿' + csv([cab, ...linhas])], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `clientes-${aba}-${hojeISO()}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    const todos = [...clientes].sort((a, b) => a.codigo - b.codigo)
+    const nome = `base-de-clientes-${hojeISO()}`
+    if (formato === 'xlsx') {
+      const arq = gerarXlsx({
+        aba: 'Base de Clientes',
+        colunas: colunas.map(({ titulo, tipo, largura }) => ({ titulo, tipo, largura })),
+        linhas: todos.map((c) => colunas.map((col) => col.valor(c) ?? null)),
+      })
+      return baixarArquivo(`${nome}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
+    }
+    // CSV: datas em DD/MM/AAAA e valores com R$
+    const texto = (col: (typeof colunas)[number], c: Cliente) => {
+      const v = col.valor(c)
+      if (v === null || v === undefined || v === '') return ''
+      if (col.tipo === 'data') return formatarData(String(v))
+      if (col.tipo === 'moeda') return moeda(Number(v))
+      return v
+    }
+    baixarArquivo(
+      `${nome}.csv`,
+      '\uFEFF' + csv([colunas.map((c) => c.titulo), ...todos.map((c) => colunas.map((col) => texto(col, c)))]),
+      'text/csv;charset=utf-8',
+    )
   }
 
   const cabecalho = (campo: Ordem, children: string, className = '') => (
@@ -295,10 +326,20 @@ export function Clientes({ session }: { session: Session }) {
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Base de Clientes</h1>
             <p className="mt-1 text-sm text-white/60">Cadastro, honorários e implantação dos clientes do escritório.</p>
           </div>
-          <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando('novo')}>
-            <Plus className="h-4 w-4" />
-            Novo cliente
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
+              onClick={() => setAtualizandoTodas(true)}
+              title="Consultar o Cartão CNPJ de todas as empresas na Receita"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Atualizar dados de todas as empresas
+            </button>
+            <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando('novo')}>
+              <Plus className="h-4 w-4" />
+              Novo cliente
+            </button>
+          </div>
         </div>
         <nav className="relative flex w-full max-w-none gap-1 overflow-x-auto px-3 sm:px-4 md:px-6 lg:px-8" role="tablist">
           {ABAS.map(({ id, label, icone: I, n }) => (
@@ -370,10 +411,36 @@ export function Clientes({ session }: { session: Session }) {
                   className="input w-auto"
                 />
               )}
-              <button className="btn-secondary" onClick={exportar} title="Baixar a lista filtrada em planilha (CSV)">
-                <Download className="h-4 w-4" />
-                Exportar
-              </button>
+              <div className="relative">
+                <button
+                  className="btn-secondary"
+                  onClick={() => setMenuExportar((x) => !x)}
+                  aria-expanded={menuExportar}
+                  title="Planilha com todos os clientes cadastrados"
+                >
+                  <Download className="h-4 w-4" />
+                  Exportar
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                {menuExportar && (
+                  <div className="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-xl bg-white p-1 shadow-lg ring-1 ring-slate-200">
+                    <button
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50"
+                      onClick={() => exportar('xlsx')}
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                      Excel (.xlsx) · todos os clientes
+                    </button>
+                    <button
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50"
+                      onClick={() => exportar('csv')}
+                    >
+                      <FileText className="h-4 w-4 text-slate-500" />
+                      CSV · todos os clientes
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
@@ -533,6 +600,7 @@ export function Clientes({ session }: { session: Session }) {
         </div>
       )}
 
+      {atualizandoTodas && <AtualizarTodas clientes={clientes} onClose={() => setAtualizandoTodas(false)} onFeito={carregar} />}
       {editando && (
         <ClienteForm
           cliente={editando === 'novo' ? null : editando}

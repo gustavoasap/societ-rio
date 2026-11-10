@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Building2, Check, RefreshCw, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { consultarCnpj, enderecoTexto, type DadosCnpj } from '../lib/cnpj'
+import { camposDoCartao, consultarCnpj, enderecoTexto, type DadosCnpj } from '../lib/cnpj'
 import { formatarData, formatarMoeda } from '../lib/format'
 import { Info, Modal, Section } from '../components/ui'
 import type { Socio } from '../types'
@@ -12,6 +12,16 @@ interface ProcessoSocios {
   tipo: string
   data_inicio: string | null
   socios: Socio[] | null
+}
+
+const ROTULO_CAMPO: Record<string, string> = {
+  razao_social: 'razão social',
+  nome_fantasia: 'nome fantasia',
+  data_abertura: 'data de abertura',
+  endereco: 'endereço',
+  situacao_cadastral: 'situação cadastral',
+  email: 'e-mail',
+  telefone: 'telefone',
 }
 
 const TIPO: Record<string, string> = { abertura: 'Abertura', alteracao: 'Alteração', baixa: 'Baixa' }
@@ -65,19 +75,21 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
     return () => ctrl.abort()
   }, [consultar, cliente.cnpj])
 
-  // Campos do cadastro que diferem da Receita (razão e fantasia sempre; e-mail e telefone só se estiverem vazios)
-  const mudancas: Partial<Cliente> = {}
+  // Campos do cadastro que diferem do Cartão CNPJ (Receita)
+  const mudancas: Record<string, string | null> = {}
   if (dados) {
-    if (dados.razaoSocial && dados.razaoSocial.toUpperCase() !== cliente.razao_social) mudancas.razao_social = dados.razaoSocial.toUpperCase()
-    if (dados.nomeFantasia && dados.nomeFantasia.toUpperCase() !== (cliente.nome_fantasia ?? '')) mudancas.nome_fantasia = dados.nomeFantasia.toUpperCase()
-    if (!cliente.email && dados.email) mudancas.email = dados.email
-    if (!cliente.telefone && dados.telefones[0]) mudancas.telefone = dados.telefones[0]
+    for (const [k, v] of Object.entries(camposDoCartao(dados))) {
+      if (v !== undefined && v !== (cliente[k as keyof Cliente] ?? null)) mudancas[k] = v
+    }
   }
   const nMudancas = Object.keys(mudancas).length
 
   async function atualizarCadastro() {
     setGravando(true)
-    const { error } = await supabase.from('adm_clientes').update(mudancas).eq('id', cliente.id)
+    const { error } = await supabase
+      .from('adm_clientes')
+      .update({ ...mudancas, receita_atualizada_em: new Date().toISOString() })
+      .eq('id', cliente.id)
     setGravando(false)
     if (error) return setErro(error.message)
     setAviso('Cadastro atualizado com os dados da Receita.')
@@ -115,7 +127,7 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
                   O cadastro está diferente da Receita em:{' '}
                   <b>
                     {Object.keys(mudancas)
-                      .map((k) => ({ razao_social: 'razão social', nome_fantasia: 'nome fantasia', email: 'e-mail', telefone: 'telefone' })[k])
+                      .map((k) => ROTULO_CAMPO[k] ?? k)
                       .join(', ')}
                   </b>
                   .

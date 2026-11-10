@@ -21,6 +21,9 @@ const VAZIO: Dados = {
   data_inicio_servicos: null,
   carencia_meses: null,
   situacao_encerramento: null,
+  endereco: null,
+  situacao_cadastral: null,
+  receita_atualizada_em: null,
   responsavel: null,
   email: null,
   telefone: null,
@@ -188,6 +191,12 @@ export function ClienteForm({
           </Field>
           <Field label="Telefone" className="sm:col-span-2">
             <input id="telefone" className="input" value={d.telefone ?? ''} onChange={(e) => set('telefone', texto(e.target.value))} />
+          </Field>
+          <Field label="Endereço" className="sm:col-span-4">
+            <input id="endereco" className="input" value={d.endereco ?? ''} onChange={(e) => set('endereco', e.target.value || null)} />
+          </Field>
+          <Field label="Situação cadastral (Receita)" className="sm:col-span-2">
+            <input id="situacao-cadastral" className="input" value={d.situacao_cadastral ?? ''} readOnly title="Atualizada pela consulta à Receita (Detalhes da Empresa)" />
           </Field>
           <Field label="Data de abertura" className="sm:col-span-2">
             <CampoData id="data-abertura" className="input" value={d.data_abertura ?? ''} onChange={(v) => set('data_abertura', v || null)} />

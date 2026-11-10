@@ -15,6 +15,9 @@ export interface Cliente {
   data_inicio_servicos: string | null
   carencia_meses: number | null
   situacao_encerramento: string | null
+  endereco: string | null
+  situacao_cadastral: string | null
+  receita_atualizada_em: string | null
   responsavel: string | null
   email: string | null
   telefone: string | null
