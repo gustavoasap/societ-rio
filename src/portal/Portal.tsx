@@ -10,6 +10,7 @@ import { Anotacoes } from '../societario/Anotacoes'
 import { Caucao } from '../societario/caucao/Caucao'
 import { Clientes } from '../administrativo/Clientes'
 import { Crm } from '../administrativo/crm/Crm'
+import { FechamentoContabil, FechamentoFiscal, FechamentoPessoal } from '../fechamento/Fechamento'
 import { Tributario } from '../tributario/components/Tributario'
 import { Admin } from './Admin'
 import { DepartamentoForm, ModuloForm } from './Formularios'
@@ -27,6 +28,9 @@ const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> 
   '/societario/caucao': Caucao,
   '/administrativo/clientes': Clientes,
   '/administrativo/crm': Crm,
+  '/contabil/fechamento': FechamentoContabil,
+  '/fiscal/fechamento': FechamentoFiscal,
+  '/pessoal/fechamento': FechamentoPessoal,
   '/fiscal/reforma-tributaria': Tributario,
 }
 
