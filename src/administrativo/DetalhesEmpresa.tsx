@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Building2, Check, RefreshCw, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { consultarSerpro } from '../lib/cnpjSerpro'
 import { camposDoCartao, consultarCnpj, enderecoTexto, type DadosCnpj } from '../lib/cnpj'
 import { formatarData, formatarMoeda } from '../lib/format'
 import { Info, Modal, Section } from '../components/ui'
@@ -49,7 +50,7 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
       setCarregando(true)
       setErro(null)
       try {
-        setDados(await consultarCnpj(cliente.cnpj, sinal))
+        setDados(await consultarCnpj(cliente.cnpj, sinal, { serpro: consultarSerpro }))
       } catch (e) {
         if (!sinal?.aborted) setErro(e instanceof Error ? e.message : String(e))
       } finally {
@@ -179,7 +180,11 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
                 />
               )}
             </div>
-            <p className="mt-4 text-[0.6875rem] text-slate-400">Fonte: {dados.fonte}, com dados públicos da Receita Federal.</p>
+            <p className="mt-4 text-[0.6875rem] text-slate-400">
+              {dados.fonte === 'Serpro'
+                ? 'Fonte: Serpro (API Consulta CNPJ), dados atualizados da Receita Federal.'
+                : `Fonte: ${dados.fonte}, com dados abertos da Receita Federal (atualização mensal).`}
+            </p>
           </>
         )}
       </Section>

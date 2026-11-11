@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { CircleAlert, CircleCheck, RefreshCw, Square } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { consultarSerpro } from '../lib/cnpjSerpro'
 import { camposDoCartao, consultarCnpj } from '../lib/cnpj'
 import { Modal } from '../components/ui'
 import type { Cliente } from './tipos'
@@ -34,6 +35,7 @@ const pausa = (ms: number, sinal: AbortSignal) =>
 /** Consulta o Cartão CNPJ de todas as empresas da base e atualiza o cadastro. */
 export function AtualizarTodas({ clientes, onClose, onFeito }: { clientes: Cliente[]; onClose: () => void; onFeito: () => void }) {
   const [incluirEncerrados, setIncluirEncerrados] = useState(false)
+  const [usarSerpro, setUsarSerpro] = useState(false)
   const [rodando, setRodando] = useState(false)
   const [atual, setAtual] = useState<string | null>(null)
   const [resultados, setResultados] = useState<Resultado[]>([])
@@ -52,7 +54,7 @@ export function AtualizarTodas({ clientes, onClose, onFeito }: { clientes: Clien
       setAtual(cli.razao_social)
       let r: Resultado
       try {
-        const dados = await consultarCnpj(cli.cnpj!, c.signal, { emLote: true })
+        const dados = await consultarCnpj(cli.cnpj!, c.signal, { emLote: true, serpro: usarSerpro ? consultarSerpro : undefined })
         const campos = camposDoCartao(dados) as Record<string, string | null>
         const alterados = Object.keys(campos).filter((k) => campos[k] !== (cli[k as keyof Cliente] ?? null))
         const { error } = await supabase
@@ -120,6 +122,12 @@ export function AtualizarTodas({ clientes, onClose, onFeito }: { clientes: Clien
           <label className="flex cursor-pointer items-center gap-2 pt-1 text-sm">
             <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={incluirEncerrados} onChange={(e) => setIncluirEncerrados(e.target.checked)} />
             Incluir clientes encerrados
+          </label>
+        )}
+        {!rodando && !feitos && (
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={usarSerpro} onChange={(e) => setUsarSerpro(e.target.checked)} />
+            Usar o Serpro (dados atualizados, consulta paga: {alvo.length} consulta(s))
           </label>
         )}
         {semCnpj.length > 0 && <p className="text-xs text-amber-700">{semCnpj.length} cliente(s) sem CNPJ completo ficam de fora.</p>}
