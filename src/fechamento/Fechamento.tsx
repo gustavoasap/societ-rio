@@ -10,6 +10,7 @@ import { Select } from '../components/ui'
 import { ObrigacaoForm } from './ObrigacaoForm'
 import {
   NOME_DEPARTAMENTO,
+  TITULO_CONTROLE,
   SUGESTOES,
   chave,
   competenciaDe,
@@ -185,9 +186,9 @@ export function Fechamento({ session, departamento }: { session: Session; depart
               <Link para={`/d/${departamento}`} className="hover:underline">
                 {nomeDep}
               </Link>{' '}
-              · Controle de Fechamento Mensal
+              · {TITULO_CONTROLE[departamento]}
             </p>
-            <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Controle de Fechamento Mensal</h1>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{TITULO_CONTROLE[departamento]}</h1>
             <p className="mt-1 text-sm text-white/60">{nomeDep}: obrigações do mês de cada empresa ativa da Base de Clientes.</p>
           </div>
           <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando({ obrigacao: null })}>
@@ -415,3 +416,4 @@ export function Fechamento({ session, departamento }: { session: Session; depart
 export const FechamentoContabil = ({ session }: { session: Session }) => <Fechamento session={session} departamento="contabil" />
 export const FechamentoFiscal = ({ session }: { session: Session }) => <Fechamento session={session} departamento="fiscal" />
 export const FechamentoPessoal = ({ session }: { session: Session }) => <Fechamento session={session} departamento="pessoal" />
+export const FechamentoSocietario = ({ session }: { session: Session }) => <Fechamento session={session} departamento="societario" />

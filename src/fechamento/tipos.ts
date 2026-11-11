@@ -1,9 +1,18 @@
-export type Departamento = 'contabil' | 'fiscal' | 'pessoal'
+export type Departamento = 'contabil' | 'fiscal' | 'pessoal' | 'societario'
 
 export const NOME_DEPARTAMENTO: Record<Departamento, string> = {
   contabil: 'Contábil',
   fiscal: 'Fiscal',
   pessoal: 'Departamento Pessoal',
+  societario: 'Societário',
+}
+
+/** Nome do controle em cada departamento (mesmo funcionamento em todos). */
+export const TITULO_CONTROLE: Record<Departamento, string> = {
+  contabil: 'Controle de Fechamento Mensal',
+  fiscal: 'Controle de Fechamento Mensal',
+  pessoal: 'Controle de Fechamento Mensal',
+  societario: 'Controle de Tarefas Mensal',
 }
 
 export type Cor = 'vermelho' | 'laranja' | 'amarelo' | 'verde' | 'azul' | 'roxo' | 'cinza'
@@ -113,4 +122,5 @@ export const SUGESTOES: Record<Departamento, string[]> = {
   contabil: ['Conciliação bancária', 'Lançamentos contábeis', 'Conciliação de contas', 'Balancete', 'Envio de relatórios'],
   fiscal: ['Importação de notas', 'Apuração', 'DAS / Guias', 'Obrigações acessórias', 'Envio de guias ao cliente'],
   pessoal: ['Folha de pagamento', 'Pró-labore', 'eSocial', 'FGTS Digital', 'DCTFWeb', 'Envio de guias ao cliente'],
+  societario: ['Alvarás e licenças', 'Certidões negativas', 'Vencimento do certificado digital', 'Vencimento de procurações', 'Alterações contratuais'],
 }
