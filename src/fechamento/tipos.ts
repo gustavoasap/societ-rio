@@ -84,6 +84,7 @@ export interface EmpresaFech {
   empresa: string | null
   parceiro: string | null
   link_drive: string | null
+  responsavel: string | null
 }
 
 export interface StatusFech {

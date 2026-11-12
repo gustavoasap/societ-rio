@@ -167,9 +167,10 @@ export function Fechamento({ session, departamento }: { session: Session; depart
   function exportar() {
     const cab = [
       { titulo: 'Cód.', largura: 7 },
-      { titulo: 'Empresa', largura: 42 },
+      { titulo: 'Razão social', largura: 42 },
       { titulo: 'CNPJ', largura: 20 },
-      { titulo: 'Abertura', largura: 12 },
+      { titulo: 'Responsável legal', largura: 32 },
+      { titulo: 'Data de abertura', largura: 14 },
       { titulo: 'Pasta no Drive', largura: 30 },
       ...colunas.map((o) => ({ titulo: o.nome, largura: Math.max(14, o.nome.length + 2) })),
       { titulo: 'Concluídas', largura: 12 },
@@ -178,6 +179,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
       String(e.codigo).padStart(3, '0'),
       e.razao_social,
       formatarCnpj(e.cnpj),
+      e.responsavel ?? '',
       e.data_abertura ? { valor: formatarData(e.data_abertura), destaque: 'negrito' as const } : '',
       e.link_drive ?? '',
       ...colunas.map((o) => {
@@ -385,7 +387,10 @@ export function Fechamento({ session, departamento }: { session: Session; depart
               <table className="w-full border-separate border-spacing-0 text-[0.8125rem]">
                 <thead className="sticky top-0 z-20 bg-white text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
                   <tr>
-                    <th className="sticky left-0 z-30 min-w-64 border-b border-slate-100 bg-white py-3 pr-3 pl-5">Empresa</th>
+                    <th className="sticky left-0 z-30 min-w-64 border-b border-slate-100 bg-white py-3 pr-3 pl-5">Razão social</th>
+                    <th className="border-b border-slate-100 px-3 py-3 whitespace-nowrap">CNPJ</th>
+                    <th className="min-w-44 border-b border-slate-100 px-3 py-3">Responsável legal</th>
+                    <th className="border-b border-slate-100 px-3 py-3 whitespace-nowrap">Data de abertura</th>
                     {colunas.map((o) => {
                       const feitas = doMes.filter((e) => feito(o, e.id)).length
                       const idx = obrigacoes.findIndex((x) => x.id === o.id)
@@ -468,12 +473,13 @@ export function Fechamento({ session, departamento }: { session: Session; depart
                               </a>
                             )}
                           </div>
-                          <div className="flex flex-wrap items-baseline gap-x-2 pl-9 text-[0.6875rem]">
-                            <span className="font-mono text-slate-400">{formatarCnpj(e.cnpj)}</span>
-                            <span className="text-slate-500">
-                              Abertura: <b className="font-bold text-slate-800">{e.data_abertura ? formatarData(e.data_abertura) : '—'}</b>
-                            </span>
-                          </div>
+                        </td>
+                        <td className="border-b border-slate-100 px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-600">
+                          {formatarCnpj(e.cnpj) || '—'}
+                        </td>
+                        <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-700">{e.responsavel || '—'}</td>
+                        <td className="border-b border-slate-100 px-3 py-2 font-bold whitespace-nowrap text-slate-800 tabular-nums">
+                          {e.data_abertura ? formatarData(e.data_abertura) : '—'}
                         </td>
                         {colunas.map((o) => {
                           const op = opcaoAtual(o, valor(o, e.id))
