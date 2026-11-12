@@ -15,6 +15,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  ListPlus,
   Search,
   Users,
 } from 'lucide-react'
@@ -25,6 +26,7 @@ import { formatarData } from '../lib/format'
 import { Select } from '../components/ui'
 import { ClienteForm } from './ClienteForm'
 import { AtualizarTodas } from './AtualizarTodas'
+import { CadastroLote } from './CadastroLote'
 import { baixarArquivo, gerarXlsx, TIPO_XLSX } from '../lib/planilha'
 import { ClienteExpandido } from './ClienteExpandido'
 import { encerrarCliente } from './acoes'
@@ -95,6 +97,8 @@ export function Clientes({ session }: { session: Session }) {
   const [fParceiro, setFParceiro] = useState('')
   const [fRegime, setFRegime] = useState('')
   const [fPendencia, setFPendencia] = useState('')
+  const [fHonorario, setFHonorario] = useState('')
+  const [lote, setLote] = useState(false)
   const [ordem, setOrdem] = useState<{ campo: Ordem; asc: boolean }>({ campo: 'codigo', asc: true })
   const [editando, setEditando] = useState<Cliente | 'novo' | null>(null)
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set())
@@ -136,6 +140,8 @@ export function Clientes({ session }: { session: Session }) {
       if (fStatus && c.status !== fStatus) return false
       if (fParceiro && (fParceiro === 'nenhum' ? c.parceiro_id : c.parceiro_id !== fParceiro)) return false
       if (fRegime && (fRegime === 'nao_informado' ? c.regime_tributario : c.regime_tributario !== fRegime)) return false
+      if (fHonorario === 'sem' && vigentes.has(c.id)) return false
+      if (fHonorario === 'com' && !vigentes.has(c.id)) return false
       if (fPendencia) {
         const etapa = fPendencia === 'qualquer' ? null : c[fPendencia as (typeof ETAPAS)[number]['campo']]
         if (fPendencia === 'qualquer' ? !temPendencia(c) : etapa !== 'pendente' && etapa !== 'pdf_enviado') return false
@@ -158,7 +164,9 @@ export function Clientes({ session }: { session: Session }) {
       const r = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR')
       return ordem.asc ? r : -r
     })
-  }, [aba, ativos, inativos, busca, fStatus, fParceiro, fRegime, fPendencia, ordem, vigentes])
+  }, [aba, ativos, inativos, busca, fStatus, fParceiro, fRegime, fPendencia, fHonorario, ordem, vigentes])
+
+  const ativosSemHonorario = useMemo(() => ativos.filter((c) => !vigentes.has(c.id)), [ativos, vigentes])
 
   const totalLista = lista.reduce((s, c) => s + (vigentes.get(c.id)?.valor ?? 0), 0)
 
@@ -207,8 +215,9 @@ export function Clientes({ session }: { session: Session }) {
     carregar()
   }
 
-  function irPara(a: Aba, filtros: { status?: string; pendencia?: string; parceiro?: string } = {}) {
+  function irPara(a: Aba, filtros: { status?: string; pendencia?: string; parceiro?: string; honorario?: string } = {}) {
     setAba(a)
+    setFHonorario(filtros.honorario ?? '')
     setFStatus(filtros.status ?? '')
     setFPendencia(filtros.pendencia ?? '')
     setFParceiro(filtros.parceiro ?? '')
@@ -342,6 +351,14 @@ export function Clientes({ session }: { session: Session }) {
               <RefreshCw className="h-4 w-4" />
               Atualizar dados de todas as empresas
             </button>
+            <button
+              className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
+              onClick={() => setLote(true)}
+              title="Informe código e CNPJ de várias empresas"
+            >
+              <ListPlus className="h-4 w-4" />
+              Cadastrar em lote
+            </button>
             <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando('novo')}>
               <Plus className="h-4 w-4" />
               Novo cliente
@@ -375,6 +392,17 @@ export function Clientes({ session }: { session: Session }) {
           <Painel clientes={clientes} vigentes={vigentes} parceiros={parceiros} irPara={irPara} />
         ) : (
           <>
+            {aba === 'ativos' && ativosSemHonorario.length > 0 && fHonorario !== 'sem' && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200">
+                <span>
+                  <b>{ativosSemHonorario.length} cliente(s) ativo(s) sem honorário cadastrado.</b> Eles ficam fora do Controle de Honorários até o honorário ser
+                  informado no Expandir.
+                </span>
+                <button className="btn-secondary btn-sm" onClick={() => setFHonorario('sem')}>
+                  Ver quais são
+                </button>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
               <div className="relative min-w-60 flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -409,6 +437,18 @@ export function Clientes({ session }: { session: Session }) {
                 vazio="Todos os regimes"
                 className="input w-auto"
               />
+              {aba === 'ativos' && (
+                <Select
+                  value={fHonorario}
+                  onChange={setFHonorario}
+                  opcoes={[
+                    { value: 'sem', label: 'Sem honorário cadastrado' },
+                    { value: 'com', label: 'Com honorário' },
+                  ]}
+                  vazio="Honorário: todos"
+                  className={`input w-auto ${fHonorario === 'sem' ? 'border-rose-300 bg-rose-50 text-rose-700' : ''}`}
+                />
+              )}
               {aba === 'ativos' && (
                 <Select
                   value={fPendencia}
@@ -496,7 +536,15 @@ export function Clientes({ session }: { session: Session }) {
                             </td>
                             <td className="px-3 py-3 whitespace-nowrap text-slate-600 tabular-nums">{formatarData(c.data_assinatura)}</td>
                             <td className="px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-900 tabular-nums">
-                              {v ? moeda(v.valor) : <span className="font-normal text-slate-300">—</span>}
+                              {v ? (
+                                moeda(v.valor)
+                              ) : c.status !== 'encerrado' ? (
+                                <span className="inline-block rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[0.6875rem] font-semibold whitespace-nowrap text-rose-700">
+                                  Sem honorário
+                                </span>
+                              ) : (
+                                <span className="font-normal text-slate-300">—</span>
+                              )}
                             </td>
                             <td className="px-3 py-3">
                               <div className="flex gap-1.5">
@@ -630,6 +678,7 @@ export function Clientes({ session }: { session: Session }) {
         </div>
       )}
 
+      {lote && <CadastroLote clientes={clientes} onClose={() => setLote(false)} onFeito={carregar} />}
       {atualizandoTodas && <AtualizarTodas clientes={clientes} onClose={() => setAtualizandoTodas(false)} onFeito={carregar} />}
       {editando && (
         <ClienteForm

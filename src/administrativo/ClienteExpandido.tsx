@@ -5,6 +5,7 @@ import { formatarData, lerNumeroBR, moedaDigitada } from '../lib/format'
 import { CampoData } from '../components/CampoData'
 import { Select } from '../components/ui'
 import { DetalhesEmpresa } from './DetalhesEmpresa'
+import { CriarPastaDrive } from './CriarPastaDrive'
 import {
   ETAPAS,
   OPCOES_ETAPA,
@@ -166,6 +167,20 @@ export function ClienteExpandido({
             Detalhes da Empresa
           </button>
         </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-xs font-bold tracking-wide text-slate-500 uppercase">Pasta no Drive:</span>
+        {c.link_drive ? (
+          <a href={c.link_drive} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-sky-700 hover:underline">
+            Abrir pasta
+          </a>
+        ) : (
+          <>
+            <span className="text-xs text-rose-600">sem pasta</span>
+            <CriarPastaDrive onFeito={onHonorario} />
+          </>
+        )}
       </div>
 
       <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">

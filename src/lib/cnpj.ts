@@ -314,6 +314,12 @@ export async function consultarCnpj(
   throw new Error(`Não foi possível consultar a Receita agora (${ultimoErro instanceof Error ? ultimoErro.message : 'erro'}). Tente novamente em instantes.`)
 }
 
+/** Responsável legal pelo quadro societário: o administrador (ou titular); senão, o primeiro sócio. */
+export function responsavelDoQsa(d: DadosCnpj) {
+  const s = d.socios.find((x) => /administrador|titular|empres[aá]rio|presidente|diretor/i.test(x.qualificacao ?? '')) ?? d.socios[0]
+  return s?.nome ? s.nome.toUpperCase() : null
+}
+
 /** Campos do cadastro do cliente preenchidos com os dados da Receita (Cartão CNPJ). */
 export function camposDoCartao(d: DadosCnpj) {
   return {

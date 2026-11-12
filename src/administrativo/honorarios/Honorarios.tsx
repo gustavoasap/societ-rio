@@ -69,6 +69,7 @@ export function Honorarios({ session }: { session: Session }) {
   const [ajustando, setAjustando] = useState<Linha | null>(null)
   const [importando, setImportando] = useState(false)
   const [configurando, setConfigurando] = useState(false)
+  const [verSemHonorario, setVerSemHonorario] = useState(false)
 
   const carregar = useCallback(async () => {
     const [c, cl, h, m] = await comRetentativa(() =>
@@ -351,14 +352,33 @@ export function Honorarios({ session }: { session: Session }) {
             </div>
 
             {semHonorario.length > 0 && (
-              <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
-                <b>{semHonorario.length} cliente(s) ativo(s) sem honorário cadastrado</b> não aparecem no controle:{' '}
-                {semHonorario
-                  .slice(0, 8)
-                  .map((c) => `${String(c.codigo).padStart(3, '0')} ${c.razao_social}`)
-                  .join(', ')}
-                {semHonorario.length > 8 ? ` e mais ${semHonorario.length - 8}` : ''}. Cadastre o honorário no Expandir da Base de Clientes.
-              </p>
+              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    <b>{semHonorario.length} cliente(s) ativo(s) sem honorário cadastrado</b> e por isso fora do controle. Cadastre o honorário no Expandir da
+                    Base de Clientes.
+                  </span>
+                  <div className="flex gap-2">
+                    <button className="btn-secondary btn-sm" onClick={() => setVerSemHonorario((x) => !x)}>
+                      {verSemHonorario ? 'Ocultar lista' : 'Ver lista'}
+                    </button>
+                    <Link para="/administrativo/clientes" className="btn-secondary btn-sm">
+                      Abrir Base de Clientes
+                    </Link>
+                  </div>
+                </div>
+                {verSemHonorario && (
+                  <ul className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                    {semHonorario.map((c) => (
+                      <li key={c.id} className="truncate">
+                        <span className="font-mono text-rose-400">{String(c.codigo).padStart(3, '0')}</span>{' '}
+                        <span className="font-semibold">{c.razao_social}</span>
+                        {c.status === 'pendente' && <span className="text-rose-500"> · contrato pendente</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
 
             {selecionadas.length > 0 && (

@@ -14,6 +14,7 @@
  * - Recupera pastas que já existem no Drive (pelo número do cliente)
  * - Cria somente as subpastas ausentes dos departamentos
  * - Cria o arquivo SENHA CERTIFICADO.txt se não existir
+ * - Botão "Criar pasta no Drive" no portal (App da Web): cria na hora
  * - Varredura completa diária (~08h) de todas as pastas
  * - Relatório por e-mail quando há criação ou aviso
  *
@@ -21,6 +22,11 @@
  *
  * INSTALAÇÃO: cole este código no Apps Script, salve e execute uma vez
  * a função instalarAutomacao (autorize o acesso quando o Google pedir).
+ *
+ * BOTÃO DO PORTAL: Implantar > Nova implantação > tipo "App da Web" >
+ * Executar como: Eu > Quem pode acessar: Qualquer pessoa > Implantar.
+ * Copie a URL (termina em /exec) e cole no portal (Base de Clientes > Drive).
+ * O endereço só dispara a verificação de clientes sem pasta; não recebe dados.
  */
 
 // =====================================================
@@ -243,7 +249,7 @@ function processarClientes(varreduraCompleta) {
   // Evita execuções simultâneas deste script.
   if (!lock.tryLock(30000)) {
     console.warn('Execução ignorada: outra rotina está ativa.');
-    return;
+    return null;
   }
 
   try {
@@ -262,7 +268,7 @@ function processarClientes(varreduraCompleta) {
 
     // Nada novo no portal: encerra sem mexer no Drive.
     if (!varreduraCompleta && clientes.length === 0) {
-      return;
+      return log;
     }
 
     const pastaRaiz = DriveApp.getFolderById(CONFIG.ID_PASTA_RAIZ);
@@ -358,6 +364,7 @@ function processarClientes(varreduraCompleta) {
     }
 
     console.log(JSON.stringify(log, null, 2));
+    return log;
   } finally {
     lock.releaseLock();
   }
@@ -375,6 +382,32 @@ function verificarNovosClientes() {
 // Diária: todos os clientes e todas as pastas.
 function verificacaoDiaria() {
   processarClientes(true);
+}
+
+// Botão "Criar pasta no Drive" do portal (App da Web).
+function doGet() {
+  let log = null;
+  let erro = null;
+
+  try {
+    log = processarClientes(false);
+  } catch (e) {
+    erro = e.message;
+  }
+
+  const resposta = {
+    ok: !erro && !!log,
+    ocupado: !erro && !log,
+    pastasCriadas: log ? log.clientesCriados : 0,
+    linksGravados: log ? log.linksPreenchidos : 0,
+    erros: log ? log.erros : 0,
+    avisos: log ? log.avisos.slice(0, 5) : [],
+    erro: erro
+  };
+
+  return ContentService
+    .createTextOutput(JSON.stringify(resposta))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // Execução manual completa.

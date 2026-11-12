@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Check, RotateCcw, XCircle } from 'lucide-react'
+import { Check, RotateCcw, Search, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatarData, mascaraCnpj } from '../lib/format'
 import { Field, Modal, Select } from '../components/ui'
@@ -17,6 +17,9 @@ import {
   EMPRESAS,
 } from './tipos'
 import { CampoData } from '../components/CampoData'
+import { camposDoCartao, consultarCnpj, responsavelDoQsa } from '../lib/cnpj'
+import { consultarSerpro } from '../lib/cnpjSerpro'
+import { criarPastasDrive, obterUrlDrive } from './drive'
 
 type Dados = Omit<Cliente, 'id' | 'codigo' | 'created_at'>
 
@@ -69,10 +72,33 @@ export function ClienteForm({
   const [dataEncerramento, setDataEncerramento] = useState(hojeISO())
   const [motivoEnc, setMotivoEnc] = useState<MotivoEncerramento | null>(null)
   const [codigo, setCodigo] = useState(cliente ? String(cliente.codigo) : '')
+  const [buscando, setBuscando] = useState(false)
+  const [criarPasta, setCriarPasta] = useState(true)
+  const [avisoReceita, setAvisoReceita] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
 
   const set = <K extends keyof Dados>(k: K, v: Dados[K]) => setD((s) => ({ ...s, [k]: v }))
+
+  /** Preenche o cadastro com os dados do CNPJ (Serpro; se indisponível, fontes públicas). */
+  async function buscarReceita() {
+    const cnpj = (d.cnpj ?? '').replace(/\D/g, '')
+    if (cnpj.length !== 14) return setErro('Informe o CNPJ com 14 dígitos para buscar na Receita.')
+    setErro(null)
+    setAvisoReceita(null)
+    setBuscando(true)
+    try {
+      const dados = await consultarCnpj(cnpj, undefined, { serpro: consultarSerpro })
+      const campos = camposDoCartao(dados)
+      const resp = responsavelDoQsa(dados)
+      setD((s) => ({ ...s, ...campos, cnpj, ...(resp && !s.responsavel ? { responsavel: resp } : {}) }))
+      setAvisoReceita(`Dados preenchidos pela Receita Federal (fonte: ${dados.fonte}). Confira e complete o restante.`)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBuscando(false)
+    }
+  }
 
   async function salvar(e: FormEvent) {
     e.preventDefault()
@@ -100,6 +126,17 @@ export function ClienteForm({
           r.error.message.includes('codigo') ? `Já existe um cliente com o código ${String(cod).padStart(3, '0')}.` : 'Já existe um cliente com esse CNPJ.',
         )
       return setErro(r.error.message)
+    }
+    // Cliente novo: pede ao script do Drive para criar a pasta agora (senão ele cria em até 5 minutos)
+    if (!cliente && criarPasta) {
+      const url = await obterUrlDrive()
+      if (url) {
+        try {
+          await criarPastasDrive(url)
+        } catch (e) {
+          alert(`Cliente salvo. A pasta no Drive não foi criada agora (${e instanceof Error ? e.message : e}). O script cria sozinho em até 5 minutos.`)
+        }
+      }
     }
     setSalvando(false)
     onSalvo()
@@ -149,6 +186,12 @@ export function ClienteForm({
               Reativar cliente
             </button>
           )}
+          {!cliente && (
+            <label className="mr-auto flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={criarPasta} onChange={(e) => setCriarPasta(e.target.checked)} />
+              Criar pasta no Drive ao salvar
+            </label>
+          )}
           <button type="button" className="btn-secondary" onClick={onClose}>
             Cancelar
           </button>
@@ -193,10 +236,11 @@ export function ClienteForm({
         </div>
       )}
       {erro && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">{erro}</p>}
+      {avisoReceita && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{avisoReceita}</p>}
 
       <form id="form-cliente" onSubmit={salvar} className="space-y-4">
         <section className="grid gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70 sm:grid-cols-6">
-          <Field label={cliente ? 'Código *' : 'Código'} className="sm:col-span-1">
+          <Field label={cliente ? 'Código *' : 'Código'} className="sm:col-span-2">
             <input
               id="codigo"
               className="input font-mono"
@@ -207,22 +251,34 @@ export function ClienteForm({
               title={cliente ? 'Ao trocar o código, renomeie também a pasta do cliente no Drive' : 'Deixe em branco para usar o próximo número'}
             />
           </Field>
-          <Field label="Razão social" className="sm:col-span-3">
+          <Field label="CNPJ" className="sm:col-span-4">
+            <div className="flex gap-1.5">
+              <input
+                id="cnpj"
+                className="input min-w-0 flex-1 font-mono"
+                value={mascaraCnpj(d.cnpj ?? '')}
+                onChange={(e) => set('cnpj', e.target.value)}
+                placeholder="00.000.000/0000-00"
+              />
+              <button
+                type="button"
+                className="btn-secondary shrink-0 px-3"
+                onClick={buscarReceita}
+                disabled={buscando}
+                title="Buscar razão social, endereço, abertura, e-mail, telefone e responsável na Receita"
+              >
+                <Search className={`h-4 w-4 ${buscando ? 'animate-pulse' : ''}`} />
+                {buscando ? 'Buscando...' : 'Receita'}
+              </button>
+            </div>
+          </Field>
+          <Field label="Razão social" className="sm:col-span-6">
             <input
               id="razao-social"
               className="input uppercase"
               value={d.razao_social}
               onChange={(e) => set('razao_social', e.target.value.toUpperCase())}
               required
-            />
-          </Field>
-          <Field label="CNPJ" className="sm:col-span-2">
-            <input
-              id="cnpj"
-              className="input font-mono"
-              value={mascaraCnpj(d.cnpj ?? '')}
-              onChange={(e) => set('cnpj', e.target.value)}
-              placeholder="00.000.000/0000-00"
             />
           </Field>
           <Field label="Nome fantasia" className="sm:col-span-6">

@@ -6,7 +6,7 @@ import { ETAPAS, REGIMES, labelDe, moeda, temPendencia, type Cliente, type Parce
 
 const COR_SERIE = '#2449f5' // brand-600: série única nos gráficos
 
-type IrPara = (aba: 'painel' | 'ativos' | 'inativos', filtros?: { status?: string; pendencia?: string; parceiro?: string }) => void
+type IrPara = (aba: 'painel' | 'ativos' | 'inativos', filtros?: { status?: string; pendencia?: string; parceiro?: string; honorario?: string }) => void
 
 function Kpi({
   icone: I,
@@ -127,6 +127,7 @@ export function Painel({
       potencial: soma(pendentes),
       ticket: comHonorario.length ? soma(comHonorario) / comHonorario.length : 0,
       assinadosSemHonorario: assinados.length - comHonorario.length,
+      ativosSemHonorario: [...assinados, ...pendentes].filter((c) => !vigentes.has(c.id)).length,
       parceirosOrd,
       meses,
       faixas,
@@ -139,9 +140,9 @@ export function Painel({
   }, [clientes, vigentes, parceiros])
 
   const atencao = [
-    r.assinadosSemHonorario > 0 && {
-      texto: `${r.assinadosSemHonorario} cliente(s) com contrato assinado sem honorário informado`,
-      acao: () => irPara('ativos', { status: 'assinado' }),
+    r.ativosSemHonorario > 0 && {
+      texto: `${r.ativosSemHonorario} cliente(s) ativo(s) sem honorário cadastrado (${r.assinadosSemHonorario} com contrato assinado). Eles ficam fora do Controle de Honorários.`,
+      acao: () => irPara('ativos', { honorario: 'sem' }),
     },
     r.semDia > 0 && { texto: `${r.semDia} honorário(s) sem dia de vencimento. Esse dado vai alimentar o fluxo de caixa.`, acao: () => irPara('ativos') },
     r.semRegime > 0 && { texto: `${r.semRegime} cliente(s) ativo(s) sem regime tributário informado`, acao: () => irPara('ativos') },
