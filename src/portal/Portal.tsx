@@ -10,6 +10,7 @@ import { Anotacoes } from '../societario/Anotacoes'
 import { Caucao } from '../societario/caucao/Caucao'
 import { Clientes } from '../administrativo/Clientes'
 import { Crm } from '../administrativo/crm/Crm'
+import { Honorarios } from '../administrativo/honorarios/Honorarios'
 import { FechamentoContabil, FechamentoFiscal, FechamentoPessoal, FechamentoSocietario } from '../fechamento/Fechamento'
 import { Tributario } from '../tributario/components/Tributario'
 import { Admin } from './Admin'
@@ -28,6 +29,7 @@ const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> 
   '/societario/caucao': Caucao,
   '/administrativo/clientes': Clientes,
   '/administrativo/crm': Crm,
+  '/administrativo/honorarios': Honorarios,
   '/contabil/fechamento': FechamentoContabil,
   '/fiscal/fechamento': FechamentoFiscal,
   '/pessoal/fechamento': FechamentoPessoal,
@@ -69,7 +71,12 @@ export function Portal({ session }: { session: Session }) {
   else if (rota === '/') conteudo = <Inicio departamentos={departamentos} modulos={modulos} />
   else if (depAtual)
     conteudo = (
-      <PaginaDepartamento departamento={depAtual} modulos={modulos} admin={admin} onNovaFerramenta={() => setEditMod({ modulo: null, departamentoId: depAtual.id })} />
+      <PaginaDepartamento
+        departamento={depAtual}
+        modulos={modulos}
+        admin={admin}
+        onNovaFerramenta={() => setEditMod({ modulo: null, departamentoId: depAtual.id })}
+      />
     )
   else if (rota === '/admin' && admin)
     conteudo = (
@@ -113,7 +120,11 @@ export function Portal({ session }: { session: Session }) {
               className="w-full rounded-xl border border-white/15 bg-white/10 py-2.5 pr-9 pl-10 text-sm text-white outline-none placeholder:text-white/50 focus:border-brand-400 focus:bg-white/15"
             />
             {busca && (
-              <button className="absolute top-1/2 right-2.5 -translate-y-1/2 cursor-pointer text-white/60 hover:text-white" onClick={() => setBusca('')} aria-label="Limpar busca">
+              <button
+                className="absolute top-1/2 right-2.5 -translate-y-1/2 cursor-pointer text-white/60 hover:text-white"
+                onClick={() => setBusca('')}
+                aria-label="Limpar busca"
+              >
                 <X className="h-4 w-4" />
               </button>
             )}
@@ -176,11 +187,7 @@ export function Portal({ session }: { session: Session }) {
         </nav>
 
         <main className="min-w-0">
-          {erro && (
-            <p className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
-              Não foi possível carregar o portal: {erro}
-            </p>
-          )}
+          {erro && <p className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">Não foi possível carregar o portal: {erro}</p>}
           {conteudo}
         </main>
       </div>
