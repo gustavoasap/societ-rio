@@ -159,6 +159,7 @@ export const CORES_BADGE: Record<string, { badge: string; ponto: string }> = {
   andamento: { badge: 'bg-brand-50 text-brand-700 ring-brand-200', ponto: 'bg-brand-500' },
   analise: { badge: 'bg-sky-50 text-sky-700 ring-sky-200', ponto: 'bg-sky-500' },
   concluido: { badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200', ponto: 'bg-emerald-500' },
+  desistiu: { badge: 'bg-slate-100 text-slate-600 ring-slate-200', ponto: 'bg-slate-400' },
   ok: { badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200', ponto: 'bg-emerald-500' },
   abertura: { badge: 'bg-brand-50 text-brand-700 ring-brand-200', ponto: 'bg-brand-500' },
   alteracao: { badge: 'bg-violet-50 text-violet-700 ring-violet-200', ponto: 'bg-violet-500' },

@@ -27,6 +27,7 @@ import {
   Archive,
   Building2,
   CheckCircle2,
+  CircleX,
   ChevronDown,
   Clock3,
   FilePenLine,
@@ -52,6 +53,7 @@ const CORES_SELECT: Record<string, string> = {
   analise: 'border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300',
   andamento: 'border-brand-200 bg-brand-50 text-brand-700 hover:border-brand-300',
   concluido: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300',
+  desistiu: 'border-slate-300 bg-slate-100 text-slate-600 hover:border-slate-400',
 }
 
 const CARTOES: { status: StatusProcesso; icone: typeof Clock3; gradiente: string; sombra: string }[] = [
@@ -59,7 +61,11 @@ const CARTOES: { status: StatusProcesso; icone: typeof Clock3; gradiente: string
   { status: 'pendente', icone: Clock3, gradiente: 'from-amber-400 to-orange-500', sombra: 'shadow-orange-500/30' },
   { status: 'andamento', icone: Timer, gradiente: 'from-brand-500 to-indigo-600', sombra: 'shadow-brand-500/30' },
   { status: 'concluido', icone: CheckCircle2, gradiente: 'from-emerald-400 to-teal-500', sombra: 'shadow-emerald-500/30' },
+  { status: 'desistiu', icone: CircleX, gradiente: 'from-slate-400 to-slate-600', sombra: 'shadow-slate-500/30' },
 ]
+
+/** Status que têm aba própria (saem de "Em aberto"). */
+const VISAO_DO_STATUS: Partial<Record<StatusProcesso, Visao>> = { concluido: 'concluidos', desistiu: 'desistencias' }
 
 const ICONES_TIPO = {
   abertura: { icone: Building2, cor: 'bg-brand-100 text-brand-600', barra: 'bg-brand-500' },
@@ -74,18 +80,25 @@ function saudacao() {
 
 // Há quanto tempo o processo está pendente ou em andamento (concluídos não contam)
 function DiasEmAberto({ processo: p }: { processo: Processo }) {
-  if (p.status === 'concluido') return null
+  if (p.status === 'concluido' || p.status === 'desistiu') return null
   const dias = diasDesde(p.data_inicio)
   if (dias === null) return null
   if (dias < 0)
     return (
-      <span className="mt-1 block w-fit rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-amber-700 ring-1 ring-amber-200 ring-inset" title="A data de início está no futuro. Confira se o ano está certo.">
+      <span
+        className="mt-1 block w-fit rounded-full bg-amber-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-amber-700 ring-1 ring-amber-200 ring-inset"
+        title="A data de início está no futuro. Confira se o ano está certo."
+      >
         Data futura
       </span>
     )
-  const cor = dias > 15 ? 'bg-rose-50 text-rose-700 ring-rose-200' : dias > 7 ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-slate-100 text-slate-600 ring-slate-200'
+  const cor =
+    dias > 15 ? 'bg-rose-50 text-rose-700 ring-rose-200' : dias > 7 ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-slate-100 text-slate-600 ring-slate-200'
   return (
-    <span className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${cor}`} title="Dias corridos desde o início do processo">
+    <span
+      className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset ${cor}`}
+      title="Dias corridos desde o início do processo"
+    >
       {dias === 0 ? 'Aberto hoje' : `${dias} ${dias === 1 ? 'dia' : 'dias'} em aberto`}
     </span>
   )
@@ -123,12 +136,14 @@ function FaseAtual({ processo: p }: { processo: Processo }) {
         <span className={`h-2 w-2 shrink-0 rounded-full ${cor === 'pendente' ? 'bg-amber-400' : cor === 'indeferido' ? 'bg-rose-500' : 'bg-sky-500'}`} />
         {nomeFase(fase.label)}
       </div>
-      <div className={`mt-0.5 pl-3.5 text-xs font-medium ${cor === 'pendente' ? 'text-amber-700' : cor === 'indeferido' ? 'text-rose-700' : 'text-sky-700'}`}>{labelDe(fase.opcoes, p[fase.campo])}</div>
+      <div className={`mt-0.5 pl-3.5 text-xs font-medium ${cor === 'pendente' ? 'text-amber-700' : cor === 'indeferido' ? 'text-rose-700' : 'text-sky-700'}`}>
+        {labelDe(fase.opcoes, p[fase.campo])}
+      </div>
     </div>
   )
 }
 
-type Visao = 'abertos' | 'concluidos'
+type Visao = 'abertos' | 'concluidos' | 'desistencias'
 
 export function Dashboard({ session }: { session: Session }) {
   const [processos, setProcessos] = useState<Processo[]>([])
@@ -186,16 +201,13 @@ export function Dashboard({ session }: { session: Session }) {
   }, [carregar])
 
   const contagem = useMemo(() => {
-    const c: Record<StatusProcesso, number> = { aguardando_caucao: 0, pendente: 0, andamento: 0, concluido: 0 }
+    const c: Record<StatusProcesso, number> = { aguardando_caucao: 0, pendente: 0, andamento: 0, concluido: 0, desistiu: 0 }
     processos.forEach((p) => c[p.status]++)
     return c
   }, [processos])
 
   // Em aberto = pendentes e em andamento; concluídos ficam numa tela separada
-  const daVisao = useMemo(
-    () => processos.filter((p) => (visao === 'concluidos' ? p.status === 'concluido' : p.status !== 'concluido')),
-    [processos, visao],
-  )
+  const daVisao = useMemo(() => processos.filter((p) => (VISAO_DO_STATUS[p.status] ?? 'abertos') === visao), [processos, visao])
 
   const porTipo = useMemo(() => {
     const c: Record<string, number> = { abertura: 0, alteracao: 0, baixa: 0 }
@@ -225,17 +237,22 @@ export function Dashboard({ session }: { session: Session }) {
       return termoDigitos.length >= 3 && (p.cnpj ?? '').replace(/\D/g, '').includes(termoDigitos)
     })
     // Concluídos: os mais recentes primeiro
-    return visao === 'concluidos' ? lista.reverse() : lista
+    return visao === 'abertos' ? lista : lista.reverse()
   }, [daVisao, visao, busca, filtroStatus, filtroTipo, filtroParceiro])
 
   async function atualizarCampo(p: Processo, campo: CampoAcompanhamento | 'status' | 'numero_viabilidade' | 'numero_dbe', valor: string | null) {
     const mudancas: Partial<Processo> = { [campo]: valor }
     // Etapa ou número alterado: o status acompanha automaticamente (Em andamento / Concluído)
+    if (campo === 'status' && (valor === 'concluido' || valor === 'desistiu') && valor !== p.status) {
+      setAviso(`"${p.razao_social ?? 'Processo'}" foi para a aba ${valor === 'desistiu' ? 'Desistências' : 'Concluídos'}.`)
+    }
     if (campo !== 'status') {
       const novo = statusAutomatico({ ...p, ...mudancas })
       if (novo !== p.status) {
         mudancas.status = novo
-        setAviso(`"${p.razao_social ?? 'Processo'}" passou automaticamente para ${labelDe(STATUS_PROCESSO, novo)}${novo === 'concluido' ? ' e foi para a aba Concluídos' : ''}.`)
+        setAviso(
+          `"${p.razao_social ?? 'Processo'}" passou automaticamente para ${labelDe(STATUS_PROCESSO, novo)}${novo === 'concluido' ? ' e foi para a aba Concluídos' : ''}.`,
+        )
       }
     }
     setProcessos((lista) => lista.map((x) => (x.id === p.id ? { ...x, ...mudancas } : x)))
@@ -289,11 +306,7 @@ export function Dashboard({ session }: { session: Session }) {
               </span>
               <span className="text-sm text-white/80">{email}</span>
             </div>
-            <button
-              className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
-              onClick={() => supabase.auth.signOut()}
-              title="Sair"
-            >
+            <button className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => supabase.auth.signOut()} title="Sair">
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Sair</span>
             </button>
@@ -303,8 +316,14 @@ export function Dashboard({ session }: { session: Session }) {
         <div className="relative flex w-full max-w-none flex-wrap items-end justify-between gap-4 pt-6 px-3 sm:px-4 md:px-6 lg:px-8">
           <div>
             <p className="text-sm font-medium text-cyan-300 first-letter:uppercase">
-              <Link para="/" className="hover:underline">Página inicial</Link> ›{' '}
-              <Link para="/d/societario" className="hover:underline">Societário</Link> · {hoje}
+              <Link para="/" className="hover:underline">
+                Página inicial
+              </Link>{' '}
+              ›{' '}
+              <Link para="/d/societario" className="hover:underline">
+                Societário
+              </Link>{' '}
+              · {hoje}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
               {saudacao()}, {nomeExibicao}!
@@ -329,14 +348,15 @@ export function Dashboard({ session }: { session: Session }) {
       </div>
 
       <main className="relative -mt-16 w-full max-w-none space-y-5 pb-10 px-3 sm:px-4 md:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {CARTOES.map(({ status, icone: I, gradiente, sombra }) => {
-            const ativo = status === 'concluido' ? visao === 'concluidos' : visao === 'abertos' && filtroStatus === status
+            const aba = VISAO_DO_STATUS[status]
+            const ativo = aba ? visao === aba : visao === 'abertos' && filtroStatus === status
             return (
               <button
                 key={status}
                 onClick={() => {
-                  if (status === 'concluido') return mudarVisao(ativo ? 'abertos' : 'concluidos')
+                  if (aba) return mudarVisao(ativo ? 'abertos' : aba)
                   if (visao !== 'abertos') mudarVisao('abertos')
                   setFiltroStatus(ativo ? '' : status)
                 }}
@@ -346,8 +366,10 @@ export function Dashboard({ session }: { session: Session }) {
                   <span className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${gradiente} text-white shadow-lg ${sombra}`}>
                     <I className="h-5 w-5" />
                   </span>
-                  <span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${ativo ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}>
-                    {status === 'concluido' ? (ativo ? 'vendo' : 'ver tela') : ativo ? 'filtrando' : 'filtrar'}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${ativo ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'}`}
+                  >
+                    {aba ? (ativo ? 'vendo' : 'ver tela') : ativo ? 'filtrando' : 'filtrar'}
                   </span>
                 </div>
                 <div className="mt-4 text-3xl font-extrabold text-slate-900">{contagem[status]}</div>
@@ -362,7 +384,9 @@ export function Dashboard({ session }: { session: Session }) {
               </span>
             </div>
             <div className="mt-4 text-3xl font-extrabold">{daVisao.length}</div>
-            <div className="text-sm font-medium text-white/80">{visao === 'concluidos' ? 'Processos concluídos' : 'Processos em aberto'}</div>
+            <div className="text-sm font-medium text-white/80">
+              {visao === 'concluidos' ? 'Processos concluídos' : visao === 'desistencias' ? 'Desistências' : 'Processos em aberto'}
+            </div>
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/70">
               <span>{porTipo.abertura} abertura(s)</span>
               <span>{porTipo.alteracao} alteração(ões)</span>
@@ -376,6 +400,7 @@ export function Dashboard({ session }: { session: Session }) {
             [
               { id: 'abertos', label: 'Em aberto', qtd: contagem.aguardando_caucao + contagem.pendente + contagem.andamento, icone: Timer },
               { id: 'concluidos', label: 'Concluídos', qtd: contagem.concluido, icone: CheckCircle2 },
+              { id: 'desistencias', label: 'Desistências', qtd: contagem.desistiu, icone: CircleX },
             ] as const
           ).map((v) => {
             const ativo = visao === v.id
@@ -383,11 +408,15 @@ export function Dashboard({ session }: { session: Session }) {
               <button
                 key={v.id}
                 onClick={() => mudarVisao(v.id)}
-                className={`-mb-px flex cursor-pointer items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-bold transition ${ativo ? (v.id === 'concluidos' ? 'border-emerald-500 text-emerald-700' : 'border-brand-600 text-brand-700') : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                className={`-mb-px flex cursor-pointer items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-bold transition ${ativo ? (v.id === 'concluidos' ? 'border-emerald-500 text-emerald-700' : v.id === 'desistencias' ? 'border-slate-500 text-slate-700' : 'border-brand-600 text-brand-700') : 'border-transparent text-slate-500 hover:text-slate-800'}`}
               >
                 <v.icone className="h-4 w-4" />
                 {v.label}
-                <span className={`rounded-md px-1.5 text-[0.6875rem] ${ativo ? (v.id === 'concluidos' ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-100 text-brand-700') : 'bg-slate-200 text-slate-500'}`}>{v.qtd}</span>
+                <span
+                  className={`rounded-md px-1.5 text-[0.6875rem] ${ativo ? (v.id === 'concluidos' ? 'bg-emerald-100 text-emerald-700' : v.id === 'desistencias' ? 'bg-slate-200 text-slate-700' : 'bg-brand-100 text-brand-700') : 'bg-slate-200 text-slate-500'}`}
+                >
+                  {v.qtd}
+                </span>
               </button>
             )
           })}
@@ -425,7 +454,7 @@ export function Dashboard({ session }: { session: Session }) {
                 <Select
                   value={filtroStatus}
                   onChange={(v) => setFiltroStatus(v as StatusProcesso | '')}
-                  opcoes={STATUS_PROCESSO.filter((o) => o.value !== 'concluido')}
+                  opcoes={STATUS_PROCESSO.filter((o) => !VISAO_DO_STATUS[o.value as StatusProcesso])}
                   vazio="Todos em aberto"
                 />
               </div>
@@ -482,7 +511,9 @@ export function Dashboard({ session }: { session: Session }) {
                           : daVisao.length === 0
                             ? visao === 'concluidos'
                               ? 'Nenhum processo concluído ainda'
-                              : 'Nenhum processo em aberto'
+                              : visao === 'desistencias'
+                                ? 'Nenhuma desistência'
+                                : 'Nenhum processo em aberto'
                             : 'Nenhum processo encontrado'}
                       </p>
                       <p className="mt-1 text-sm text-slate-400">
@@ -491,7 +522,9 @@ export function Dashboard({ session }: { session: Session }) {
                           : daVisao.length === 0
                             ? visao === 'concluidos'
                               ? 'Quando um processo for marcado como Concluído, ele aparece aqui.'
-                              : 'Todos os processos estão concluídos. Veja a aba Concluídos.'
+                              : visao === 'desistencias'
+                                ? 'Quando o status de um processo for marcado como Desistiu, ele aparece aqui.'
+                                : 'Não há processos em aberto. Veja as abas Concluídos e Desistências.'
                             : 'Tente ajustar a busca ou os filtros.'}
                       </p>
                       {processos.length === 0 && (
@@ -576,7 +609,10 @@ export function Dashboard({ session }: { session: Session }) {
                         </td>
                         <td className="py-3.5 pr-4 pl-3">
                           <div className="flex items-center justify-end gap-1">
-                            <button className={`btn-sm btn ${aberto ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`} onClick={() => alternar(p.id)}>
+                            <button
+                              className={`btn-sm btn ${aberto ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`}
+                              onClick={() => alternar(p.id)}
+                            >
                               {aberto ? 'Recolher' : 'Expandir'}
                               <ChevronDown className={`h-3.5 w-3.5 transition ${aberto ? 'rotate-180' : ''}`} />
                             </button>
@@ -604,7 +640,9 @@ export function Dashboard({ session }: { session: Session }) {
                                       className={`relative rounded-xl border p-3 ${atual ? 'border-brand-300 bg-brand-50/60 ring-2 ring-brand-200' : 'border-slate-100 bg-slate-50/60'}`}
                                     >
                                       {atual && (
-                                        <span className="absolute -top-2 right-3 rounded-full bg-brand-600 px-2 py-0.5 text-[0.625rem] font-bold text-white uppercase">Fase atual</span>
+                                        <span className="absolute -top-2 right-3 rounded-full bg-brand-600 px-2 py-0.5 text-[0.625rem] font-bold text-white uppercase">
+                                          Fase atual
+                                        </span>
                                       )}
                                       <div className="mb-2 flex items-center gap-2">
                                         <span
@@ -634,7 +672,8 @@ export function Dashboard({ session }: { session: Session }) {
                                 <div className="mt-4 grid gap-2 border-t border-slate-100 pt-3 text-sm text-slate-600 sm:grid-cols-2">
                                   {p.tipo === 'abertura' && p.socios?.length > 0 && (
                                     <div>
-                                      <span className="font-semibold text-slate-800">Sócios:</span> {p.socios.map((s) => s.nome || s.cpf || 'sem nome').join(', ')}
+                                      <span className="font-semibold text-slate-800">Sócios:</span>{' '}
+                                      {p.socios.map((s) => s.nome || s.cpf || 'sem nome').join(', ')}
                                     </div>
                                   )}
                                   {p.responsavel && (
@@ -666,7 +705,8 @@ export function Dashboard({ session }: { session: Session }) {
           </div>
           {!carregando && daVisao.length > 0 && (
             <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
-              Exibindo {filtrados.length} de {daVisao.length} processo(s) {visao === 'concluidos' ? 'concluído(s)' : 'em aberto'}
+              Exibindo {filtrados.length} de {daVisao.length} processo(s){' '}
+              {visao === 'concluidos' ? 'concluído(s)' : visao === 'desistencias' ? 'com desistência' : 'em aberto'}
             </div>
           )}
         </div>
@@ -702,13 +742,9 @@ export function Dashboard({ session }: { session: Session }) {
         />
       )}
 
-      {mostrarModelos && (
-        <Modelos blocos={blocos} objetos={objetos} onClose={() => setMostrarModelos(false)} onChanged={carregar} />
-      )}
+      {mostrarModelos && <Modelos blocos={blocos} objetos={objetos} onClose={() => setMostrarModelos(false)} onChanged={carregar} />}
 
-      {mostrarParceiros && (
-        <Parceiros parceiros={parceiros} processos={processos} onClose={() => setMostrarParceiros(false)} onChanged={carregar} />
-      )}
+      {mostrarParceiros && <Parceiros parceiros={parceiros} processos={processos} onClose={() => setMostrarParceiros(false)} onChanged={carregar} />}
     </div>
   )
 }
