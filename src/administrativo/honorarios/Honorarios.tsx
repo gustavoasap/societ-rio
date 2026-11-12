@@ -63,7 +63,7 @@ const SERIES = [
 export function Honorarios({ session }: { session: Session }) {
   const [aba, setAba] = useState<Aba>('mes')
   const [mes, setMes] = useState(mesHoje)
-  const [cfg, setCfg] = useState<ConfigHon>({ inicio: '2026-10-01', dia_vencimento: 10, vence_mes_seguinte: false })
+  const [cfg, setCfg] = useState<ConfigHon>({ inicio: '2026-10-01', dia_vencimento: 10, vence_mes_seguinte: false, tarifa_boleto: 0 })
   const [clientes, setClientes] = useState<ClienteHon[]>([])
   const [hons, setHons] = useState<HonorarioBase[]>([])
   const [mensais, setMensais] = useState<Map<string, Mensal>>(new Map())
@@ -87,7 +87,7 @@ export function Honorarios({ session }: { session: Session }) {
   const carregar = useCallback(async () => {
     const [c, cl, h, m, pp, pa] = await comRetentativa(() =>
       Promise.all([
-        supabase.from('adm_hon_config').select('inicio, dia_vencimento, vence_mes_seguinte').eq('id', 1).maybeSingle(),
+        supabase.from('adm_hon_config').select('inicio, dia_vencimento, vence_mes_seguinte, tarifa_boleto').eq('id', 1).maybeSingle(),
         supabase
           .from('adm_clientes')
           .select(
@@ -866,6 +866,7 @@ export function Honorarios({ session }: { session: Session }) {
           usados={usados}
           clientes={clientes}
           comHonorario={new Set(hons.map((h) => h.cliente_id))}
+          tarifaBoleto={Number(cfg.tarifa_boleto ?? 0)}
           onClose={() => setImportando(false)}
           onSalvo={carregar}
         />

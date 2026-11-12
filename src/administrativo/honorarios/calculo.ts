@@ -40,6 +40,8 @@ export interface ConfigHon {
   inicio: string
   dia_vencimento: number
   vence_mes_seguinte: boolean
+  /** Tarifa cobrada por boleto (o crédito no extrato vem com o honorário menos a tarifa) */
+  tarifa_boleto: number
 }
 
 export type Situacao = 'recebido' | 'parcial' | 'vencido' | 'a_vencer' | 'isento'

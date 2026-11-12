@@ -166,6 +166,8 @@ export interface Sugestao {
   confianca: Confianca | null
   nivel: Nivel
   motivo: string
+  /** Crédito veio com a tarifa do boleto descontada (o honorário é dado como recebido integralmente) */
+  tarifa: number
 }
 
 const chaveDe = (l: Linha) => `${l.cliente.id}|${l.competencia}`
@@ -187,26 +189,48 @@ export function identificarCliente(descricao: string, clientes: ClienteRef[]): C
  * - advertência: valor diferente, cliente sem honorário em aberto, pagador só sugerido pelo valor ou não encontrado
  * - erro: cliente inativo ou sem honorário cadastrado
  */
-export function sugerir(lancamentos: Lancamento[], abertos: Linha[], usados: Set<string>, clientes: ClienteRef[] = [], comHonorario?: Set<string>): Sugestao[] {
+export function sugerir(
+  lancamentos: Lancamento[],
+  abertos: Linha[],
+  usados: Set<string>,
+  clientes: ClienteRef[] = [],
+  comHonorario?: Set<string>,
+  tarifaBoleto = 0,
+): Sugestao[] {
   const reservados = new Set<string>()
   const ord = [...abertos].sort((a, b) => a.competencia.localeCompare(b.competencia))
   const igual = (a: number, b: number) => Math.abs(a - b) < 0.005
+  // Valor do crédito confere com o honorário em aberto: exato ou com a tarifa do boleto descontada
+  const confere = (aberto: number, credito: number) => igual(aberto, credito) || (tarifaBoleto > 0 && igual(aberto - tarifaBoleto, credito))
+  const tarifaDe = (aberto: number, credito: number) => (igual(aberto, credito) ? 0 : tarifaBoleto)
   const todos = clientes.length ? clientes : [...new Map(abertos.map((l) => [l.cliente.id, { ...l.cliente } as ClienteRef])).values()]
   return lancamentos.map((lanc): Sugestao => {
-    const base = { lancamento: lanc, cliente: null, chave: null, confianca: null }
+    const base = { lancamento: lanc, cliente: null, chave: null, confianca: null, tarifa: 0 }
     if (lanc.valor <= 0) return { ...base, nivel: 'info', motivo: 'Débito' }
     if (usados.has(lanc.id)) return { ...base, nivel: 'info', motivo: 'Já importado antes' }
     const livres = ord.filter((l) => !reservados.has(chaveDe(l)))
     const cli = identificarCliente(lanc.descricao, todos)
-    const fim = (s: Omit<Sugestao, 'lancamento'>): Sugestao => {
+    const fim = (s: Omit<Sugestao, 'lancamento' | 'tarifa'> & { tarifa?: number }): Sugestao => {
       if (s.chave) reservados.add(s.chave)
-      return { lancamento: lanc, ...s }
+      return { lancamento: lanc, tarifa: 0, ...s }
     }
     if (cli) {
       if (cli.status === 'encerrado') return fim({ cliente: cli, chave: null, confianca: null, nivel: 'erro', motivo: 'Cliente inativo na base (encerrado)' })
       const doCliente = livres.filter((l) => l.cliente.id === cli.id)
-      const exato = doCliente.find((l) => igual(l.aberto, lanc.valor))
-      if (exato) return fim({ cliente: cli, chave: chaveDe(exato), confianca: 'alta', nivel: 'ok', motivo: 'Cliente e valor conferem' })
+      const exato = doCliente.find((l) => confere(l.aberto, lanc.valor))
+      if (exato) {
+        const tarifa = tarifaDe(exato.aberto, lanc.valor)
+        return fim({
+          cliente: cli,
+          chave: chaveDe(exato),
+          confianca: 'alta',
+          nivel: 'ok',
+          motivo: tarifa
+            ? `Cliente e valor conferem (descontada a tarifa do boleto de ${tarifa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`
+            : 'Cliente e valor conferem',
+          tarifa,
+        })
+      }
       if (doCliente.length)
         return fim({
           cliente: cli,
@@ -225,7 +249,7 @@ export function sugerir(lancamentos: Lancamento[], abertos: Linha[], usados: Set
         motivo: 'Cliente sem honorário em aberto (pagamento em duplicidade ou adiantado?)',
       })
     }
-    const porValor = livres.filter((l) => igual(l.aberto, lanc.valor))
+    const porValor = livres.filter((l) => confere(l.aberto, lanc.valor))
     if (porValor.length && new Set(porValor.map((l) => l.cliente.id)).size === 1)
       return fim({
         cliente: null,
@@ -233,6 +257,7 @@ export function sugerir(lancamentos: Lancamento[], abertos: Linha[], usados: Set
         confianca: 'baixa',
         nivel: 'advertencia',
         motivo: 'Pagador não identificado; sugerido só pelo valor',
+        tarifa: tarifaDe(porValor[0].aberto, lanc.valor),
       })
     return fim({ cliente: null, chave: null, confianca: null, nivel: 'advertencia', motivo: 'Pagador não encontrado na base de clientes' })
   })

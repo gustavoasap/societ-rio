@@ -174,14 +174,17 @@ export function ConfigHonorarios({ cfg, onClose, onSalvo }: { cfg: ConfigHon; on
   const [inicio, setInicio] = useState(cfg.inicio.slice(0, 7))
   const [dia, setDia] = useState(String(cfg.dia_vencimento))
   const [seguinte, setSeguinte] = useState(cfg.vence_mes_seguinte)
+  const [tarifa, setTarifa] = useState(moedaDigitada(String(cfg.tarifa_boleto ?? 0)))
   const [erro, setErro] = useState<string | null>(null)
 
   async function salvar() {
     const d = Number(dia)
     if (!Number.isInteger(d) || d < 1 || d > 31) return setErro('Dia de vencimento entre 1 e 31.')
+    const t = lerNumeroBR(tarifa) ?? 0
+    if (t < 0) return setErro('Tarifa inválida.')
     const { error } = await supabase
       .from('adm_hon_config')
-      .update({ inicio: competenciaDe(inicio), dia_vencimento: d, vence_mes_seguinte: seguinte, updated_at: new Date().toISOString() })
+      .update({ inicio: competenciaDe(inicio), dia_vencimento: d, vence_mes_seguinte: seguinte, tarifa_boleto: t, updated_at: new Date().toISOString() })
       .eq('id', 1)
     if (error) return setErro(error.message)
     onSalvo()
@@ -217,6 +220,18 @@ export function ConfigHonorarios({ cfg, onClose, onSalvo }: { cfg: ConfigHon; on
           <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={seguinte} onChange={(e) => setSeguinte(e.target.checked)} />
           Vence no mês seguinte ao da competência
         </label>
+        <Field label="Tarifa por boleto emitido">
+          <input
+            className="input w-36"
+            inputMode="decimal"
+            value={tarifa}
+            onChange={(e) => setTarifa(e.target.value)}
+            onBlur={() => setTarifa(moedaDigitada(tarifa))}
+          />
+        </Field>
+        <p className="text-xs text-slate-500">
+          Na importação do extrato, um crédito igual ao honorário menos essa tarifa conta como valor certo, e o honorário fica como recebido integralmente.
+        </p>
         <p className="text-xs text-slate-500">
           Quando o honorário do cliente tem dia de vencimento próprio (cadastrado no Expandir da Base de Clientes), vale o dia dele.
         </p>

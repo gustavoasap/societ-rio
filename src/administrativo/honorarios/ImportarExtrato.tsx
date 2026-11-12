@@ -25,6 +25,7 @@ interface Item {
   confianca: Confianca | null
   nivel: Nivel
   motivo: string
+  tarifa: number
 }
 
 /**
@@ -36,6 +37,7 @@ export function ImportarExtrato({
   usados,
   clientes,
   comHonorario,
+  tarifaBoleto,
   onClose,
   onSalvo,
 }: {
@@ -43,6 +45,8 @@ export function ImportarExtrato({
   usados: Set<string>
   clientes: ClienteHon[]
   comHonorario: Set<string>
+  /** Tarifa do boleto descontada no crédito */
+  tarifaBoleto: number
   onClose: () => void
   onSalvo: () => void
 }) {
@@ -94,7 +98,7 @@ export function ImportarExtrato({
         )
       const creditos = lancs.filter((l) => l.valor > 0)
       const todos: ClienteRef[] = [...clientes, ...inativos]
-      const sug = sugerir(creditos, abertos, usados, todos, comHonorario)
+      const sug = sugerir(creditos, abertos, usados, todos, comHonorario, tarifaBoleto)
       const datas = lancs.map((l) => l.data).sort()
       setArquivo(f.name)
       setIgnorados(lancs.length - creditos.length)
@@ -108,6 +112,7 @@ export function ImportarExtrato({
           confianca: s.confianca,
           nivel: s.nivel,
           motivo: s.motivo,
+          tarifa: s.tarifa,
         })),
       )
     } catch (e) {
@@ -117,6 +122,11 @@ export function ImportarExtrato({
     }
   }
 
+  // Escolha manual: se o crédito for o honorário menos a tarifa do boleto, considera pago integralmente
+  const tarifaManual = (chave: string, credito: number) => {
+    const l = chave ? porChave.get(chave) : undefined
+    return l && tarifaBoleto > 0 && Math.abs(l.aberto - tarifaBoleto - credito) < 0.005 ? tarifaBoleto : 0
+  }
   const alterar = (i: number, m: Partial<Item>) => setItens((l) => l.map((x, j) => (j === i ? { ...x, ...m } : x)))
   const marcados = itens.filter((i) => i.marcado && i.chave)
   const repetidos = new Set(marcados.map((i) => i.chave)).size !== marcados.length
@@ -132,10 +142,12 @@ export function ImportarExtrato({
         const l = porChave.get(i.chave)!
         return salvarMensal(l.cliente.id, l.competencia, {
           recebido_em: i.lancamento.data,
-          valor_recebido: Math.round((l.recebido + i.lancamento.valor) * 100) / 100,
+          // Crédito com tarifa do boleto descontada: o honorário foi pago integralmente pelo cliente
+          valor_recebido: Math.round((l.recebido + i.lancamento.valor + i.tarifa) * 100) / 100,
           origem: 'extrato',
           extrato_id: i.lancamento.id,
           extrato_descricao: i.lancamento.descricao.slice(0, 300),
+          ...(i.tarifa ? { observacao: `Tarifa do boleto descontada no crédito: ${valorTexto(i.tarifa)}` } : {}),
         })
       }),
     )
@@ -317,6 +329,7 @@ export function ImportarExtrato({
                                 confianca: null,
                                 nivel: e.target.value ? 'ok' : it.nivel,
                                 motivo: e.target.value ? 'Escolhido à mão' : it.motivo,
+                                tarifa: tarifaManual(e.target.value, it.lancamento.valor),
                               })
                             }
                           >

@@ -13,7 +13,7 @@ import {
 } from './calculo'
 import { lerCsv, lerOfx, nomeNaDescricao, sugerir } from './extrato'
 
-const cfg: ConfigHon = { inicio: '2026-10-01', dia_vencimento: 10, vence_mes_seguinte: false }
+const cfg: ConfigHon = { inicio: '2026-10-01', dia_vencimento: 10, vence_mes_seguinte: false, tarifa_boleto: 0 }
 const cli = (o: Partial<ClienteHon> = {}): ClienteHon => ({
   id: 'c1',
   codigo: 10,
@@ -234,5 +234,17 @@ describe('extrato PDF e conciliação', () => {
     expect(s.map((x) => x.nivel)).toEqual(['advertencia', 'erro', 'erro', 'advertencia'])
     expect(s[0].confianca).toBe('media')
     expect(s[3].motivo).toMatch(/não encontrado/)
+  })
+})
+
+describe('tarifa do boleto', () => {
+  it('crédito com a tarifa descontada confere', async () => {
+    const { sugerir } = await import('./extrato')
+    const hoje = '2026-11-12'
+    const ls = [linhaDoMes(cli(), [hon()], null, '2026-10', cfg, hoje)!]
+    const s = sugerir([{ id: 'a', data: '2026-10-09', valor: 497.81, descricao: 'BOLETO MARIA STORE' }], ls, new Set(), [], undefined, 2.19)
+    expect(s[0]).toMatchObject({ nivel: 'ok', confianca: 'alta', tarifa: 2.19 })
+    const sem = sugerir([{ id: 'a', data: '2026-10-09', valor: 497.81, descricao: 'BOLETO MARIA STORE' }], ls, new Set())
+    expect(sem[0].nivel).toBe('advertencia')
   })
 })
