@@ -20,6 +20,7 @@ import { Link } from '../lib/rotas'
 import { comRetentativa } from '../lib/retentar'
 import { baixarArquivo, gerarXlsx, TIPO_XLSX, type ValorCelula } from '../lib/planilha'
 import { CampoMes } from '../components/CampoData'
+import { formatarData } from '../lib/format'
 import { Select } from '../components/ui'
 import { ObrigacaoForm } from './ObrigacaoForm'
 import {
@@ -168,6 +169,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
       { titulo: 'Cód.', largura: 7 },
       { titulo: 'Empresa', largura: 42 },
       { titulo: 'CNPJ', largura: 20 },
+      { titulo: 'Abertura', largura: 12 },
       { titulo: 'Pasta no Drive', largura: 30 },
       ...colunas.map((o) => ({ titulo: o.nome, largura: Math.max(14, o.nome.length + 2) })),
       { titulo: 'Concluídas', largura: 12 },
@@ -176,6 +178,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
       String(e.codigo).padStart(3, '0'),
       e.razao_social,
       formatarCnpj(e.cnpj),
+      e.data_abertura ? { valor: formatarData(e.data_abertura), destaque: 'negrito' as const } : '',
       e.link_drive ?? '',
       ...colunas.map((o) => {
         const op = opcaoAtual(o, valor(o, e.id))
@@ -465,7 +468,12 @@ export function Fechamento({ session, departamento }: { session: Session; depart
                               </a>
                             )}
                           </div>
-                          <div className="pl-9 font-mono text-[0.6875rem] text-slate-400">{formatarCnpj(e.cnpj)}</div>
+                          <div className="flex flex-wrap items-baseline gap-x-2 pl-9 text-[0.6875rem]">
+                            <span className="font-mono text-slate-400">{formatarCnpj(e.cnpj)}</span>
+                            <span className="text-slate-500">
+                              Abertura: <b className="font-bold text-slate-800">{e.data_abertura ? formatarData(e.data_abertura) : '—'}</b>
+                            </span>
+                          </div>
                         </td>
                         {colunas.map((o) => {
                           const op = opcaoAtual(o, valor(o, e.id))
