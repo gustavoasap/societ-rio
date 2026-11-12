@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { Building2, Check, CircleDollarSign, History, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatarData, lerNumeroBR, moedaDigitada } from '../lib/format'
-import { CampoData } from '../components/CampoData'
+import { CampoData, CampoMes } from '../components/CampoData'
+import { mesHoje, somarMes } from './honorarios/calculo'
+import { marcarSemHonorario } from './acoes'
 import { Select } from '../components/ui'
 import { DetalhesEmpresa } from './DetalhesEmpresa'
 import { CriarPastaDrive } from './CriarPastaDrive'
@@ -10,7 +12,6 @@ import {
   ETAPAS,
   OPCOES_ETAPA,
   STATUS_CLIENTE,
-  hojeISO,
   moeda,
   textoEncerramento,
   type Cliente,
@@ -73,6 +74,7 @@ export function ClienteExpandido({
   const [historico, setHistorico] = useState<Honorario[]>([])
   const [form, setForm] = useState<{ valor: string; inicio: string; dia: string; descricao: string } | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  const [semForm, setSemForm] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [detalhes, setDetalhes] = useState(false)
 
@@ -89,7 +91,8 @@ export function ClienteExpandido({
     setErro(null)
     setForm({
       valor: vigente ? moedaDigitada(String(vigente.valor).replace('.', ',')) : '',
-      inicio: hojeISO(),
+      // Competência a partir da qual vale: reajuste no mês seguinte; primeiro honorário no mês atual
+      inicio: vigente ? somarMes(mesHoje(), 1) : mesHoje(),
       dia: String(vigente?.dia_vencimento ?? 10),
       descricao: vigente ? 'Reajuste' : '',
     })
@@ -100,21 +103,32 @@ export function ClienteExpandido({
     const valor = lerNumeroBR(form.valor)
     const dia = form.dia ? Number(form.dia) : null
     if (!valor || valor <= 0) return setErro('Informe o valor mensal.')
-    if (!form.inicio) return setErro('Informe a partir de quando vale.')
+    if (!form.inicio) return setErro('Informe a partir de qual competência vale.')
+    const aberto = historico.find((h) => !h.vigencia_fim)
+    if (aberto && aberto.vigencia_inicio.slice(0, 7) >= form.inicio)
+      return setErro(`Já existe honorário a partir de ${formatarData(aberto.vigencia_inicio)}. O reajuste precisa ser numa competência posterior.`)
     if (dia !== null && (dia < 1 || dia > 31)) return setErro('Dia de vencimento entre 1 e 31.')
     setSalvando(true)
     setErro(null)
     const { error } = await supabase.rpc('adm_reajustar_honorario', {
       p_cliente: c.id,
       p_valor: valor,
-      p_inicio: form.inicio,
+      p_inicio: `${form.inicio}-01`,
       p_dia: dia,
       p_descricao: form.descricao.trim() || null,
     })
     setSalvando(false)
     if (error) return setErro(error.message)
     setForm(null)
+    if (c.sem_honorario) await marcarSemHonorario(c.id, false)
     carregarHistorico()
+    onHonorario()
+  }
+
+  async function confirmarSem(sem: boolean) {
+    const msg = await marcarSemHonorario(c.id, sem, semForm)
+    if (msg) return setErro(msg)
+    setSemForm(null)
     onHonorario()
   }
 
@@ -193,10 +207,19 @@ export function ClienteExpandido({
                 {moeda(vigente.valor)}
                 {vigente.dia_vencimento ? <span className="font-medium"> · vence dia {vigente.dia_vencimento}</span> : null}
               </span>
+            ) : c.sem_honorario ? (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                Sem cobrança confirmada{c.sem_honorario_motivo ? ` · ${c.sem_honorario_motivo}` : ''}
+              </span>
             ) : (
               <span className="text-slate-400">não informado</span>
             )}
           </div>
+          {!form && !encerrado && !vigente && semForm === null && (
+            <button className="btn-ghost btn-sm" onClick={() => (c.sem_honorario ? confirmarSem(false) : setSemForm(''))}>
+              {c.sem_honorario ? 'Desfazer “sem honorário”' : 'Não terá honorário'}
+            </button>
+          )}
           {!form && !encerrado && (
             <button className="btn-secondary btn-sm" onClick={abrirForm}>
               <Plus className="h-3.5 w-3.5" />
@@ -219,8 +242,8 @@ export function ClienteExpandido({
               />
             </label>
             <label>
-              <span className="mb-1 block text-[0.6875rem] font-semibold text-slate-600">Vale a partir de</span>
-              <CampoData className="input" value={form.inicio} onChange={(v) => setForm({ ...form, inicio: v })} />
+              <span className="mb-1 block text-[0.6875rem] font-semibold text-slate-600">A partir da competência</span>
+              <CampoMes className="input" value={form.inicio} onChange={(v) => setForm({ ...form, inicio: v })} />
             </label>
             <label>
               <span className="mb-1 block text-[0.6875rem] font-semibold text-slate-600">Dia vencimento</span>
@@ -244,8 +267,35 @@ export function ClienteExpandido({
                 Cancelar
               </button>
             </div>
-            {vigente && <p className="text-xs text-brand-700 sm:col-span-5">O honorário atual termina na véspera da nova data; o histórico é mantido.</p>}
+            {vigente && (
+              <p className="text-xs text-brand-700 sm:col-span-5">
+                Até a competência anterior continua valendo o honorário atual (relatórios e Controle de Honorários usam o valor antigo nesses meses); o
+                histórico é mantido.
+              </p>
+            )}
             {erro && <p className="text-xs font-semibold text-rose-600 sm:col-span-5">{erro}</p>}
+          </div>
+        )}
+
+        {semForm !== null && (
+          <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl bg-slate-100 p-3 ring-1 ring-slate-200">
+            <label className="min-w-60 flex-1">
+              <span className="mb-1 block text-[0.6875rem] font-semibold text-slate-600">Motivo (opcional)</span>
+              <input
+                className="input"
+                value={semForm}
+                onChange={(e) => setSemForm(e.target.value)}
+                placeholder="Ex.: cliente parceiro, cortesia, empresa do grupo"
+                autoFocus
+              />
+            </label>
+            <button className="btn-primary" onClick={() => confirmarSem(true)}>
+              <Check className="h-4 w-4" />
+              Confirmar sem honorário
+            </button>
+            <button className="btn-secondary" onClick={() => setSemForm(null)}>
+              Cancelar
+            </button>
           </div>
         )}
 

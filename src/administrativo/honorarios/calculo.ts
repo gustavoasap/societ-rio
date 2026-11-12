@@ -11,6 +11,8 @@ export interface ClienteHon {
   status: 'pendente' | 'assinado' | 'encerrado'
   data_inicio_servicos: string | null
   carencia_meses: number | null
+  sem_honorario: boolean
+  sem_honorario_motivo: string | null
 }
 
 export interface HonorarioBase {

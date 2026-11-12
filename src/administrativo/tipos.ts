@@ -19,6 +19,9 @@ export interface Cliente {
   endereco: string | null
   situacao_cadastral: string | null
   receita_atualizada_em: string | null
+  /** Confirmado que o cliente não terá honorário (não aparece como pendência) */
+  sem_honorario: boolean
+  sem_honorario_motivo: string | null
   responsavel: string | null
   email: string | null
   telefone: string | null

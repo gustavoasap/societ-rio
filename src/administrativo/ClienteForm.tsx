@@ -36,6 +36,8 @@ const VAZIO: Dados = {
   carencia_meses: null,
   situacao_encerramento: null,
   motivo_encerramento: null,
+  sem_honorario: false,
+  sem_honorario_motivo: null,
   endereco: null,
   situacao_cadastral: null,
   receita_atualizada_em: null,

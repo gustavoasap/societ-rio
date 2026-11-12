@@ -23,6 +23,8 @@ const cli = (o: Partial<ClienteHon> = {}): ClienteHon => ({
   status: 'assinado',
   data_inicio_servicos: null,
   carencia_meses: null,
+  sem_honorario: false,
+  sem_honorario_motivo: null,
   ...o,
 })
 const hon = (o: Partial<HonorarioBase> = {}): HonorarioBase => ({
@@ -159,5 +161,22 @@ describe('extrato', () => {
     expect(s[1]).toMatchObject({ chave: 'c1|2026-11', confianca: 'alta' })
     expect(s[2]).toMatchObject({ chave: 'c2|2026-10', confianca: 'baixa' })
     expect(s[3].chave).toBeNull()
+  })
+})
+
+describe('reajuste', () => {
+  it('índice + adicional e arredondamento', async () => {
+    const { novoValor, arredondar } = await import('./reajuste')
+    const p = { tipo: 'percentual' as const, indice: 4.5, adicional: 2, fixo: null, acrescimo: 0 }
+    expect(arredondar(novoValor(360, p), 'centavos')).toBe(383.4)
+    expect(arredondar(novoValor(360, p), 'inteiro')).toBe(383)
+    expect(arredondar(novoValor(360, p), 'cima')).toBe(384)
+    expect(novoValor(360, { ...p, tipo: 'fixo', fixo: 400 })).toBe(400)
+    expect(novoValor(360, { ...p, tipo: 'acrescimo', acrescimo: 40 })).toBe(400)
+  })
+  it('reajuste mantém o valor antigo até a competência anterior', () => {
+    const hs = [hon({ valor: 360, vigencia_fim: '2026-12-31' }), hon({ valor: 383.4, vigencia_inicio: '2027-01-01' })]
+    expect(honorarioDoMes(hs, '2026-12')?.valor).toBe(360)
+    expect(honorarioDoMes(hs, '2027-01')?.valor).toBe(383.4)
   })
 })

@@ -144,7 +144,8 @@ export function Clientes({ session }: { session: Session }) {
       if (fStatus && c.status !== fStatus) return false
       if (fParceiro && (fParceiro === 'nenhum' ? c.parceiro_id : c.parceiro_id !== fParceiro)) return false
       if (fRegime && (fRegime === 'nao_informado' ? c.regime_tributario : c.regime_tributario !== fRegime)) return false
-      if (fHonorario === 'sem' && vigentes.has(c.id)) return false
+      if (fHonorario === 'sem' && (vigentes.has(c.id) || c.sem_honorario)) return false
+      if (fHonorario === 'confirmado' && !c.sem_honorario) return false
       if (fHonorario === 'com' && !vigentes.has(c.id)) return false
       if (fPendencia) {
         const etapa = fPendencia === 'qualquer' ? null : c[fPendencia as (typeof ETAPAS)[number]['campo']]
@@ -170,7 +171,7 @@ export function Clientes({ session }: { session: Session }) {
     })
   }, [aba, ativos, inativos, busca, fStatus, fParceiro, fRegime, fPendencia, fHonorario, ordem, vigentes])
 
-  const ativosSemHonorario = useMemo(() => ativos.filter((c) => !vigentes.has(c.id)), [ativos, vigentes])
+  const ativosSemHonorario = useMemo(() => ativos.filter((c) => !vigentes.has(c.id) && !c.sem_honorario), [ativos, vigentes])
 
   const totalLista = lista.reduce((s, c) => s + (vigentes.get(c.id)?.valor ?? 0), 0)
 
@@ -456,6 +457,7 @@ export function Clientes({ session }: { session: Session }) {
                   opcoes={[
                     { value: 'sem', label: 'Sem honorário cadastrado' },
                     { value: 'com', label: 'Com honorário' },
+                    { value: 'confirmado', label: 'Sem cobrança confirmada' },
                   ]}
                   vazio="Honorário: todos"
                   className={`input w-auto ${fHonorario === 'sem' ? 'border-rose-300 bg-rose-50 text-rose-700' : ''}`}
@@ -550,6 +552,13 @@ export function Clientes({ session }: { session: Session }) {
                             <td className="px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-900 tabular-nums">
                               {v ? (
                                 moeda(v.valor)
+                              ) : c.sem_honorario ? (
+                                <span
+                                  className="inline-block rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[0.6875rem] font-semibold whitespace-nowrap text-slate-600"
+                                  title={c.sem_honorario_motivo ?? 'Confirmado sem honorário'}
+                                >
+                                  Sem cobrança
+                                </span>
                               ) : c.status !== 'encerrado' ? (
                                 <span className="inline-block rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[0.6875rem] font-semibold whitespace-nowrap text-rose-700">
                                   Sem honorário

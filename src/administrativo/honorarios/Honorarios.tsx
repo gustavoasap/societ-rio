@@ -13,6 +13,7 @@ import {
   Pencil,
   Search,
   Settings,
+  TrendingUp,
   Undo2,
   Wallet,
 } from 'lucide-react'
@@ -45,6 +46,8 @@ import {
 import { AjustarValor, ConfigHonorarios, MarcarRecebido } from './Modais'
 import { mesCurto, nomeMes, salvarMensal, valorTexto } from './util'
 import { ImportarExtrato } from './ImportarExtrato'
+import { ReajusteMassa } from './ReajusteMassa'
+import { marcarSemHonorario } from '../acoes'
 
 type Aba = 'mes' | 'inadimplentes' | 'evolucao'
 
@@ -70,6 +73,7 @@ export function Honorarios({ session }: { session: Session }) {
   const [importando, setImportando] = useState(false)
   const [configurando, setConfigurando] = useState(false)
   const [verSemHonorario, setVerSemHonorario] = useState(false)
+  const [reajustando, setReajustando] = useState(false)
 
   const carregar = useCallback(async () => {
     const [c, cl, h, m] = await comRetentativa(() =>
@@ -77,7 +81,9 @@ export function Honorarios({ session }: { session: Session }) {
         supabase.from('adm_hon_config').select('inicio, dia_vencimento, vence_mes_seguinte').eq('id', 1).maybeSingle(),
         supabase
           .from('adm_clientes')
-          .select('id, codigo, razao_social, nome_fantasia, cnpj, responsavel, status, data_inicio_servicos, carencia_meses')
+          .select(
+            'id, codigo, razao_social, nome_fantasia, cnpj, responsavel, status, data_inicio_servicos, carencia_meses, sem_honorario, sem_honorario_motivo',
+          )
           .neq('status', 'encerrado')
           .order('codigo'),
         supabase.from('adm_honorarios').select('cliente_id, valor, vigencia_inicio, vigencia_fim, dia_vencimento'),
@@ -118,7 +124,20 @@ export function Honorarios({ session }: { session: Session }) {
 
   const doMes = useMemo(() => todas.filter((l) => l.competencia === mes), [todas, mes])
   const resumo = useMemo(() => resumoDoMes(todas, mes, hoje), [todas, mes, hoje])
-  const semHonorario = useMemo(() => clientes.filter((c) => !(honsPorCliente.get(c.id) ?? []).length), [clientes, honsPorCliente])
+  const semHonorario = useMemo(() => clientes.filter((c) => !(honsPorCliente.get(c.id) ?? []).length && !c.sem_honorario), [clientes, honsPorCliente])
+  const confirmadosSem = useMemo(() => clientes.filter((c) => !(honsPorCliente.get(c.id) ?? []).length && c.sem_honorario), [clientes, honsPorCliente])
+
+  async function confirmarSem(c: ClienteHon, sem: boolean) {
+    let motivo: string | null = null
+    if (sem) {
+      const r = prompt(`Confirmar que ${c.razao_social} não terá honorário?\n\nMotivo (opcional):`, '')
+      if (r === null) return
+      motivo = r
+    }
+    const msg = await marcarSemHonorario(c.id, sem, motivo)
+    if (msg) setErro(msg)
+    carregar()
+  }
   const listaInad = useMemo(() => inadimplentes(todas, hoje), [todas, hoje])
   const totalInad = listaInad.reduce((s, i) => s + i.total, 0)
   const evolucao = useMemo(() => mesesEntre(inicio, mesHoje()).map((m) => resumoDoMes(todas, m, hoje)), [todas, inicio, hoje])
@@ -257,6 +276,10 @@ export function Honorarios({ session }: { session: Session }) {
               <Settings className="h-4 w-4" />
               Configurações
             </button>
+            <button className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setReajustando(true)}>
+              <TrendingUp className="h-4 w-4" />
+              Reajuste em massa
+            </button>
             <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setImportando(true)}>
               <FileUp className="h-4 w-4" />
               Importar extrato
@@ -368,17 +391,47 @@ export function Honorarios({ session }: { session: Session }) {
                   </div>
                 </div>
                 {verSemHonorario && (
-                  <ul className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                  <ul className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
                     {semHonorario.map((c) => (
-                      <li key={c.id} className="truncate">
-                        <span className="font-mono text-rose-400">{String(c.codigo).padStart(3, '0')}</span>{' '}
-                        <span className="font-semibold">{c.razao_social}</span>
-                        {c.status === 'pendente' && <span className="text-rose-500"> · contrato pendente</span>}
+                      <li key={c.id} className="flex items-center justify-between gap-2">
+                        <span className="truncate">
+                          <span className="font-mono text-rose-400">{String(c.codigo).padStart(3, '0')}</span>{' '}
+                          <span className="font-semibold">{c.razao_social}</span>
+                          {c.status === 'pendente' && <span className="text-rose-500"> · contrato pendente</span>}
+                        </span>
+                        <button
+                          className="shrink-0 cursor-pointer rounded-md bg-white px-2 py-0.5 text-[0.6875rem] font-semibold text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                          onClick={() => confirmarSem(c, true)}
+                        >
+                          Não terá honorário
+                        </button>
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
+            )}
+
+            {confirmadosSem.length > 0 && (
+              <details className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200/70">
+                <summary className="cursor-pointer font-semibold">{confirmadosSem.length} cliente(s) com “sem honorário” confirmado</summary>
+                <ul className="mt-2 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+                  {confirmadosSem.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">
+                        <span className="font-mono text-slate-400">{String(c.codigo).padStart(3, '0')}</span> {c.razao_social}
+                        {c.sem_honorario_motivo && <span className="text-slate-400"> · {c.sem_honorario_motivo}</span>}
+                      </span>
+                      <button
+                        className="shrink-0 cursor-pointer text-[0.6875rem] font-semibold text-brand-600 hover:underline"
+                        onClick={() => confirmarSem(c, false)}
+                      >
+                        Desfazer
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
 
             {selecionadas.length > 0 && (
@@ -650,6 +703,17 @@ export function Honorarios({ session }: { session: Session }) {
           onClose={() => setAjustando(null)}
           onSalvo={() => {
             setAjustando(null)
+            carregar()
+          }}
+        />
+      )}
+      {reajustando && (
+        <ReajusteMassa
+          clientes={clientes}
+          hons={hons}
+          onClose={() => setReajustando(false)}
+          onSalvo={() => {
+            setReajustando(false)
             carregar()
           }}
         />

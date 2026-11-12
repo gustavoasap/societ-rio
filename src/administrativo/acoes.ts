@@ -1,6 +1,15 @@
 import { supabase } from '../lib/supabase'
 import type { Cliente, MotivoEncerramento } from './tipos'
 
+/** Confirma (ou desfaz) que o cliente não terá honorário. */
+export async function marcarSemHonorario(clienteId: string, sem: boolean, motivo: string | null = null) {
+  const { error } = await supabase
+    .from('adm_clientes')
+    .update({ sem_honorario: sem, sem_honorario_motivo: sem ? motivo?.trim() || null : null })
+    .eq('id', clienteId)
+  return error?.message ?? null
+}
+
 /** Fecha o honorário vigente na data de encerramento (usado também pela lista). */
 export async function encerrarCliente(cliente: Cliente, data: string, motivo: MotivoEncerramento) {
   if (!data) return 'Informe a data do encerramento.'
