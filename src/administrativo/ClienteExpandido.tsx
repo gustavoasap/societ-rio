@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, Check, CircleDollarSign, History, Plus } from 'lucide-react'
+import { Building2, Check, CircleDollarSign, History, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatarData, lerNumeroBR, moedaDigitada } from '../lib/format'
 import { CampoData, CampoMes } from '../components/CampoData'
@@ -137,9 +137,26 @@ export function ClienteExpandido({
   }
 
   async function confirmarSem(sem: boolean) {
-    const msg = await marcarSemHonorario(c.id, sem, semForm)
-    if (msg) return setErro(msg)
+    // Com honorário cadastrado: exclui os registros e marca o cliente como sem honorário
+    if (sem && historico.length) {
+      if (!confirm(`Excluir ${historico.length} honorário(s) cadastrado(s) de ${c.razao_social} e marcar como sem honorário?`)) return
+      const { error } = await supabase.rpc('adm_cliente_sem_honorario', { p_cliente: c.id, p_motivo: semForm })
+      if (error) return setErro(error.message)
+    } else {
+      const msg = await marcarSemHonorario(c.id, sem, semForm)
+      if (msg) return setErro(msg)
+    }
     setSemForm(null)
+    carregarHistorico()
+    onHonorario()
+  }
+
+  async function excluirHonorario(h: Honorario) {
+    const aviso = h.vigencia_fim ? '' : '\n\nSe houver um honorário anterior, ele volta a valer.'
+    if (!confirm(`Excluir o honorário de ${moeda(Number(h.valor))} (desde ${formatarData(h.vigencia_inicio)})?${aviso}`)) return
+    const { error } = await supabase.rpc('adm_excluir_honorario', { p_id: h.id })
+    if (error) return setErro(error.message)
+    carregarHistorico()
     onHonorario()
   }
 
@@ -231,7 +248,7 @@ export function ClienteExpandido({
               </button>
             )}
           </div>
-          {!form && !encerrado && !vigente && semForm === null && (
+          {!form && !encerrado && semForm === null && (!vigente || !c.sem_honorario) && (
             <button className="btn-ghost btn-sm" onClick={() => (c.sem_honorario ? confirmarSem(false) : setSemForm(''))}>
               {c.sem_honorario ? 'Desfazer “sem honorário”' : 'Não terá honorário'}
             </button>
@@ -315,6 +332,8 @@ export function ClienteExpandido({
           </div>
         )}
 
+        {erro && !form && <p className="mt-2 text-xs font-semibold text-rose-600">{erro}</p>}
+
         {historico.length > 0 && (
           <div className="mt-3 overflow-x-auto">
             <div className="mb-1 flex items-center gap-1 text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
@@ -330,6 +349,18 @@ export function ClienteExpandido({
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{h.dia_vencimento ? `vence dia ${h.dia_vencimento}` : ''}</td>
                     <td className="py-1.5 pl-3">{h.descricao ?? ''}</td>
+                    <td className="py-1.5 pl-2 text-right">
+                      {!encerrado && (
+                        <button
+                          className="icon-btn h-7 w-7 hover:text-rose-600"
+                          onClick={() => excluirHonorario(h)}
+                          title="Excluir este honorário"
+                          aria-label={`Excluir honorário de ${moeda(Number(h.valor))}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
