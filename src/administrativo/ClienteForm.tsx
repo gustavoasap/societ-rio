@@ -68,6 +68,7 @@ export function ClienteForm({
   const [encerrando, setEncerrando] = useState(false)
   const [dataEncerramento, setDataEncerramento] = useState(hojeISO())
   const [motivoEnc, setMotivoEnc] = useState<MotivoEncerramento | null>(null)
+  const [codigo, setCodigo] = useState(cliente ? String(cliente.codigo) : '')
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
 
@@ -78,18 +79,27 @@ export function ClienteForm({
     setErro(null)
     const cnpj = (d.cnpj ?? '').replace(/\D/g, '')
     if (cnpj && cnpj.length !== 14) return setErro('O CNPJ precisa ter 14 dígitos.')
+    const cod = codigo.trim() ? Number(codigo) : null
+    if (cod !== null && (!Number.isInteger(cod) || cod <= 0)) return setErro('O código precisa ser um número inteiro maior que zero.')
+    if (cliente && cod === null) return setErro('Informe o código do cliente.')
 
     setSalvando(true)
     const { id: _id, codigo: _codigo, created_at: _criado, updated_at: _atualizado, ...resto } = d as Dados & Partial<Cliente> & { updated_at?: string }
     // Contrato assinado, certificado, procuração, onboarding e data de assinatura são editados no Expandir
     const { status: _st, procuracao: _pr, certificado_digital: _cd, onboarding: _on, data_assinatura: _as, ...cadastro } = resto
-    const dados = cliente ? { ...cadastro, cnpj: cnpj || null } : { ...resto, cnpj: cnpj || null }
+    // Código vazio em cliente novo: o portal usa o próximo número livre
+    const comCodigo: { codigo?: number } = cod !== null ? { codigo: cod } : {}
+    const dados = cliente ? { ...cadastro, ...comCodigo, cnpj: cnpj || null } : { ...resto, ...comCodigo, cnpj: cnpj || null }
     const r = cliente
       ? await supabase.from('adm_clientes').update(dados).eq('id', cliente.id).select('id').single()
       : await supabase.from('adm_clientes').insert(dados).select('id').single()
     if (r.error) {
       setSalvando(false)
-      return setErro(r.error.code === '23505' ? 'Já existe um cliente com esse CNPJ.' : r.error.message)
+      if (r.error.code === '23505')
+        return setErro(
+          r.error.message.includes('codigo') ? `Já existe um cliente com o código ${String(cod).padStart(3, '0')}.` : 'Já existe um cliente com esse CNPJ.',
+        )
+      return setErro(r.error.message)
     }
     setSalvando(false)
     onSalvo()
@@ -186,7 +196,18 @@ export function ClienteForm({
 
       <form id="form-cliente" onSubmit={salvar} className="space-y-4">
         <section className="grid gap-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70 sm:grid-cols-6">
-          <Field label="Razão social" className="sm:col-span-4">
+          <Field label={cliente ? 'Código *' : 'Código'} className="sm:col-span-1">
+            <input
+              id="codigo"
+              className="input font-mono"
+              inputMode="numeric"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder={cliente ? '' : 'Automático'}
+              title={cliente ? 'Ao trocar o código, renomeie também a pasta do cliente no Drive' : 'Deixe em branco para usar o próximo número'}
+            />
+          </Field>
+          <Field label="Razão social" className="sm:col-span-3">
             <input
               id="razao-social"
               className="input uppercase"
@@ -212,7 +233,7 @@ export function ClienteForm({
               onChange={(e) => set('nome_fantasia', texto(e.target.value.toUpperCase()))}
             />
           </Field>
-          <Field label="Responsável" className="sm:col-span-2">
+          <Field label="Responsável legal" className="sm:col-span-2">
             <input
               id="responsavel"
               className="input uppercase"
