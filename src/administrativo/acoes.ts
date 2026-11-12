@@ -1,9 +1,10 @@
 import { supabase } from '../lib/supabase'
-import type { Cliente } from './tipos'
+import type { Cliente, MotivoEncerramento } from './tipos'
 
 /** Fecha o honorário vigente na data de encerramento (usado também pela lista). */
-export async function encerrarCliente(cliente: Cliente, data: string) {
-  const r1 = await supabase.from('adm_clientes').update({ status: 'encerrado', data_encerramento: data }).eq('id', cliente.id)
+export async function encerrarCliente(cliente: Cliente, data: string, motivo: MotivoEncerramento) {
+  if (!data) return 'Informe a data do encerramento.'
+  const r1 = await supabase.from('adm_clientes').update({ status: 'encerrado', data_encerramento: data, motivo_encerramento: motivo }).eq('id', cliente.id)
   if (r1.error) return r1.error.message
   const { data: vig } = await supabase.from('adm_honorarios').select('id, vigencia_inicio').eq('cliente_id', cliente.id).is('vigencia_fim', null).maybeSingle()
   if (vig) {

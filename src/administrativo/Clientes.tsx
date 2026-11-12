@@ -36,6 +36,9 @@ import {
   OPCOES_ETAPA,
   REGIMES,
   SEGMENTOS,
+  MOTIVOS_ENCERRAMENTO,
+  textoEncerramento,
+  type MotivoEncerramento,
   STATUS_CLIENTE,
   formatarCnpj,
   hojeISO,
@@ -99,6 +102,7 @@ export function Clientes({ session }: { session: Session }) {
   const [atualizandoTodas, setAtualizandoTodas] = useState(false)
   const [encerrando, setEncerrando] = useState<Cliente | null>(null)
   const [dataEnc, setDataEnc] = useState(hojeISO())
+  const [motivoEnc, setMotivoEnc] = useState<MotivoEncerramento | null>(null)
 
   const carregar = useCallback(async () => {
     const [c, h, p] = await comRetentativa(() =>
@@ -183,6 +187,7 @@ export function Clientes({ session }: { session: Session }) {
   async function mudarStatus(c: Cliente, status: StatusCliente) {
     if (status === 'encerrado') {
       setDataEnc(hojeISO())
+      setMotivoEnc(null)
       return setEncerrando(c)
     }
     setClientes((l) => l.map((x) => (x.id === c.id ? { ...x, status } : x)))
@@ -195,7 +200,8 @@ export function Clientes({ session }: { session: Session }) {
 
   async function confirmarEncerramento() {
     if (!encerrando) return
-    const msg = await encerrarCliente(encerrando, dataEnc)
+    if (!motivoEnc) return setErro('Informe o motivo do encerramento: Baixa da Empresa ou Distrato.')
+    const msg = await encerrarCliente(encerrando, dataEnc, motivoEnc)
     setEncerrando(null)
     if (msg) setErro(msg)
     carregar()
@@ -232,6 +238,7 @@ export function Clientes({ session }: { session: Session }) {
       { titulo: 'Assinatura do contrato', tipo: 'data', largura: 13, valor: (c) => c.data_assinatura },
       { titulo: 'Carência (meses)', tipo: 'numero', largura: 10, valor: (c) => c.carencia_meses },
       { titulo: 'Encerramento', tipo: 'data', largura: 13, valor: (c) => c.data_encerramento },
+      { titulo: 'Motivo do encerramento', largura: 18, valor: (c) => labelDe(MOTIVOS_ENCERRAMENTO, c.motivo_encerramento ?? '') || null },
       { titulo: 'Situação do encerramento', largura: 20, valor: (c) => c.situacao_encerramento },
       { titulo: 'Responsável', largura: 32, valor: (c) => c.responsavel },
       { titulo: 'E-mail', largura: 32, valor: (c) => c.email },
@@ -481,7 +488,9 @@ export function Clientes({ session }: { session: Session }) {
                             </td>
                             <td className="px-3 py-3">
                               <span className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold whitespace-nowrap ${COR_STATUS[c.status]}`}>
-                                {c.status === 'encerrado' ? `Encerrado em ${formatarData(c.data_encerramento)}` : labelDe(STATUS_CLIENTE, c.status)}
+                                {c.status === 'encerrado'
+                                  ? textoEncerramento(c.motivo_encerramento, formatarData(c.data_encerramento))
+                                  : labelDe(STATUS_CLIENTE, c.status)}
                               </span>
                               {c.situacao_encerramento && <div className="mt-1 pl-1 text-xs font-semibold text-rose-600">{c.situacao_encerramento}</div>}
                             </td>
@@ -583,16 +592,37 @@ export function Clientes({ session }: { session: Session }) {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-asap-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
           <div className="w-full max-w-md space-y-4 rounded-3xl bg-white p-6 shadow-2xl">
             <h2 className="text-lg font-bold text-slate-900">Encerrar {encerrando.razao_social}?</h2>
-            <p className="text-sm text-slate-600">O cliente sai da lista de ativos e vai para Inativos. O honorário vigente é encerrado na mesma data.</p>
+            <p className="text-sm text-slate-600">
+              O cliente sai da lista de ativos e vai para Inativos. O honorário vigente é encerrado na mesma data e o controle de obrigações deixa de trazer a
+              empresa a partir da competência seguinte.
+            </p>
+            <div className="block">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Motivo *</span>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Motivo do encerramento">
+                {MOTIVOS_ENCERRAMENTO.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={motivoEnc === m.value}
+                    onClick={() => setMotivoEnc(m.value)}
+                    className={`cursor-pointer rounded-xl border px-3 py-2 text-sm font-semibold transition ${motivoEnc === m.value ? 'border-rose-500 bg-rose-50 text-rose-700 ring-1 ring-rose-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Data do encerramento</span>
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">{motivoEnc === 'distrato' ? 'Data do distrato *' : 'Data da baixa *'}</span>
               <CampoData id="data-encerramento-lista" className="input" value={dataEnc} onChange={(v) => setDataEnc(v)} />
             </label>
             <div className="flex justify-end gap-2">
               <button className="btn-secondary" onClick={() => setEncerrando(null)}>
                 Cancelar
               </button>
-              <button className="btn-danger" onClick={confirmarEncerramento}>
+              <button className="btn-danger" onClick={confirmarEncerramento} disabled={!motivoEnc || !dataEnc}>
                 Encerrar cliente
               </button>
             </div>

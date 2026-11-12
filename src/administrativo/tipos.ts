@@ -15,6 +15,7 @@ export interface Cliente {
   data_inicio_servicos: string | null
   carencia_meses: number | null
   situacao_encerramento: string | null
+  motivo_encerramento: MotivoEncerramento | null
   endereco: string | null
   situacao_cadastral: string | null
   receita_atualizada_em: string | null
@@ -114,5 +115,14 @@ export const hojeISO = () => {
 export const temPendencia = (c: Cliente) => ETAPAS.some((e) => c[e.campo] === 'pendente' || c[e.campo] === 'pdf_enviado')
 
 export const EMPRESAS = ['ASAP', 'DELY']
+
+export type MotivoEncerramento = 'baixa' | 'distrato'
+export const MOTIVOS_ENCERRAMENTO: { value: MotivoEncerramento; label: string }[] = [
+  { value: 'baixa', label: 'Baixa da Empresa' },
+  { value: 'distrato', label: 'Distrato' },
+]
+/** "Baixa da Empresa em 15/06/2026" / "Encerrado em ..." */
+export const textoEncerramento = (motivo: MotivoEncerramento | null, data: string) =>
+  `${MOTIVOS_ENCERRAMENTO.find((m) => m.value === motivo)?.label ?? 'Encerrado'} em ${data}`
 
 export const moeda = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })

@@ -1,6 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ChevronLeft, ChevronRight, ClipboardList, FileSpreadsheet, House, LogOut, Pencil, Plus, Search, Sparkles } from 'lucide-react'
+import {
+  CalendarRange,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  FileSpreadsheet,
+  FolderOpen,
+  House,
+  LayoutGrid,
+  LogOut,
+  Pencil,
+  Plus,
+  Search,
+  Sparkles,
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Link } from '../lib/rotas'
 import { comRetentativa } from '../lib/retentar'
@@ -12,22 +26,24 @@ import {
   NOME_DEPARTAMENTO,
   TITULO_CONTROLE,
   SUGESTOES,
+  COMP_UNICA,
   chave,
+  competenciaAtual,
   competenciaDe,
+  competenciaStatus,
   corDe,
+  empresaNoAno,
   empresaNoMes,
+  obrigacaoNaGeral,
   obrigacaoNoMes,
   opcaoAtual,
+  textoMeses,
   type Departamento,
   type EmpresaFech,
   type Obrigacao,
   type StatusFech,
 } from './tipos'
 
-const mesAtual = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
 const somarMes = (mes: string, n: number) => {
   const [a, m] = mes.split('-').map(Number)
   const d = new Date(a, m - 1 + n, 1)
@@ -38,7 +54,9 @@ const nomeMes = (mes: string) => `${MESES[Number(mes.slice(5, 7)) - 1]} de ${mes
 const formatarCnpj = (c: string | null) => (c && c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : (c ?? ''))
 
 export function Fechamento({ session, departamento }: { session: Session; departamento: Departamento }) {
-  const [mes, setMes] = useState(mesAtual)
+  const [visao, setVisao] = useState<'mes' | 'geral'>('mes')
+  const [mes, setMes] = useState(competenciaAtual)
+  const [ano, setAno] = useState(() => competenciaAtual().slice(0, 4))
   const [obrigacoes, setObrigacoes] = useState<Obrigacao[]>([])
   const [empresas, setEmpresas] = useState<EmpresaFech[]>([])
   const [status, setStatus] = useState<Map<string, string>>(new Map())
@@ -52,35 +70,47 @@ export function Fechamento({ session, departamento }: { session: Session; depart
     const [o, e] = await comRetentativa(() =>
       Promise.all([
         supabase.from('fech_obrigacoes').select('*').eq('departamento', departamento).order('ordem').order('created_at'),
-        supabase.rpc('fech_clientes', { p_departamento: departamento }),
+        supabase.rpc('fech_empresas', { p_departamento: departamento }),
       ]),
     )
     const falha = o.error ?? e.error
     if (falha) setErro(falha.message)
-    setObrigacoes((o.data as Obrigacao[]) ?? [])
+    const lista = (o.data as Obrigacao[]) ?? []
+    setObrigacoes(lista)
     setEmpresas((e.data as EmpresaFech[]) ?? [])
+    return lista
   }, [departamento])
+
+  // Referência das marcações: competência (visão por mês) ou ano (visão geral)
+  const ref = visao === 'mes' ? mes : `${ano}-01`
+  const comps = useMemo(() => (visao === 'mes' ? [competenciaDe(mes), `${mes.slice(0, 4)}-01-01`] : [COMP_UNICA, `${ano}-01-01`]), [visao, mes, ano])
 
   const carregarMes = useCallback(async () => {
     const [{ data, error }] = await comRetentativa(() =>
-      Promise.all([supabase.from('fech_status').select('obrigacao_id, cliente_id, competencia, valor').eq('competencia', competenciaDe(mes))]),
+      Promise.all([supabase.from('fech_status').select('obrigacao_id, cliente_id, competencia, valor').in('competencia', comps)]),
     )
     if (error) setErro(error.message)
-    setStatus(new Map(((data as StatusFech[]) ?? []).map((s) => [chave(s.obrigacao_id, s.cliente_id), s.valor])))
-  }, [mes])
+    setStatus(new Map(((data as StatusFech[]) ?? []).map((s) => [chave(s.obrigacao_id, s.cliente_id, s.competencia), s.valor])))
+  }, [comps])
 
   useEffect(() => {
-    carregarBase().finally(() => setCarregando(false))
+    carregarBase()
+      .then((lista) => {
+        // Sem obrigações mensais, abre direto na visão geral
+        if (lista.length && !lista.some((o) => o.periodicidade === 'mensal')) setVisao('geral')
+      })
+      .finally(() => setCarregando(false))
   }, [carregarBase])
 
   useEffect(() => {
     carregarMes()
   }, [carregarMes])
 
-  const colunas = useMemo(() => obrigacoes.filter((o) => obrigacaoNoMes(o, mes)), [obrigacoes, mes])
-  const doMes = useMemo(() => empresas.filter((e) => empresaNoMes(e, mes)), [empresas, mes])
+  const colunas = useMemo(() => obrigacoes.filter((o) => (visao === 'mes' ? obrigacaoNoMes(o, mes) : obrigacaoNaGeral(o, ano))), [obrigacoes, visao, mes, ano])
+  const doMes = useMemo(() => empresas.filter((e) => (visao === 'mes' ? empresaNoMes(e, mes) : empresaNoAno(e, ano))), [empresas, visao, mes, ano])
 
-  const feito = useCallback((o: Obrigacao, clienteId: string) => opcaoAtual(o, status.get(chave(o.id, clienteId))).concluido, [status])
+  const valor = useCallback((o: Obrigacao, clienteId: string) => status.get(chave(o.id, clienteId, competenciaStatus(o, ref))), [status, ref])
+  const feito = useCallback((o: Obrigacao, clienteId: string) => opcaoAtual(o, valor(o, clienteId)).concluido, [valor])
 
   const linhas = useMemo(() => {
     const t = busca.trim().toLowerCase()
@@ -98,14 +128,15 @@ export function Fechamento({ session, departamento }: { session: Session; depart
   const totalFeito = useMemo(() => doMes.reduce((s, e) => s + colunas.filter((o) => feito(o, e.id)).length, 0), [doMes, colunas, feito])
   const empresasCompletas = useMemo(() => (colunas.length ? doMes.filter((e) => colunas.every((o) => feito(o, e.id))).length : 0), [doMes, colunas, feito])
 
-  async function marcar(o: Obrigacao, e: EmpresaFech, valor: string) {
-    const k = chave(o.id, e.id)
+  async function marcar(o: Obrigacao, e: EmpresaFech, novo: string) {
+    const competencia = competenciaStatus(o, ref)
+    const k = chave(o.id, e.id, competencia)
     const antes = status.get(k)
-    setStatus((m) => new Map(m).set(k, valor))
+    setStatus((m) => new Map(m).set(k, novo))
     const { error } = await supabase
       .from('fech_status')
       .upsert(
-        { obrigacao_id: o.id, cliente_id: e.id, competencia: competenciaDe(mes), valor, atualizado_em: new Date().toISOString() },
+        { obrigacao_id: o.id, cliente_id: e.id, competencia, valor: novo, atualizado_em: new Date().toISOString() },
         { onConflict: 'obrigacao_id,cliente_id,competencia' },
       )
     if (error) {
@@ -137,6 +168,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
       { titulo: 'Cód.', largura: 7 },
       { titulo: 'Empresa', largura: 42 },
       { titulo: 'CNPJ', largura: 20 },
+      { titulo: 'Pasta no Drive', largura: 30 },
       ...colunas.map((o) => ({ titulo: o.nome, largura: Math.max(14, o.nome.length + 2) })),
       { titulo: 'Concluídas', largura: 12 },
     ]
@@ -144,17 +176,20 @@ export function Fechamento({ session, departamento }: { session: Session; depart
       String(e.codigo).padStart(3, '0'),
       e.razao_social,
       formatarCnpj(e.cnpj),
+      e.link_drive ?? '',
       ...colunas.map((o) => {
-        const op = opcaoAtual(o, status.get(chave(o.id, e.id)))
+        const op = opcaoAtual(o, valor(o, e.id))
         return op.concluido ? { valor: op.label, destaque: 'negrito' as const } : op.label
       }),
       `${colunas.filter((o) => feito(o, e.id)).length}/${colunas.length}`,
     ])
-    const arq = gerarXlsx({ aba: `Fechamento ${mes}`, colunas: cab, linhas: dados })
-    baixarArquivo(`fechamento-${departamento}-${mes}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
+    const periodo = visao === 'mes' ? mes : `geral-${ano}`
+    const arq = gerarXlsx({ aba: visao === 'mes' ? `Competência ${mes}` : `Visão geral ${ano}`, colunas: cab, linhas: dados })
+    baixarArquivo(`controle-${departamento}-${periodo}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
   }
 
   const nomeDep = NOME_DEPARTAMENTO[departamento]
+  const rotulo = visao === 'mes' ? `competência ${nomeMes(mes)}` : ano
   const pct = totalCelulas ? Math.round((totalFeito / totalCelulas) * 100) : 0
 
   return (
@@ -189,7 +224,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
               · {TITULO_CONTROLE[departamento]}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{TITULO_CONTROLE[departamento]}</h1>
-            <p className="mt-1 text-sm text-white/60">{nomeDep}: obrigações do mês de cada empresa ativa da Base de Clientes.</p>
+            <p className="mt-1 text-sm text-white/60">{nomeDep}: obrigações por competência de cada empresa ativa da Base de Clientes.</p>
           </div>
           <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando({ obrigacao: null })}>
             <Plus className="h-4 w-4" />
@@ -209,15 +244,58 @@ export function Fechamento({ session, departamento }: { session: Session; depart
         )}
 
         <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
-          <div className="flex items-center gap-1">
-            <button className="btn-secondary px-2.5" onClick={() => setMes((m) => somarMes(m, -1))} title="Mês anterior" aria-label="Mês anterior">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <CampoMes value={mes} onChange={setMes} />
-            <button className="btn-secondary px-2.5" onClick={() => setMes((m) => somarMes(m, 1))} title="Próximo mês" aria-label="Próximo mês">
-              <ChevronRight className="h-4 w-4" />
-            </button>
+          <div className="flex rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Visão">
+            {(
+              [
+                { v: 'mes', l: 'Por competência', i: CalendarRange },
+                { v: 'geral', l: 'Visão geral', i: LayoutGrid },
+              ] as const
+            ).map(({ v, l, i: Icone }) => (
+              <button
+                key={v}
+                role="tab"
+                aria-selected={visao === v}
+                onClick={() => setVisao(v)}
+                className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${visao === v ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <Icone className="h-4 w-4" />
+                {l}
+              </button>
+            ))}
           </div>
+          {visao === 'mes' ? (
+            <div className="flex items-center gap-1">
+              <span className="mr-1 hidden text-xs font-semibold text-slate-500 sm:inline">Competência</span>
+              <button
+                className="btn-secondary px-2.5"
+                onClick={() => setMes((m) => somarMes(m, -1))}
+                title="Competência anterior"
+                aria-label="Competência anterior"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <CampoMes value={mes} onChange={setMes} />
+              <button
+                className="btn-secondary px-2.5"
+                onClick={() => setMes((m) => somarMes(m, 1))}
+                title="Próxima competência"
+                aria-label="Próxima competência"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <span className="mr-1 hidden text-xs font-semibold text-slate-500 sm:inline">Ano</span>
+              <button className="btn-secondary px-2.5" onClick={() => setAno((a) => String(Number(a) - 1))} title="Ano anterior" aria-label="Ano anterior">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="min-w-14 text-center text-sm font-bold text-slate-700 tabular-nums">{ano}</span>
+              <button className="btn-secondary px-2.5" onClick={() => setAno((a) => String(Number(a) + 1))} title="Próximo ano" aria-label="Próximo ano">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
           <div className="relative min-w-56 flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
@@ -246,8 +324,8 @@ export function Fechamento({ session, departamento }: { session: Session; depart
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
-            { r: 'Empresas no mês', v: String(doMes.length), d: `ativas em ${nomeMes(mes)}` },
-            { r: 'Obrigações', v: String(colunas.length), d: 'controladas neste mês' },
+            { r: visao === 'mes' ? 'Empresas na competência' : 'Empresas no ano', v: String(doMes.length), d: `ativas em ${rotulo}` },
+            { r: 'Obrigações', v: String(colunas.length), d: visao === 'mes' ? 'mensais e anuais em entrega' : 'únicas e anuais' },
             { r: 'Progresso geral', v: `${pct}%`, d: `${totalFeito} de ${totalCelulas} concluídas`, barra: true },
             { r: 'Empresas fechadas', v: String(empresasCompletas), d: 'com todas as obrigações concluídas' },
           ].map((k) => (
@@ -270,9 +348,19 @@ export function Fechamento({ session, departamento }: { session: Session; depart
           <div className="rounded-2xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
             <ClipboardList className="mx-auto h-10 w-10 text-slate-300" />
             <h2 className="mt-3 text-lg font-bold text-slate-800">
-              {obrigacoes.length ? `Nenhuma obrigação vale em ${nomeMes(mes)}` : 'Crie as obrigações do fechamento'}
+              {obrigacoes.length
+                ? visao === 'mes'
+                  ? `Nenhuma obrigação mensal ou anual em entrega na competência ${nomeMes(mes)}`
+                  : `Nenhuma obrigação única ou anual em ${ano}`
+                : 'Crie as obrigações do controle'}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">Cada obrigação vira uma coluna, com uma caixa de seleção para cada empresa.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {obrigacoes.length
+                ? visao === 'mes'
+                  ? 'Obrigações únicas ficam na Visão geral.'
+                  : 'Obrigações mensais ficam na visão Por competência.'
+                : 'Cada obrigação vira uma coluna, com uma caixa de seleção para cada empresa.'}
+            </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {SUGESTOES[departamento]
                 .filter((s) => !obrigacoes.some((o) => o.nome.toLowerCase() === s.toLowerCase()))
@@ -301,7 +389,14 @@ export function Fechamento({ session, departamento }: { session: Session; depart
                       return (
                         <th key={o.id} className="group min-w-40 border-b border-slate-100 px-2 py-2 align-bottom">
                           <div className="flex items-start justify-between gap-1">
-                            <span className="text-[0.75rem] leading-tight font-bold tracking-normal text-slate-700 normal-case">{o.nome}</span>
+                            <span className="text-[0.75rem] leading-tight font-bold tracking-normal text-slate-700 normal-case">
+                              {o.nome}
+                              {o.periodicidade !== 'mensal' && (
+                                <span className="mt-0.5 block text-[0.625rem] font-semibold text-slate-400">
+                                  {o.periodicidade === 'unica' ? 'Única' : `Anual · entrega ${textoMeses(o.meses_entrega)}`}
+                                </span>
+                              )}
+                            </span>
                             <span className="flex shrink-0 opacity-0 transition group-hover:opacity-100">
                               <button
                                 className="icon-btn h-6 w-6"
@@ -357,11 +452,23 @@ export function Fechamento({ session, departamento }: { session: Session; depart
                           <div className="flex items-baseline gap-2">
                             <span className="font-mono text-xs text-slate-400 tabular-nums">{String(e.codigo).padStart(3, '0')}</span>
                             <span className="leading-tight font-semibold text-slate-800">{e.razao_social}</span>
+                            {e.link_drive && (
+                              <a
+                                href={e.link_drive}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 self-center text-sky-600 hover:text-sky-800"
+                                title="Abrir pasta no Google Drive"
+                                aria-label={`Pasta no Drive de ${e.razao_social}`}
+                              >
+                                <FolderOpen className="h-4 w-4" />
+                              </a>
+                            )}
                           </div>
                           <div className="pl-9 font-mono text-[0.6875rem] text-slate-400">{formatarCnpj(e.cnpj)}</div>
                         </td>
                         {colunas.map((o) => {
-                          const op = opcaoAtual(o, status.get(chave(o.id, e.id)))
+                          const op = opcaoAtual(o, valor(o, e.id))
                           return (
                             <td key={o.id} className="border-b border-slate-100 px-2 py-2">
                               <Select
@@ -387,7 +494,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
               <span>
-                {linhas.length} de {doMes.length} empresa(s) · {nomeMes(mes)}
+                {linhas.length} de {doMes.length} empresa(s) · {rotulo}
               </span>
               <span>Passe o mouse sobre o nome da obrigação para editar ou mudar a coluna de lugar.</span>
             </div>

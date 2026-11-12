@@ -3,12 +3,22 @@ import { ArrowDown, ArrowUp, Check, Plus, RotateCcw, Trash2 } from 'lucide-react
 import { supabase } from '../lib/supabase'
 import { CampoMes } from '../components/CampoData'
 import { Field, Modal } from '../components/ui'
-import { CORES, OPCOES_PADRAO, corDe, competenciaDe, mesDe, novoIdOpcao, type Cor, type Departamento, type Obrigacao, type Opcao } from './tipos'
-
-const mesAtual = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
+import {
+  CORES,
+  MESES_CURTOS,
+  OPCOES_PADRAO,
+  PERIODICIDADES,
+  corDe,
+  competenciaAtual,
+  competenciaDe,
+  mesDe,
+  novoIdOpcao,
+  type Cor,
+  type Departamento,
+  type Obrigacao,
+  type Opcao,
+  type Periodicidade,
+} from './tipos'
 
 export function ObrigacaoForm({
   departamento,
@@ -26,9 +36,12 @@ export function ObrigacaoForm({
   onSalvo: () => void
 }) {
   const [nome, setNome] = useState(obrigacao?.nome ?? nomeSugerido ?? '')
-  const [inicio, setInicio] = useState(obrigacao ? mesDe(obrigacao.inicio) : mesAtual())
+  const [periodicidade, setPeriodicidade] = useState<Periodicidade>(obrigacao?.periodicidade ?? 'mensal')
+  const [meses, setMeses] = useState<number[]>(obrigacao?.meses_entrega ?? [])
+  const [limitarInicio, setLimitarInicio] = useState(!!obrigacao?.inicio)
+  const [inicio, setInicio] = useState(obrigacao?.inicio ? mesDe(obrigacao.inicio) : competenciaAtual())
   const [encerrar, setEncerrar] = useState(!!obrigacao?.fim)
-  const [fim, setFim] = useState(obrigacao?.fim ? mesDe(obrigacao.fim) : mesAtual())
+  const [fim, setFim] = useState(obrigacao?.fim ? mesDe(obrigacao.fim) : competenciaAtual())
   const [opcoes, setOpcoes] = useState<Opcao[]>(() => (obrigacao?.opcoes ?? OPCOES_PADRAO).map((o) => ({ ...o })))
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
@@ -51,7 +64,8 @@ export function ObrigacaoForm({
     if (!nome.trim()) return setErro('Informe o nome da obrigação.')
     if (!limpas.length) return setErro('Crie pelo menos uma opção.')
     if (new Set(limpas.map((o) => o.label.toLowerCase())).size !== limpas.length) return setErro('Há opções com o mesmo nome.')
-    if (encerrar && fim < inicio) return setErro('O último mês não pode ser antes do início.')
+    if (periodicidade === 'anual' && !meses.length) return setErro('Marque o mês (ou os meses) do período de entrega.')
+    if (encerrar && limitarInicio && fim < inicio) return setErro('O último mês não pode ser antes do início.')
     // Opção nova recebe um identificador fixo (renomear depois não perde as marcações)
     const ids: string[] = limpas.filter((o) => o.id).map((o) => o.id)
     const finais = limpas.map((o) => {
@@ -66,7 +80,9 @@ export function ObrigacaoForm({
       departamento,
       nome: nome.trim(),
       opcoes: finais,
-      inicio: competenciaDe(inicio),
+      periodicidade,
+      meses_entrega: periodicidade === 'anual' ? [...meses].sort((a, b) => a - b) : null,
+      inicio: limitarInicio ? competenciaDe(inicio) : null,
       fim: encerrar ? competenciaDe(fim) : null,
       updated_at: new Date().toISOString(),
     }
@@ -96,7 +112,7 @@ export function ObrigacaoForm({
   return (
     <Modal
       title={obrigacao ? `Editar obrigação` : 'Nova obrigação'}
-      subtitulo="Defina o nome, a partir de quando vale e as opções da caixa de seleção"
+      subtitulo="Defina o nome, a periodicidade e as opções da caixa de seleção"
       onClose={onClose}
       largura="max-w-3xl"
       footer={
@@ -129,20 +145,68 @@ export function ObrigacaoForm({
             placeholder="Ex.: Conciliação bancária"
           />
         </Field>
+        <div>
+          <span className="mb-1.5 block text-xs font-semibold text-slate-600">Periodicidade *</span>
+          <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Periodicidade">
+            {PERIODICIDADES.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                role="radio"
+                aria-checked={periodicidade === p.value}
+                onClick={() => setPeriodicidade(p.value)}
+                className={`cursor-pointer rounded-xl border p-3 text-left transition ${periodicidade === p.value ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 hover:border-slate-300'}`}
+              >
+                <div className="text-sm font-bold text-slate-800">{p.label}</div>
+                <div className="mt-0.5 text-xs text-slate-500">{p.ajuda}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        {periodicidade === 'anual' && (
+          <div>
+            <span className="mb-1.5 block text-xs font-semibold text-slate-600">Período de entrega (marque um ou mais meses) *</span>
+            <div className="flex flex-wrap gap-1.5">
+              {MESES_CURTOS.map((m, i) => {
+                const n = i + 1
+                const ativo = meses.includes(n)
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={ativo}
+                    onClick={() => setMeses((l) => (ativo ? l.filter((x) => x !== n) : [...l, n]))}
+                    className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-semibold capitalize transition ${ativo ? 'border-brand-500 bg-brand-600 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  >
+                    {m}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">A obrigação aparece na visão por competência nesses meses e fica com uma marcação por ano.</p>
+          </div>
+        )}
         <div className="flex flex-wrap items-end gap-4">
-          <Field label="Vale a partir de">
-            <CampoMes value={inicio} onChange={setInicio} className="input" />
-          </Field>
+          <label className="flex cursor-pointer items-center gap-2 pb-2.5 text-sm text-slate-700">
+            <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={limitarInicio} onChange={(e) => setLimitarInicio(e.target.checked)} />
+            Só a partir de uma competência
+          </label>
+          {limitarInicio && (
+            <Field label="Vale a partir de">
+              <CampoMes value={inicio} onChange={setInicio} className="input" />
+            </Field>
+          )}
           <label className="flex cursor-pointer items-center gap-2 pb-2.5 text-sm text-slate-700">
             <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={encerrar} onChange={(e) => setEncerrar(e.target.checked)} />
             Encerrar após
           </label>
           {encerrar && (
-            <Field label="Último mês">
+            <Field label="Última competência">
               <CampoMes value={fim} onChange={setFim} className="input" />
             </Field>
           )}
         </div>
+        {!limitarInicio && <p className="text-xs text-slate-500">Vale para cada empresa desde a competência da data de abertura.</p>}
       </div>
 
       <div className="space-y-2 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">

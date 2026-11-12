@@ -45,13 +45,26 @@ export const OPCOES_PADRAO: Opcao[] = [
   { id: 'na', label: 'N/A', cor: 'cinza', concluido: true },
 ]
 
+export type Periodicidade = 'mensal' | 'anual' | 'unica'
+
+export const PERIODICIDADES: { value: Periodicidade; label: string; ajuda: string }[] = [
+  { value: 'mensal', label: 'Mensal', ajuda: 'Toda competência começa como pendente até ser marcada.' },
+  { value: 'anual', label: 'Anual', ajuda: 'Uma entrega por ano, controlada nos meses do período de entrega.' },
+  { value: 'unica', label: 'Única', ajuda: 'Feita uma vez por empresa: concluída, fica concluída daí em diante.' },
+]
+
+export const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+
 export interface Obrigacao {
   id: string
   departamento: Departamento
   nome: string
   opcoes: Opcao[]
-  /** Primeiro dia do mês a partir do qual a obrigação vale. */
-  inicio: string
+  periodicidade: Periodicidade
+  /** Anual: meses do período de entrega (1 a 12). */
+  meses_entrega: number[] | null
+  /** Primeiro mês em que vale (primeiro dia), ou null = desde a abertura de cada empresa. */
+  inicio: string | null
   /** Último mês em que vale (primeiro dia), ou null. */
   fim: string | null
   ordem: number
@@ -66,9 +79,11 @@ export interface EmpresaFech {
   status: 'pendente' | 'assinado' | 'encerrado'
   data_abertura: string | null
   data_encerramento: string | null
+  motivo_encerramento: 'baixa' | 'distrato' | null
   regime_tributario: string | null
   empresa: string | null
   parceiro: string | null
+  link_drive: string | null
 }
 
 export interface StatusFech {
@@ -82,9 +97,26 @@ export interface StatusFech {
 export const competenciaDe = (mes: string) => `${mes}-01`
 export const mesDe = (data: string) => data.slice(0, 7)
 
+/** Competência anterior ao mês atual (em novembro trabalha-se a competência de outubro). */
+export function competenciaAtual(hoje = new Date()) {
+  const d = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Competência usada para gravar a marcação das obrigações únicas (uma só por empresa). */
+export const COMP_UNICA = '1900-01-01'
+
+/** Competência em que a marcação fica gravada: mensal = o mês; anual = o ano; única = uma só. */
+export function competenciaStatus(o: Pick<Obrigacao, 'periodicidade'>, mes: string) {
+  if (o.periodicidade === 'unica') return COMP_UNICA
+  if (o.periodicidade === 'anual') return `${mes.slice(0, 4)}-01-01`
+  return competenciaDe(mes)
+}
+
 /**
- * A empresa entra no controle a partir do mês da data de abertura (sem data: sempre).
- * Encerrada: aparece até o mês do encerramento (sem data de encerramento: não aparece).
+ * A empresa entra no controle a partir da competência da data de abertura (sem data: sempre).
+ * Encerrada (baixa ou distrato): aparece até a competência do encerramento e sai na seguinte
+ * (sem data de encerramento: não aparece).
  */
 export function empresaNoMes(e: Pick<EmpresaFech, 'status' | 'data_abertura' | 'data_encerramento'>, mes: string) {
   if (e.data_abertura && mesDe(e.data_abertura) > mes) return false
@@ -92,8 +124,35 @@ export function empresaNoMes(e: Pick<EmpresaFech, 'status' | 'data_abertura' | '
   return true
 }
 
-export function obrigacaoNoMes(o: Pick<Obrigacao, 'inicio' | 'fim'>, mes: string) {
-  return mesDe(o.inicio) <= mes && (!o.fim || mesDe(o.fim) >= mes)
+/** Empresa ativa em algum mês do ano (visão geral). */
+export function empresaNoAno(e: Pick<EmpresaFech, 'status' | 'data_abertura' | 'data_encerramento'>, ano: string) {
+  return empresaNoMes(e, `${ano}-12`) || (e.status === 'encerrado' && !!e.data_encerramento && e.data_encerramento.slice(0, 4) === ano)
+}
+
+const vigente = (o: Pick<Obrigacao, 'inicio' | 'fim'>, mes: string) => (!o.inicio || mesDe(o.inicio) <= mes) && (!o.fim || mesDe(o.fim) >= mes)
+
+/** Colunas da visão por competência: mensais e anuais dentro do período de entrega. */
+export function obrigacaoNoMes(o: Pick<Obrigacao, 'inicio' | 'fim' | 'periodicidade' | 'meses_entrega'>, mes: string) {
+  if (!vigente(o, mes)) return false
+  if (o.periodicidade === 'unica') return false
+  if (o.periodicidade === 'anual') return (o.meses_entrega ?? []).includes(Number(mes.slice(5, 7)))
+  return true
+}
+
+/** Colunas da visão geral: únicas e anuais vigentes no ano. */
+export function obrigacaoNaGeral(o: Pick<Obrigacao, 'inicio' | 'fim' | 'periodicidade'>, ano: string) {
+  if (o.periodicidade === 'mensal') return false
+  return (!o.inicio || o.inicio.slice(0, 4) <= ano) && (!o.fim || o.fim.slice(0, 4) >= ano)
+}
+
+/** "mar a mai" / "mar, jun e dez" */
+export function textoMeses(meses: number[] | null) {
+  const m = [...(meses ?? [])].sort((a, b) => a - b)
+  if (!m.length) return 'sem meses de entrega'
+  const seguidos = m.every((x, i) => i === 0 || x === m[i - 1] + 1)
+  if (m.length > 2 && seguidos) return `${MESES_CURTOS[m[0] - 1]} a ${MESES_CURTOS[m[m.length - 1] - 1]}`
+  const n = m.map((x) => MESES_CURTOS[x - 1])
+  return n.length > 1 ? `${n.slice(0, -1).join(', ')} e ${n[n.length - 1]}` : n[0]
 }
 
 /** Opção marcada (ou a primeira, quando ainda não foi marcada / a opção deixou de existir). */
@@ -115,7 +174,7 @@ export function novoIdOpcao(label: string, existentes: string[]) {
   return id
 }
 
-export const chave = (obrigacaoId: string, clienteId: string) => `${obrigacaoId}|${clienteId}`
+export const chave = (obrigacaoId: string, clienteId: string, competencia: string) => `${obrigacaoId}|${clienteId}|${competencia}`
 
 /** Sugestões para começar, por departamento. */
 export const SUGESTOES: Record<Departamento, string[]> = {

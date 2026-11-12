@@ -4,7 +4,18 @@ import { supabase } from '../lib/supabase'
 import { formatarData, mascaraCnpj } from '../lib/format'
 import { Field, Modal, Select } from '../components/ui'
 import { encerrarCliente } from './acoes'
-import { INSCRICOES, REGIMES, SEGMENTOS, hojeISO, type Cliente, type ParceiroResumo, EMPRESAS } from './tipos'
+import {
+  INSCRICOES,
+  MOTIVOS_ENCERRAMENTO,
+  REGIMES,
+  SEGMENTOS,
+  hojeISO,
+  textoEncerramento,
+  type Cliente,
+  type MotivoEncerramento,
+  type ParceiroResumo,
+  EMPRESAS,
+} from './tipos'
 import { CampoData } from '../components/CampoData'
 
 type Dados = Omit<Cliente, 'id' | 'codigo' | 'created_at'>
@@ -21,6 +32,7 @@ const VAZIO: Dados = {
   data_inicio_servicos: null,
   carencia_meses: null,
   situacao_encerramento: null,
+  motivo_encerramento: null,
   endereco: null,
   situacao_cadastral: null,
   receita_atualizada_em: null,
@@ -55,6 +67,7 @@ export function ClienteForm({
   const [d, setD] = useState<Dados>(() => (cliente ? { ...VAZIO, ...cliente } : VAZIO))
   const [encerrando, setEncerrando] = useState(false)
   const [dataEncerramento, setDataEncerramento] = useState(hojeISO())
+  const [motivoEnc, setMotivoEnc] = useState<MotivoEncerramento | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
 
@@ -84,8 +97,9 @@ export function ClienteForm({
 
   async function encerrar() {
     if (!cliente) return
+    if (!motivoEnc) return setErro('Informe o motivo do encerramento: Baixa da Empresa ou Distrato.')
     setSalvando(true)
-    const msg = await encerrarCliente(cliente, dataEncerramento)
+    const msg = await encerrarCliente(cliente, dataEncerramento, motivoEnc)
     setSalvando(false)
     if (msg) return setErro(msg)
     onSalvo()
@@ -94,7 +108,10 @@ export function ClienteForm({
   async function reativar() {
     if (!cliente) return
     setSalvando(true)
-    const { error } = await supabase.from('adm_clientes').update({ status: 'assinado', data_encerramento: null }).eq('id', cliente.id)
+    const { error } = await supabase
+      .from('adm_clientes')
+      .update({ status: 'assinado', data_encerramento: null, motivo_encerramento: null })
+      .eq('id', cliente.id)
     setSalvando(false)
     if (error) return setErro(error.message)
     onSalvo()
@@ -105,7 +122,7 @@ export function ClienteForm({
   return (
     <Modal
       title={titulo}
-      subtitulo={cliente?.status === 'encerrado' ? `Inativo desde ${formatarData(cliente.data_encerramento)}` : undefined}
+      subtitulo={cliente?.status === 'encerrado' ? textoEncerramento(cliente.motivo_encerramento, formatarData(cliente.data_encerramento)) : undefined}
       onClose={onClose}
       largura="max-w-4xl"
       footer={
@@ -137,10 +154,27 @@ export function ClienteForm({
           <div className="min-w-0 flex-1 text-sm text-rose-800">
             <b>Encerrar este cliente?</b> Ele sai da lista de ativos e vai para Inativos. O honorário vigente é encerrado na mesma data.
           </div>
-          <Field label="Data do encerramento">
+          <div>
+            <span className="mb-1.5 block text-xs font-semibold text-slate-600">Motivo *</span>
+            <div className="flex gap-2" role="radiogroup" aria-label="Motivo do encerramento">
+              {MOTIVOS_ENCERRAMENTO.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={motivoEnc === m.value}
+                  onClick={() => setMotivoEnc(m.value)}
+                  className={`cursor-pointer rounded-xl border bg-white px-3 py-2 text-sm font-semibold transition ${motivoEnc === m.value ? 'border-rose-500 text-rose-700 ring-1 ring-rose-500' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Field label={motivoEnc === 'distrato' ? 'Data do distrato *' : 'Data da baixa *'}>
             <CampoData id="data-encerramento" className="input" value={dataEncerramento} onChange={(v) => setDataEncerramento(v)} />
           </Field>
-          <button type="button" className="btn-danger" onClick={encerrar} disabled={salvando}>
+          <button type="button" className="btn-danger" onClick={encerrar} disabled={salvando || !motivoEnc || !dataEncerramento}>
             Confirmar encerramento
           </button>
           <button type="button" className="btn-ghost" onClick={() => setEncerrando(false)}>
@@ -196,7 +230,13 @@ export function ClienteForm({
             <input id="endereco" className="input" value={d.endereco ?? ''} onChange={(e) => set('endereco', e.target.value || null)} />
           </Field>
           <Field label="Situação cadastral (Receita)" className="sm:col-span-2">
-            <input id="situacao-cadastral" className="input" value={d.situacao_cadastral ?? ''} readOnly title="Atualizada pela consulta à Receita (Detalhes da Empresa)" />
+            <input
+              id="situacao-cadastral"
+              className="input"
+              value={d.situacao_cadastral ?? ''}
+              readOnly
+              title="Atualizada pela consulta à Receita (Detalhes da Empresa)"
+            />
           </Field>
           <Field label="Data de abertura" className="sm:col-span-2">
             <CampoData id="data-abertura" className="input" value={d.data_abertura ?? ''} onChange={(v) => set('data_abertura', v || null)} />

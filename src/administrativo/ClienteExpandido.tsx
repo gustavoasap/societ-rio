@@ -5,7 +5,19 @@ import { formatarData, lerNumeroBR, moedaDigitada } from '../lib/format'
 import { CampoData } from '../components/CampoData'
 import { Select } from '../components/ui'
 import { DetalhesEmpresa } from './DetalhesEmpresa'
-import { ETAPAS, OPCOES_ETAPA, STATUS_CLIENTE, hojeISO, moeda, type Cliente, type Etapa, type Honorario, type StatusCliente, type Vigente } from './tipos'
+import {
+  ETAPAS,
+  OPCOES_ETAPA,
+  STATUS_CLIENTE,
+  hojeISO,
+  moeda,
+  textoEncerramento,
+  type Cliente,
+  type Etapa,
+  type Honorario,
+  type StatusCliente,
+  type Vigente,
+} from './tipos'
 
 /** Cores do seletor conforme a situação (mesma linguagem visual de Processos Societários). */
 const COR_SELECT_ETAPA: Record<Etapa | 'vazio', string> = {
@@ -113,7 +125,7 @@ export function ClienteExpandido({
         <Cartao numero={1} titulo="Contrato assinado" ok={c.status === 'assinado'} cor={c.status === 'assinado' ? 'bg-emerald-500' : 'bg-amber-400'}>
           {encerrado ? (
             <div className={`rounded-lg border px-2.5 py-1.5 text-sm font-medium ${COR_STATUS_SELECT.encerrado}`}>
-              Encerrado em {formatarData(c.data_encerramento)}
+              {textoEncerramento(c.motivo_encerramento, formatarData(c.data_encerramento))}
             </div>
           ) : (
             <Select
