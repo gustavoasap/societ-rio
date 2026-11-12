@@ -7,6 +7,7 @@ import {
   ChevronRight,
   FileSpreadsheet,
   FileUp,
+  Handshake,
   House,
   LineChart,
   LogOut,
@@ -31,6 +32,7 @@ import {
   hojeIso,
   inadimplentes,
   linhaDoMes,
+  parceiroDoMes,
   mesDe,
   mesHoje,
   mesesEntre,
@@ -41,12 +43,14 @@ import {
   type HonorarioBase,
   type Linha,
   type Mensal,
+  type PeriodoParceiro,
   type Situacao,
 } from './calculo'
 import { AjustarValor, AlterarVencimento, ConfigHonorarios, MarcarRecebido } from './Modais'
 import { mesCurto, nomeMes, salvarMensal, valorTexto } from './util'
 import { ImportarExtrato } from './ImportarExtrato'
 import { ReajusteMassa } from './ReajusteMassa'
+import { MensalidadesParceiro, PeriodosParceiro } from './Parceiros'
 import { marcarSemHonorario } from '../acoes'
 
 type Aba = 'mes' | 'inadimplentes' | 'evolucao'
@@ -63,6 +67,10 @@ export function Honorarios({ session }: { session: Session }) {
   const [clientes, setClientes] = useState<ClienteHon[]>([])
   const [hons, setHons] = useState<HonorarioBase[]>([])
   const [mensais, setMensais] = useState<Map<string, Mensal>>(new Map())
+  const [periodos, setPeriodos] = useState<PeriodoParceiro[]>([])
+  const [parceiros, setParceiros] = useState<{ id: string; nome: string }[]>([])
+  const [verParceiro, setVerParceiro] = useState<string | null>(null)
+  const [periodosAbertos, setPeriodosAbertos] = useState<{ cliente?: string } | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
@@ -77,7 +85,7 @@ export function Honorarios({ session }: { session: Session }) {
   const [vencendo, setVencendo] = useState<Linha | null>(null)
 
   const carregar = useCallback(async () => {
-    const [c, cl, h, m] = await comRetentativa(() =>
+    const [c, cl, h, m, pp, pa] = await comRetentativa(() =>
       Promise.all([
         supabase.from('adm_hon_config').select('inicio, dia_vencimento, vence_mes_seguinte').eq('id', 1).maybeSingle(),
         supabase
@@ -89,14 +97,18 @@ export function Honorarios({ session }: { session: Session }) {
           .order('codigo'),
         supabase.from('adm_honorarios').select('cliente_id, valor, vigencia_inicio, vigencia_fim, dia_vencimento'),
         supabase.from('adm_hon_mensal').select('*').range(0, 19999),
+        supabase.from('adm_hon_parceiro').select('id, cliente_id, parceiro_id, inicio, meses, observacao'),
+        supabase.from('soc_parceiros').select('id, nome').order('nome'),
       ]),
     )
-    const falha = c.error ?? cl.error ?? h.error ?? m.error
+    const falha = c.error ?? cl.error ?? h.error ?? m.error ?? pp.error ?? pa.error
     if (falha) setErro(falha.message)
     if (c.data) setCfg(c.data as ConfigHon)
     setClientes((cl.data as ClienteHon[]) ?? [])
     setHons((h.data as HonorarioBase[]) ?? [])
     setMensais(new Map(((m.data as Mensal[]) ?? []).map((x) => [chaveMensal(x.cliente_id, mesDe(x.competencia)), x])))
+    setPeriodos((pp.data as PeriodoParceiro[]) ?? [])
+    setParceiros((pa.data as { id: string; nome: string }[]) ?? [])
   }, [])
 
   useEffect(() => {
@@ -112,16 +124,53 @@ export function Honorarios({ session }: { session: Session }) {
     return m
   }, [hons])
 
+  const nomesParceiros = useMemo(() => new Map(parceiros.map((p) => [p.id, p.nome])), [parceiros])
+  const periodosPorCliente = useMemo(() => {
+    const m = new Map<string, PeriodoParceiro[]>()
+    for (const p of periodos) m.set(p.cliente_id, [...(m.get(p.cliente_id) ?? []), p])
+    return m
+  }, [periodos])
+
   // Todas as linhas do início do controle até o mês atual (ou o mês escolhido, se for depois)
   const todas = useMemo(() => {
     const r: Linha[] = []
     for (const m of mesesEntre(inicio, ultimo))
       for (const c of clientes) {
-        const l = linhaDoMes(c, honsPorCliente.get(c.id) ?? [], mensais.get(chaveMensal(c.id, m)) ?? null, m, cfg, hoje)
+        const par = parceiroDoMes(periodosPorCliente.get(c.id) ?? [], m, nomesParceiros)
+        const l = linhaDoMes(c, honsPorCliente.get(c.id) ?? [], mensais.get(chaveMensal(c.id, m)) ?? null, m, cfg, hoje, par)
         if (l) r.push(l)
       }
     return r
-  }, [inicio, ultimo, clientes, honsPorCliente, mensais, cfg, hoje])
+  }, [inicio, ultimo, clientes, honsPorCliente, mensais, cfg, hoje, periodosPorCliente, nomesParceiros])
+
+  // Mensalidades do mês pagas por parceiro (um botão por parceiro)
+  const porParceiro = useMemo(() => {
+    const m = new Map<string, { nome: string; linhas: Linha[] }>()
+    for (const l of todas)
+      if (l.competencia === mes && l.parceiro) {
+        const g = m.get(l.parceiro.parceiroId) ?? { nome: l.parceiro.nome, linhas: [] }
+        g.linhas.push(l)
+        m.set(l.parceiro.parceiroId, g)
+      }
+    return [...m.entries()].map(([id, g]) => ({
+      id,
+      ...g,
+      total: g.linhas.reduce((s, l) => s + l.valor, 0),
+      aberto: g.linhas.reduce((s, l) => s + l.aberto, 0),
+    }))
+  }, [todas, mes])
+
+  // Parceiros com mensalidades vencidas e não recebidas
+  const parceirosAtraso = useMemo(() => {
+    const m = new Map<string, { nome: string; linhas: Linha[] }>()
+    for (const l of todas)
+      if (l.parceiro && l.aberto > 0 && l.vencimento < hoje) {
+        const g = m.get(l.parceiro.parceiroId) ?? { nome: l.parceiro.nome, linhas: [] }
+        g.linhas.push(l)
+        m.set(l.parceiro.parceiroId, g)
+      }
+    return [...m.values()].map((g) => ({ ...g, total: g.linhas.reduce((s, l) => s + l.aberto, 0) }))
+  }, [todas, hoje])
 
   const doMes = useMemo(() => todas.filter((l) => l.competencia === mes), [todas, mes])
   const resumo = useMemo(() => resumoDoMes(todas, mes, hoje), [todas, mes, hoje])
@@ -180,7 +229,9 @@ export function Honorarios({ session }: { session: Session }) {
       l.cliente.razao_social,
       l.base,
       l.valor,
-      l.ajustado ? (l.mensal?.motivo_ajuste ?? 'Ajustado') : l.carencia ? 'Carência' : '',
+      [l.ajustado ? (l.mensal?.motivo_ajuste ?? 'Ajustado') : '', l.parceiro ? `Pago por ${l.parceiro.nome} (${l.parceiro.parcela}/${l.parceiro.total})` : '']
+        .filter(Boolean)
+        .join(' · '),
       l.vencimento,
       SITUACOES[l.situacao].label,
       l.mensal?.recebido_em ?? null,
@@ -276,6 +327,10 @@ export function Honorarios({ session }: { session: Session }) {
             <button className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setConfigurando(true)}>
               <Settings className="h-4 w-4" />
               Configurações
+            </button>
+            <button className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setPeriodosAbertos({})}>
+              <Handshake className="h-4 w-4" />
+              Parceiros
             </button>
             <button className="btn btn-sm bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20" onClick={() => setReajustando(true)}>
               <TrendingUp className="h-4 w-4" />
@@ -374,6 +429,27 @@ export function Honorarios({ session }: { session: Session }) {
                 </div>
               ))}
             </div>
+
+            {porParceiro.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {porParceiro.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setVerParceiro(g.id)}
+                    className="flex cursor-pointer items-center gap-3 rounded-2xl bg-white px-4 py-3 text-left shadow-sm ring-1 ring-violet-200 transition hover:ring-violet-400"
+                  >
+                    <Handshake className="h-5 w-5 text-violet-600" />
+                    <span>
+                      <span className="block text-sm font-bold text-violet-800">Mensalidades - {g.nome}</span>
+                      <span className="block text-xs text-slate-500">
+                        {g.linhas.length} cliente(s) · {valorTexto(g.total)}
+                        {g.aberto > 0 ? ` · em aberto ${valorTexto(g.aberto)}` : ' · recebido'}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {semHonorario.length > 0 && (
               <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200">
@@ -505,6 +581,11 @@ export function Honorarios({ session }: { session: Session }) {
                               <span className="font-mono text-xs text-slate-400">{String(l.cliente.codigo).padStart(3, '0')}</span>
                               <span className="font-semibold text-slate-800">{l.cliente.razao_social}</span>
                             </div>
+                            {l.parceiro && (
+                              <span className="mt-0.5 ml-9 inline-block rounded-full bg-violet-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-violet-700 ring-1 ring-violet-200">
+                                Responsabilidade do parceiro {l.parceiro.nome} · {l.parceiro.parcela}/{l.parceiro.total}
+                              </span>
+                            )}
                           </td>
                           <td className="px-2 py-2.5 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
@@ -522,9 +603,6 @@ export function Honorarios({ session }: { session: Session }) {
                               <div className="text-[0.6875rem] text-violet-600" title={l.mensal?.motivo_ajuste ?? ''}>
                                 base {l.base !== null ? valorTexto(l.base) : '—'} · {l.mensal?.motivo_ajuste}
                               </div>
-                            )}
-                            {!l.ajustado && l.carencia && (
-                              <div className="text-[0.6875rem] text-sky-600">carência (base {l.base !== null ? valorTexto(l.base) : '—'})</div>
                             )}
                           </td>
                           <td className="px-2 py-2.5 whitespace-nowrap text-slate-600">
@@ -567,6 +645,14 @@ export function Honorarios({ session }: { session: Session }) {
                                 Recebido
                               </button>
                             ) : null}
+                            <button
+                              className="icon-btn ml-1 h-7 w-7 align-middle"
+                              onClick={() => setPeriodosAbertos({ cliente: l.cliente.id })}
+                              title="Período pago pelo parceiro"
+                              aria-label={`Período pago pelo parceiro de ${l.cliente.razao_social}`}
+                            >
+                              <Handshake className="h-3.5 w-3.5" />
+                            </button>
                           </td>
                         </tr>
                       )
@@ -643,6 +729,23 @@ export function Honorarios({ session }: { session: Session }) {
                 {!listaInad.length && <p className="p-10 text-center text-sm text-slate-400">Nenhum cliente inadimplente. 🎉</p>}
               </div>
             </div>
+            {parceirosAtraso.length > 0 && (
+              <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-violet-200">
+                <h3 className="text-sm font-bold text-violet-800">Mensalidades de parceiros em atraso</h3>
+                <p className="text-xs text-slate-500">Meses em que o parceiro é o responsável pela mensalidade (não entram na lista dos clientes acima).</p>
+                <ul className="mt-2 divide-y divide-slate-100 text-sm">
+                  {parceirosAtraso.map((g) => (
+                    <li key={g.nome} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                      <span className="font-semibold text-slate-800">{g.nome}</span>
+                      <span className="text-xs text-slate-500">
+                        {[...new Set(g.linhas.map((l) => mesCurto(l.competencia)))].join(', ')} · {g.linhas.length} mensalidade(s)
+                      </span>
+                      <span className="font-bold text-rose-600 tabular-nums">{valorTexto(g.total)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -696,6 +799,15 @@ export function Honorarios({ session }: { session: Session }) {
         )}
       </main>
 
+      {verParceiro && porParceiro.find((g) => g.id === verParceiro) && (
+        <MensalidadesParceiro
+          nome={porParceiro.find((g) => g.id === verParceiro)!.nome}
+          mes={mes}
+          linhas={porParceiro.find((g) => g.id === verParceiro)!.linhas}
+          onClose={() => setVerParceiro(null)}
+          onReceber={(ls) => setRecebendo(ls)}
+        />
+      )}
       {recebendo && (
         <MarcarRecebido
           linhas={recebendo}
@@ -715,6 +827,16 @@ export function Honorarios({ session }: { session: Session }) {
             setAjustando(null)
             carregar()
           }}
+        />
+      )}
+      {periodosAbertos && (
+        <PeriodosParceiro
+          clientes={clientes}
+          parceiros={parceiros}
+          periodos={periodos}
+          clienteInicial={periodosAbertos.cliente}
+          onClose={() => setPeriodosAbertos(null)}
+          onSalvo={carregar}
         />
       )}
       {vencendo && (

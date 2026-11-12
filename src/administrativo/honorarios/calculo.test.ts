@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  emCarencia,
+  fimPeriodo,
+  parceiroDoMes,
   honorarioDoMes,
   inadimplentes,
   linhaDoMes,
@@ -43,11 +44,15 @@ describe('honorário do mês', () => {
     expect(honorarioDoMes(hs, '2026-10')?.valor).toBe(500)
     expect(honorarioDoMes(hs, '2024-12')).toBeNull()
   })
-  it('carência a partir do mês do início dos serviços', () => {
-    const c = { data_inicio_servicos: '2026-10-22', carencia_meses: 6 }
-    expect(emCarencia(c, '2026-10')).toBe(true)
-    expect(emCarencia(c, '2027-03')).toBe(true)
-    expect(emCarencia(c, '2027-04')).toBe(false)
+  it('parcela do período pago pelo parceiro', () => {
+    const p = { id: 'p1', cliente_id: 'c1', parceiro_id: 'w', inicio: '2026-10-01', meses: 6, observacao: null }
+    const nomes = new Map([['w', 'Way Group']])
+    expect(parceiroDoMes([p], '2026-09', nomes)).toBeNull()
+    expect(parceiroDoMes([p], '2026-10', nomes)).toMatchObject({ nome: 'Way Group', parcela: 1, total: 6 })
+    expect(parceiroDoMes([p], '2027-01', nomes)?.parcela).toBe(4)
+    expect(parceiroDoMes([p], '2027-03', nomes)?.parcela).toBe(6)
+    expect(parceiroDoMes([p], '2027-04', nomes)).toBeNull()
+    expect(fimPeriodo(p)).toBe('2027-03')
   })
   it('vencimento no próprio mês, limitado ao último dia', () => {
     expect(vencimentoDe('2026-10', 10, false)).toBe('2026-10-10')
@@ -102,10 +107,12 @@ describe('linha do mês', () => {
     expect(l.situacao).toBe('parcial')
     expect(l.aberto).toBe(250)
   })
-  it('carência não cobra', () => {
-    const l = linhaDoMes(cli({ data_inicio_servicos: '2026-10-22', carencia_meses: 6 }), [hon()], null, '2026-10', cfg, hoje)!
-    expect(l.valor).toBe(0)
-    expect(l.situacao).toBe('carencia')
+  it('mês pago pelo parceiro não entra nos inadimplentes do cliente', () => {
+    const par = { periodoId: 'p1', parceiroId: 'w', nome: 'Way Group', parcela: 1, total: 6 }
+    const l = linhaDoMes(cli(), [hon()], null, '2026-10', cfg, hoje, par)!
+    expect(l.valor).toBe(500)
+    expect(l.situacao).toBe('vencido')
+    expect(inadimplentes([l], hoje)).toHaveLength(0)
   })
   it('inadimplentes e resumo', () => {
     const ls = ['2026-10', '2026-11'].map((m) => linhaDoMes(cli(), [hon()], null, m, cfg, hoje)!)

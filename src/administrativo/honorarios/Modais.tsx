@@ -121,7 +121,7 @@ export function AjustarValor({ linha, onClose, onSalvo }: { linha: Linha; onClos
   return (
     <Modal
       title={`Valor do mês · ${linha.cliente.razao_social}`}
-      subtitulo={`Competência ${nomeMes(linha.competencia)} · honorário da base: ${linha.base !== null ? formatarMoeda(linha.base) : 'não cadastrado'}${linha.carencia ? ' (em carência)' : ''}`}
+      subtitulo={`Competência ${nomeMes(linha.competencia)} · honorário da base: ${linha.base !== null ? formatarMoeda(linha.base) : 'não cadastrado'}${linha.parceiro ? ` · pago por ${linha.parceiro.nome} (${linha.parceiro.parcela}/${linha.parceiro.total})` : ''}`}
       onClose={onClose}
       largura="max-w-lg"
       footer={

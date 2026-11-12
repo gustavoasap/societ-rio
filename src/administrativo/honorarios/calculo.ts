@@ -42,14 +42,13 @@ export interface ConfigHon {
   vence_mes_seguinte: boolean
 }
 
-export type Situacao = 'recebido' | 'parcial' | 'vencido' | 'a_vencer' | 'carencia' | 'isento'
+export type Situacao = 'recebido' | 'parcial' | 'vencido' | 'a_vencer' | 'isento'
 
 export const SITUACOES: Record<Situacao, { label: string; pill: string }> = {
   recebido: { label: 'Recebido', pill: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   parcial: { label: 'Recebido parcial', pill: 'border-orange-200 bg-orange-50 text-orange-700' },
   vencido: { label: 'Vencido', pill: 'border-rose-200 bg-rose-50 text-rose-700' },
   a_vencer: { label: 'A vencer', pill: 'border-amber-200 bg-amber-50 text-amber-700' },
-  carencia: { label: 'Carência', pill: 'border-sky-200 bg-sky-50 text-sky-700' },
   isento: { label: 'Sem cobrança', pill: 'border-slate-200 bg-slate-100 text-slate-600' },
 }
 
@@ -59,10 +58,11 @@ export interface Linha {
   competencia: string
   /** Honorário da base no mês (null = sem honorário cadastrado) */
   base: number | null
-  /** Valor a receber no mês (ajustado, base ou 0 na carência) */
+  /** Valor a receber no mês (ajustado ou o da base) */
   valor: number
   ajustado: boolean
-  carencia: boolean
+  /** Mês pago pelo parceiro (ex.: Way Group, parcela 2 de 6) */
+  parceiro: ParceiroDoMes | null
   vencimento: string
   mensal: Mensal | null
   recebido: number
@@ -106,11 +106,38 @@ export function honorarioDoMes(hons: HonorarioBase[], mes: string) {
   return atual
 }
 
-/** Carência: do mês do início dos serviços até N meses (não cobra honorário). */
-export function emCarencia(c: Pick<ClienteHon, 'data_inicio_servicos' | 'carencia_meses'>, mes: string) {
-  if (!c.data_inicio_servicos || !c.carencia_meses || c.carencia_meses <= 0) return false
-  const ini = mesDe(c.data_inicio_servicos)
-  return mes >= ini && mes <= somarMes(ini, c.carencia_meses - 1)
+/** Período em que o parceiro paga a mensalidade do cliente. */
+export interface PeriodoParceiro {
+  id: string
+  cliente_id: string
+  parceiro_id: string
+  /** Primeiro dia da primeira competência */
+  inicio: string
+  meses: number
+  observacao: string | null
+}
+
+export interface ParceiroDoMes {
+  periodoId: string
+  parceiroId: string
+  nome: string
+  parcela: number
+  total: number
+}
+
+/** Último mês (AAAA-MM) do período pago pelo parceiro. */
+export const fimPeriodo = (p: Pick<PeriodoParceiro, 'inicio' | 'meses'>) => somarMes(mesDe(p.inicio), p.meses - 1)
+
+/** Parceiro responsável pela mensalidade no mês, com a parcela (ex.: 2 de 6). */
+export function parceiroDoMes(periodos: PeriodoParceiro[], mes: string, nomes: Map<string, string>): ParceiroDoMes | null {
+  for (const p of periodos) {
+    const ini = mesDe(p.inicio)
+    if (mes < ini || mes > fimPeriodo(p)) continue
+    const [a1, m1] = ini.split('-').map(Number)
+    const [a2, m2] = mes.split('-').map(Number)
+    return { periodoId: p.id, parceiroId: p.parceiro_id, nome: nomes.get(p.parceiro_id) ?? 'Parceiro', parcela: (a2 - a1) * 12 + (m2 - m1) + 1, total: p.meses }
+  }
+  return null
 }
 
 export function vencimentoDe(mes: string, dia: number, mesSeguinte: boolean) {
@@ -123,22 +150,29 @@ export function vencimentoDe(mes: string, dia: number, mesSeguinte: boolean) {
 const centavos = (v: number) => Math.round(v * 100) / 100
 
 /** Linha do controle de um cliente num mês (null = sem honorário a controlar). Inativos não entram. */
-export function linhaDoMes(c: ClienteHon, hons: HonorarioBase[], mensal: Mensal | null, mes: string, cfg: ConfigHon, hoje: string): Linha | null {
+export function linhaDoMes(
+  c: ClienteHon,
+  hons: HonorarioBase[],
+  mensal: Mensal | null,
+  mes: string,
+  cfg: ConfigHon,
+  hoje: string,
+  parceiro: ParceiroDoMes | null = null,
+): Linha | null {
   if (c.status === 'encerrado') return null
   const h = honorarioDoMes(hons, mes)
-  const carencia = emCarencia(c, mes)
   const ajustado = mensal?.valor_ajustado !== null && mensal?.valor_ajustado !== undefined
   if (!h && !ajustado && !mensal?.recebido_em) return null
   const base = h ? Number(h.valor) : null
-  const valor = centavos(ajustado ? Number(mensal!.valor_ajustado) : carencia ? 0 : (base ?? 0))
+  const valor = centavos(ajustado ? Number(mensal!.valor_ajustado) : (base ?? 0))
   const recebido = mensal?.recebido_em ? centavos(mensal.valor_recebido !== null ? Number(mensal.valor_recebido) : valor) : 0
   const aberto = centavos(Math.max(0, valor - recebido))
   const vencimento = vencimentoDe(mes, h?.dia_vencimento ?? cfg.dia_vencimento, cfg.vence_mes_seguinte)
   let situacao: Situacao
   if (mensal?.recebido_em) situacao = aberto > 0 ? 'parcial' : 'recebido'
-  else if (valor === 0) situacao = carencia ? 'carencia' : 'isento'
+  else if (valor === 0) situacao = 'isento'
   else situacao = vencimento < hoje ? 'vencido' : 'a_vencer'
-  return { cliente: c, competencia: mes, base, valor, ajustado, carencia, vencimento, mensal, recebido, aberto, situacao }
+  return { cliente: c, competencia: mes, base, valor, ajustado, parceiro, vencimento, mensal, recebido, aberto, situacao }
 }
 
 /** Em atraso: tem valor em aberto e o vencimento já passou. */
@@ -158,7 +192,7 @@ export interface Inadimplente {
 
 export function inadimplentes(linhas: Linha[], hoje: string): Inadimplente[] {
   const porCliente = new Map<string, Linha[]>()
-  for (const l of linhas) if (emAtraso(l, hoje)) porCliente.set(l.cliente.id, [...(porCliente.get(l.cliente.id) ?? []), l])
+  for (const l of linhas) if (emAtraso(l, hoje) && !l.parceiro) porCliente.set(l.cliente.id, [...(porCliente.get(l.cliente.id) ?? []), l])
   return [...porCliente.values()]
     .map((ls) => {
       const ord = [...ls].sort((a, b) => a.competencia.localeCompare(b.competencia))
