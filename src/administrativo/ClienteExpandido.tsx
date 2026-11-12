@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { formatarData, lerNumeroBR, moedaDigitada } from '../lib/format'
 import { CampoData, CampoMes } from '../components/CampoData'
 import { mesHoje, somarMes } from './honorarios/calculo'
-import { marcarSemHonorario } from './acoes'
+import { alterarDiaVencimento, marcarSemHonorario } from './acoes'
 import { Select } from '../components/ui'
 import { DetalhesEmpresa } from './DetalhesEmpresa'
 import { CriarPastaDrive } from './CriarPastaDrive'
@@ -125,6 +125,17 @@ export function ClienteExpandido({
     onHonorario()
   }
 
+  async function mudarDia() {
+    const r = prompt('Novo dia de vencimento (1 a 31). Vale para o honorário atual e os reajustes já agendados:', String(vigente?.dia_vencimento ?? 10))
+    if (r === null) return
+    const d = Number(r)
+    if (!Number.isInteger(d) || d < 1 || d > 31) return setErro('Dia de vencimento entre 1 e 31.')
+    const msg = await alterarDiaVencimento(c.id, d)
+    if (msg) return setErro(msg)
+    carregarHistorico()
+    onHonorario()
+  }
+
   async function confirmarSem(sem: boolean) {
     const msg = await marcarSemHonorario(c.id, sem, semForm)
     if (msg) return setErro(msg)
@@ -213,6 +224,11 @@ export function ClienteExpandido({
               </span>
             ) : (
               <span className="text-slate-400">não informado</span>
+            )}
+            {vigente && !encerrado && (
+              <button className="cursor-pointer text-xs font-semibold text-brand-600 hover:underline" onClick={mudarDia}>
+                alterar vencimento
+              </button>
             )}
           </div>
           {!form && !encerrado && !vigente && semForm === null && (

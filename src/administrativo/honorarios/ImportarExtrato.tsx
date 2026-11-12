@@ -1,33 +1,70 @@
-import { useMemo, useState } from 'react'
-import { Check, FileUp } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Check, CircleCheck, FileSpreadsheet, FileUp, XCircle } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
 import { formatarData } from '../../lib/format'
+import { baixarArquivo, gerarXlsxAbas, TIPO_XLSX } from '../../lib/planilha'
 import { Modal } from '../../components/ui'
-import { chaveMensal, type Linha } from './calculo'
-import { decodificar, lerExtrato, sugerir, type Confianca, type Lancamento } from './extrato'
+import { chaveMensal, hojeIso, type ClienteHon, type Linha } from './calculo'
+import { decodificar, lerExtrato, sugerir, vencidosSemCredito, type ClienteRef, type Confianca, type Lancamento, type Nivel } from './extrato'
+import { lerPdf } from './extratoPdf'
 import { mesCurto, salvarMensal, valorTexto } from './util'
 
-const COR: Record<Confianca, string> = {
-  alta: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  media: 'bg-amber-50 text-amber-700 ring-amber-200',
-  baixa: 'bg-slate-100 text-slate-600 ring-slate-200',
+const COR: Record<Nivel, string> = {
+  ok: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  advertencia: 'bg-amber-50 text-amber-700 ring-amber-200',
+  erro: 'bg-rose-50 text-rose-700 ring-rose-200',
+  info: 'bg-slate-50 text-slate-500 ring-slate-200',
 }
+const ROTULO: Record<Nivel, string> = { ok: 'OK', advertencia: 'Advertência', erro: 'Erro', info: 'Informação' }
 
 interface Item {
   lancamento: Lancamento
+  cliente: ClienteRef | null
   chave: string
   marcado: boolean
   confianca: Confianca | null
+  nivel: Nivel
   motivo: string
 }
 
-/** Importa o extrato (OFX ou CSV), sugere o honorário de cada crédito e marca os recebidos. */
-export function ImportarExtrato({ abertos, usados, onClose, onSalvo }: { abertos: Linha[]; usados: Set<string>; onClose: () => void; onSalvo: () => void }) {
+/**
+ * Importa o extrato (PDF, OFX ou CSV) e faz a conciliação com a base: identifica o cliente de cada crédito,
+ * sugere o honorário que ele paga e aponta erros e advertências.
+ */
+export function ImportarExtrato({
+  abertos,
+  usados,
+  clientes,
+  comHonorario,
+  onClose,
+  onSalvo,
+}: {
+  abertos: Linha[]
+  usados: Set<string>
+  clientes: ClienteHon[]
+  comHonorario: Set<string>
+  onClose: () => void
+  onSalvo: () => void
+}) {
   const [arquivo, setArquivo] = useState<string | null>(null)
+  const [lendo, setLendo] = useState(false)
   const [itens, setItens] = useState<Item[]>([])
   const [ignorados, setIgnorados] = useState(0)
+  const [vencidos, setVencidos] = useState<Linha[]>([])
+  const [filtro, setFiltro] = useState<Nivel | ''>('')
+  const [inativos, setInativos] = useState<ClienteRef[]>([])
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [feito, setFeito] = useState<number | null>(null)
+
+  // Clientes inativos também entram na conciliação (para apontar quem pagou e está encerrado)
+  useEffect(() => {
+    supabase
+      .from('adm_clientes')
+      .select('id, codigo, razao_social, nome_fantasia, cnpj, responsavel, status')
+      .eq('status', 'encerrado')
+      .then(({ data }) => setInativos((data as ClienteRef[]) ?? []))
+  }, [])
 
   const porChave = useMemo(() => new Map(abertos.map((l) => [chaveMensal(l.cliente.id, l.competencia), l])), [abertos])
   const opcoes = useMemo(
@@ -44,23 +81,48 @@ export function ImportarExtrato({ abertos, usados, onClose, onSalvo }: { abertos
   async function ler(f: File) {
     setErro(null)
     setFeito(null)
-    const texto = decodificar(await f.arrayBuffer())
-    const lancs = lerExtrato(f.name, texto)
-    if (!lancs.length) return setErro('Não encontrei lançamentos no arquivo. Use o extrato em OFX (recomendado) ou CSV exportado pelo banco.')
-    const creditos = lancs.filter((l) => l.valor > 0)
-    const sug = sugerir(creditos, abertos, usados)
-    setArquivo(f.name)
-    setIgnorados(lancs.length - creditos.length + sug.filter((s) => s.motivo === 'Já importado antes').length)
-    setItens(
-      sug
-        .filter((s) => s.motivo !== 'Já importado antes')
-        .map((s) => ({ lancamento: s.lancamento, chave: s.chave ?? '', marcado: s.confianca === 'alta', confianca: s.confianca, motivo: s.motivo })),
-    )
+    setLendo(true)
+    try {
+      const buf = await f.arrayBuffer()
+      const pdf = /\.pdf$/i.test(f.name) || new Uint8Array(buf.slice(0, 4)).every((b, i) => b === [0x25, 0x50, 0x44, 0x46][i])
+      const lancs = pdf ? await lerPdf(buf) : lerExtrato(f.name, decodificar(buf))
+      if (!lancs.length)
+        return setErro(
+          pdf
+            ? 'Não consegui ler lançamentos neste PDF (pode ser imagem escaneada ou um layout diferente). Se possível, exporte o extrato em OFX.'
+            : 'Não encontrei lançamentos no arquivo. Use o extrato em PDF, OFX ou CSV exportado pelo banco.',
+        )
+      const creditos = lancs.filter((l) => l.valor > 0)
+      const todos: ClienteRef[] = [...clientes, ...inativos]
+      const sug = sugerir(creditos, abertos, usados, todos, comHonorario)
+      const datas = lancs.map((l) => l.data).sort()
+      setArquivo(f.name)
+      setIgnorados(lancs.length - creditos.length)
+      setVencidos(vencidosSemCredito(abertos, sug, datas[0], datas[datas.length - 1], hojeIso()))
+      setItens(
+        sug.map((s) => ({
+          lancamento: s.lancamento,
+          cliente: s.cliente,
+          chave: s.chave ?? '',
+          marcado: s.confianca === 'alta',
+          confianca: s.confianca,
+          nivel: s.nivel,
+          motivo: s.motivo,
+        })),
+      )
+    } catch (e) {
+      setErro(`Não foi possível ler o arquivo: ${e instanceof Error ? e.message : e}`)
+    } finally {
+      setLendo(false)
+    }
   }
 
   const alterar = (i: number, m: Partial<Item>) => setItens((l) => l.map((x, j) => (j === i ? { ...x, ...m } : x)))
   const marcados = itens.filter((i) => i.marcado && i.chave)
   const repetidos = new Set(marcados.map((i) => i.chave)).size !== marcados.length
+  const conta = (n: Nivel) => itens.filter((i) => i.nivel === n).length
+  const soma = (l: Item[]) => l.reduce((s, i) => s + i.lancamento.valor, 0)
+  const visiveis = itens.map((it, i) => ({ it, i })).filter(({ it }) => !filtro || it.nivel === filtro)
 
   async function aplicar() {
     if (repetidos) return setErro('Há dois créditos marcados para o mesmo honorário. Ajuste antes de confirmar.')
@@ -84,14 +146,71 @@ export function ImportarExtrato({ abertos, usados, onClose, onSalvo }: { abertos
     onSalvo()
   }
 
+  function relatorio() {
+    const cod = (c: { codigo: number } | null | undefined) => (c ? String(c.codigo).padStart(3, '0') : '')
+    const arq = gerarXlsxAbas([
+      {
+        aba: 'Conciliação',
+        colunas: [
+          { titulo: 'Data', tipo: 'data', largura: 12 },
+          { titulo: 'Descrição no extrato', largura: 50 },
+          { titulo: 'Valor', tipo: 'moeda', largura: 14 },
+          { titulo: 'Resultado', largura: 13 },
+          { titulo: 'Detalhe', largura: 50 },
+          { titulo: 'Cód.', largura: 7 },
+          { titulo: 'Cliente identificado', largura: 40 },
+          { titulo: 'Honorário', largura: 40 },
+        ],
+        linhas: itens.map((i) => {
+          const l = i.chave ? porChave.get(i.chave) : undefined
+          return [
+            i.lancamento.data,
+            i.lancamento.descricao,
+            i.lancamento.valor,
+            { valor: ROTULO[i.nivel], destaque: i.nivel === 'erro' ? 'negativo' : i.nivel === 'ok' ? 'positivo' : undefined },
+            i.motivo,
+            cod(i.cliente ?? l?.cliente),
+            (i.cliente ?? l?.cliente)?.razao_social ?? '',
+            l ? `${mesCurto(l.competencia)} · ${valorTexto(l.aberto)}` : '',
+          ]
+        }),
+      },
+      {
+        aba: 'Vencidos sem crédito',
+        colunas: [
+          { titulo: 'Cód.', largura: 7 },
+          { titulo: 'Cliente', largura: 42 },
+          { titulo: 'Competência', largura: 12 },
+          { titulo: 'Vencimento', tipo: 'data', largura: 12 },
+          { titulo: 'Em aberto', tipo: 'moeda', largura: 14 },
+        ],
+        linhas: vencidos.map((l) => [cod(l.cliente), l.cliente.razao_social, mesCurto(l.competencia), l.vencimento, l.aberto]),
+      },
+    ])
+    baixarArquivo(`conciliacao-extrato-${hojeIso()}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
+  }
+
+  const cartoes: { n: Nivel | ''; rotulo: string; qtd: number; valor?: number; cor: string; icone: typeof Check }[] = [
+    { n: '', rotulo: 'Créditos no extrato', qtd: itens.length, valor: soma(itens), cor: 'text-slate-800', icone: FileUp },
+    { n: 'ok', rotulo: 'Conferidos', qtd: conta('ok'), valor: soma(itens.filter((i) => i.nivel === 'ok')), cor: 'text-emerald-700', icone: CircleCheck },
+    { n: 'advertencia', rotulo: 'Advertências', qtd: conta('advertencia'), cor: 'text-amber-700', icone: AlertTriangle },
+    { n: 'erro', rotulo: 'Erros', qtd: conta('erro'), cor: 'text-rose-600', icone: XCircle },
+  ]
+
   return (
     <Modal
       title="Importar extrato bancário"
-      subtitulo="O portal lê os créditos e marca os honorários recebidos"
+      subtitulo="Conciliação dos créditos com a Base de Clientes e marcação dos honorários recebidos"
       onClose={onClose}
       largura="max-w-6xl"
       footer={
         <>
+          {itens.length > 0 && (
+            <button className="btn-secondary mr-auto" onClick={relatorio}>
+              <FileSpreadsheet className="h-4 w-4" />
+              Relatório da conciliação
+            </button>
+          )}
           <button className="btn-secondary" onClick={onClose}>
             Fechar
           </button>
@@ -110,13 +229,15 @@ export function ImportarExtrato({ abertos, usados, onClose, onSalvo }: { abertos
           {feito} honorário(s) marcado(s) como recebido(s) com a data do crédito.
         </p>
       )}
-      <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-white p-6 text-center hover:border-brand-400">
-        <FileUp className="h-8 w-8 text-brand-500" />
-        <span className="text-sm font-semibold text-slate-700">{arquivo ? `Arquivo: ${arquivo} (clique para trocar)` : 'Clique para escolher o extrato'}</span>
-        <span className="text-xs text-slate-500">OFX (recomendado, o “Exportar para Money/Quicken” do internet banking) ou CSV</span>
+      <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-white p-5 text-center hover:border-brand-400">
+        <FileUp className={`h-8 w-8 text-brand-500 ${lendo ? 'animate-pulse' : ''}`} />
+        <span className="text-sm font-semibold text-slate-700">
+          {lendo ? 'Lendo o extrato...' : arquivo ? `Arquivo: ${arquivo} (clique para trocar)` : 'Clique para escolher o extrato'}
+        </span>
+        <span className="text-xs text-slate-500">PDF, OFX ou CSV. O OFX é o mais preciso; no PDF a leitura depende do layout do banco.</span>
         <input
           type="file"
-          accept=".ofx,.csv,.txt"
+          accept=".pdf,.ofx,.csv,.txt"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0]
@@ -127,85 +248,116 @@ export function ImportarExtrato({ abertos, usados, onClose, onSalvo }: { abertos
       </label>
 
       {itens.length > 0 && (
-        <div className="rounded-2xl bg-white ring-1 ring-slate-200/70">
-          <div className="flex flex-wrap gap-x-5 gap-y-1 border-b border-slate-100 px-4 py-3 text-sm">
-            <span>
-              <b>{itens.length}</b> crédito(s)
-            </span>
-            <span className="text-emerald-700">
-              <b>{itens.filter((i) => i.confianca === 'alta').length}</b> identificado(s) com segurança
-            </span>
-            <span className="text-amber-700">
-              <b>{itens.filter((i) => i.confianca === 'media' || i.confianca === 'baixa').length}</b> para conferir
-            </span>
-            <span className="text-slate-500">
-              <b>{itens.filter((i) => !i.chave).length}</b> sem honorário (outros créditos)
-            </span>
-            {ignorados > 0 && <span className="text-slate-400">{ignorados} débito(s) ou já importado(s) ignorado(s)</span>}
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {cartoes.map((c) => (
+              <button
+                key={c.rotulo}
+                onClick={() => setFiltro(c.n)}
+                className={`cursor-pointer rounded-2xl bg-white p-4 text-left ring-1 transition ${filtro === c.n ? 'ring-2 ring-brand-500' : 'ring-slate-200/70 hover:ring-slate-300'}`}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                  <c.icone className={`h-3.5 w-3.5 ${c.cor}`} />
+                  {c.rotulo}
+                </div>
+                <div className={`mt-1 text-xl font-extrabold tabular-nums ${c.cor}`}>{c.qtd}</div>
+                {c.valor !== undefined && <div className="text-xs text-slate-500 tabular-nums">{valorTexto(c.valor)}</div>}
+              </button>
+            ))}
           </div>
-          <div className="max-h-[55vh] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
-                <tr>
-                  <th className="w-10 px-3 py-2" />
-                  <th className="px-2 py-2">Data</th>
-                  <th className="px-2 py-2">Descrição no extrato</th>
-                  <th className="px-2 py-2 text-right">Valor</th>
-                  <th className="px-2 py-2">Honorário</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {itens.map((it, i) => {
-                  const l = it.chave ? porChave.get(it.chave) : undefined
-                  return (
-                    <tr key={it.lancamento.id + i} className={it.marcado ? 'bg-emerald-50/40' : ''}>
-                      <td className="px-3 py-2">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-emerald-600"
-                          checked={it.marcado}
-                          disabled={!it.chave}
-                          onChange={(e) => alterar(i, { marcado: e.target.checked })}
-                          aria-label="Marcar este crédito"
-                        />
-                      </td>
-                      <td className="px-2 py-2 whitespace-nowrap">{formatarData(it.lancamento.data)}</td>
-                      <td className="max-w-80 px-2 py-2 text-xs text-slate-600">{it.lancamento.descricao || '—'}</td>
-                      <td className="px-2 py-2 text-right font-semibold whitespace-nowrap tabular-nums">{valorTexto(it.lancamento.valor)}</td>
-                      <td className="min-w-80 px-2 py-2">
-                        <select
-                          className="input w-full py-1.5 text-xs"
-                          value={it.chave}
-                          onChange={(e) =>
-                            alterar(i, { chave: e.target.value, marcado: !!e.target.value, confianca: null, motivo: e.target.value ? 'Escolhido à mão' : '' })
-                          }
-                        >
-                          <option value="">— Não é honorário —</option>
-                          {opcoes.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        {it.motivo && (
-                          <span
-                            className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ring-1 ${it.confianca ? COR[it.confianca] : 'bg-slate-50 text-slate-500 ring-slate-200'}`}
+          {ignorados > 0 && <p className="text-xs text-slate-400">{ignorados} débito(s) do extrato ignorado(s).</p>}
+
+          <div className="rounded-2xl bg-white ring-1 ring-slate-200/70">
+            <div className="max-h-[50vh] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-white text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
+                  <tr className="border-b border-slate-100">
+                    <th className="w-10 px-3 py-2" />
+                    <th className="px-2 py-2">Data</th>
+                    <th className="px-2 py-2">Descrição no extrato</th>
+                    <th className="px-2 py-2 text-right">Valor</th>
+                    <th className="px-2 py-2">Conciliação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {visiveis.map(({ it, i }) => {
+                    const l = it.chave ? porChave.get(it.chave) : undefined
+                    return (
+                      <tr key={it.lancamento.id + i} className={it.marcado ? 'bg-emerald-50/40' : ''}>
+                        <td className="px-3 py-2 align-top">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-emerald-600"
+                            checked={it.marcado}
+                            disabled={!it.chave}
+                            onChange={(e) => alterar(i, { marcado: e.target.checked })}
+                            aria-label="Marcar este crédito"
+                          />
+                        </td>
+                        <td className="px-2 py-2 align-top whitespace-nowrap">{formatarData(it.lancamento.data)}</td>
+                        <td className="max-w-72 px-2 py-2 align-top text-xs text-slate-600">{it.lancamento.descricao || '—'}</td>
+                        <td className="px-2 py-2 text-right align-top font-semibold whitespace-nowrap tabular-nums">{valorTexto(it.lancamento.valor)}</td>
+                        <td className="min-w-96 px-2 py-2">
+                          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                            <span className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold ring-1 ${COR[it.nivel]}`}>{ROTULO[it.nivel]}</span>
+                            <span className="text-xs text-slate-600">{it.motivo}</span>
+                          </div>
+                          {it.cliente && !l && (
+                            <div className="mb-1 text-xs text-slate-500">
+                              Cliente: <b>{String(it.cliente.codigo).padStart(3, '0')}</b> {it.cliente.razao_social}
+                            </div>
+                          )}
+                          <select
+                            className="input w-full py-1.5 text-xs"
+                            value={it.chave}
+                            onChange={(e) =>
+                              alterar(i, {
+                                chave: e.target.value,
+                                marcado: !!e.target.value,
+                                confianca: null,
+                                nivel: e.target.value ? 'ok' : it.nivel,
+                                motivo: e.target.value ? 'Escolhido à mão' : it.motivo,
+                              })
+                            }
                           >
-                            {it.motivo}
-                            {l && it.confianca === 'media' ? ` (em aberto ${valorTexto(l.aberto)})` : ''}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                            <option value="">— Não é honorário / não marcar —</option>
+                            {opcoes.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {!visiveis.length && <p className="p-8 text-center text-sm text-slate-400">Nenhum crédito nesta categoria.</p>}
+            </div>
+            <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+              Os conferidos já vêm marcados. Confira as advertências e os erros, escolha o honorário certo quando for o caso. O mesmo crédito não é importado
+              duas vezes.
+            </p>
           </div>
-          <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
-            Os identificados com segurança já vêm marcados. Confira os demais, escolha o honorário certo e marque. O mesmo crédito não é importado duas vezes.
-          </p>
-        </div>
+
+          {vencidos.length > 0 && (
+            <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-rose-200">
+              <b>
+                {vencidos.length} honorário(s) vencido(s) no período do extrato sem crédito correspondente (
+                {valorTexto(vencidos.reduce((s, l) => s + l.aberto, 0))})
+              </b>
+              <ul className="mt-2 grid gap-x-6 gap-y-0.5 text-xs sm:grid-cols-2">
+                {vencidos.map((l) => (
+                  <li key={chaveMensal(l.cliente.id, l.competencia)} className="truncate">
+                    <span className="font-mono">{String(l.cliente.codigo).padStart(3, '0')}</span> {l.cliente.razao_social} · {mesCurto(l.competencia)} ·{' '}
+                    {valorTexto(l.aberto)} · venceu {formatarData(l.vencimento)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </Modal>
   )

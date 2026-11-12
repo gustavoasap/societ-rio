@@ -1,6 +1,18 @@
 import { supabase } from '../lib/supabase'
 import type { Cliente, MotivoEncerramento } from './tipos'
 
+/** Muda o dia de vencimento do honorário vigente (e dos reajustes já agendados) do cliente. */
+export async function alterarDiaVencimento(clienteId: string, dia: number) {
+  const hoje = new Date()
+  const inicioMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`
+  const { error } = await supabase
+    .from('adm_honorarios')
+    .update({ dia_vencimento: dia })
+    .eq('cliente_id', clienteId)
+    .or(`vigencia_fim.is.null,vigencia_fim.gte.${inicioMes}`)
+  return error?.message ?? null
+}
+
 /** Confirma (ou desfaz) que o cliente não terá honorário. */
 export async function marcarSemHonorario(clienteId: string, sem: boolean, motivo: string | null = null) {
   const { error } = await supabase

@@ -180,3 +180,52 @@ describe('reajuste', () => {
     expect(honorarioDoMes(hs, '2027-01')?.valor).toBe(383.4)
   })
 })
+
+describe('extrato PDF e conciliação', () => {
+  it('lê linhas de extrato em PDF', async () => {
+    const { lancamentosDeLinhas } = await import('./extratoPdf')
+    const l = lancamentosDeLinhas(
+      [
+        'EXTRATO DE CONTA CORRENTE - PERÍODO 01/10/2026 A 31/10/2026',
+        '09/10 PIX RECEBIDO 500,00 C 1.500,00',
+        'MARIA STORE COMERCIO LTDA',
+        '10/10 TARIFA BANCARIA 12,90 D 1.487,10',
+        '11/10/2026 PIX ENVIADO FULANO 100,00 1.387,10',
+        '12/10 TED RECEBIDA LT GROUP 1.990,00',
+        'SALDO DO DIA 1.387,10',
+      ],
+      2025,
+    )
+    expect(l).toHaveLength(4)
+    expect(l[0]).toMatchObject({ data: '2026-10-09', valor: 500 })
+    expect(l[0].descricao).toContain('MARIA STORE')
+    expect(l[1].valor).toBe(-12.9)
+    expect(l[2].valor).toBe(-100)
+    expect(l[3]).toMatchObject({ valor: 1990, descricao: 'TED RECEBIDA LT GROUP' })
+  })
+  it('conciliação aponta cliente inativo e sem honorário', async () => {
+    const { sugerir } = await import('./extrato')
+    const hoje = '2026-11-12'
+    const ls = [linhaDoMes(cli(), [hon()], null, '2026-10', cfg, hoje)!]
+    const todos = [
+      { id: 'c1', codigo: 10, razao_social: 'MARIA STORE COMERCIO LTDA', nome_fantasia: null, cnpj: null, responsavel: null, status: 'assinado' },
+      { id: 'c9', codigo: 99, razao_social: 'VELHA EMPRESA LTDA', nome_fantasia: null, cnpj: null, responsavel: null, status: 'encerrado' },
+      { id: 'c8', codigo: 98, razao_social: 'NOVA LOJA BRASIL LTDA', nome_fantasia: null, cnpj: null, responsavel: null, status: 'pendente' },
+    ]
+    const s = sugerir(
+      [
+        { id: 'a', data: '2026-10-09', valor: 450, descricao: 'PIX MARIA STORE' },
+        { id: 'b', data: '2026-10-09', valor: 300, descricao: 'PIX VELHA EMPRESA' },
+        { id: 'c', data: '2026-10-09', valor: 300, descricao: 'PIX NOVA LOJA BRASIL' },
+        { id: 'd', data: '2026-10-09', valor: 77, descricao: 'PIX DESCONHECIDO' },
+      ],
+      ls,
+      new Set(),
+      todos,
+      new Set(['c1', 'c9']),
+    )
+    expect(s.map((x) => x.nivel)).toEqual(['advertencia', 'erro', 'erro', 'advertencia'])
+    expect(s[0].confianca).toBe('media')
+    expect(s[3].motivo).toMatch(/não encontrado/)
+  })
+})

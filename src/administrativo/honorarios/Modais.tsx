@@ -6,6 +6,7 @@ import { CampoData, CampoMes } from '../../components/CampoData'
 import { Field, Modal } from '../../components/ui'
 import { competenciaDe, hojeIso, type ConfigHon, type Linha } from './calculo'
 import { nomeMes, salvarMensal, valorTexto } from './util'
+import { alterarDiaVencimento } from '../acoes'
 
 /** Marcar um ou vários honorários como recebidos (data obrigatória). */
 export function MarcarRecebido({ linhas, onClose, onSalvo }: { linhas: Linha[]; onClose: () => void; onSalvo: () => void }) {
@@ -218,6 +219,58 @@ export function ConfigHonorarios({ cfg, onClose, onSalvo }: { cfg: ConfigHon; on
         </label>
         <p className="text-xs text-slate-500">
           Quando o honorário do cliente tem dia de vencimento próprio (cadastrado no Expandir da Base de Clientes), vale o dia dele.
+        </p>
+      </div>
+    </Modal>
+  )
+}
+
+/** Dia de vencimento próprio do cliente (vale para o honorário atual e os próximos). */
+export function AlterarVencimento({ linha, onClose, onSalvo }: { linha: Linha; onClose: () => void; onSalvo: () => void }) {
+  const [dia, setDia] = useState(linha.vencimento.slice(8, 10).replace(/^0/, ''))
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function salvar() {
+    const d = Number(dia)
+    if (!Number.isInteger(d) || d < 1 || d > 31) return setErro('Informe um dia entre 1 e 31.')
+    const msg = await alterarDiaVencimento(linha.cliente.id, d)
+    if (msg) return setErro(msg)
+    onSalvo()
+  }
+
+  return (
+    <Modal
+      title={`Vencimento · ${linha.cliente.razao_social}`}
+      subtitulo="Dia de vencimento do honorário deste cliente"
+      onClose={onClose}
+      largura="max-w-md"
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="btn-primary" onClick={salvar}>
+            <Check className="h-4 w-4" />
+            Salvar
+          </button>
+        </>
+      }
+    >
+      {erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
+      <div className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
+        <Field label="Dia do vencimento">
+          <input
+            id="dia-vencimento"
+            className="input w-28"
+            inputMode="numeric"
+            value={dia}
+            onChange={(e) => setDia(e.target.value.replace(/\D/g, '').slice(0, 2))}
+            autoFocus
+          />
+        </Field>
+        <p className="text-xs text-slate-500">
+          Vale para o honorário atual e os reajustes já agendados deste cliente, inclusive na lista de inadimplentes. Em meses mais curtos, vence no último dia
+          do mês.
         </p>
       </div>
     </Modal>

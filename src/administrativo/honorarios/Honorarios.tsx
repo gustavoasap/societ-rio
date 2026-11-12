@@ -43,7 +43,7 @@ import {
   type Mensal,
   type Situacao,
 } from './calculo'
-import { AjustarValor, ConfigHonorarios, MarcarRecebido } from './Modais'
+import { AjustarValor, AlterarVencimento, ConfigHonorarios, MarcarRecebido } from './Modais'
 import { mesCurto, nomeMes, salvarMensal, valorTexto } from './util'
 import { ImportarExtrato } from './ImportarExtrato'
 import { ReajusteMassa } from './ReajusteMassa'
@@ -74,6 +74,7 @@ export function Honorarios({ session }: { session: Session }) {
   const [configurando, setConfigurando] = useState(false)
   const [verSemHonorario, setVerSemHonorario] = useState(false)
   const [reajustando, setReajustando] = useState(false)
+  const [vencendo, setVencendo] = useState<Linha | null>(null)
 
   const carregar = useCallback(async () => {
     const [c, cl, h, m] = await comRetentativa(() =>
@@ -526,7 +527,16 @@ export function Honorarios({ session }: { session: Session }) {
                               <div className="text-[0.6875rem] text-sky-600">carência (base {l.base !== null ? valorTexto(l.base) : '—'})</div>
                             )}
                           </td>
-                          <td className="px-2 py-2.5 whitespace-nowrap text-slate-600">{formatarData(l.vencimento)}</td>
+                          <td className="px-2 py-2.5 whitespace-nowrap text-slate-600">
+                            <button
+                              className="group inline-flex cursor-pointer items-center gap-1 rounded-md px-1 hover:bg-slate-100"
+                              onClick={() => setVencendo(l)}
+                              title="Alterar o dia de vencimento deste cliente"
+                            >
+                              {formatarData(l.vencimento)}
+                              <Pencil className="h-3 w-3 text-slate-300 group-hover:text-slate-500" />
+                            </button>
+                          </td>
                           <td className="px-2 py-2.5">
                             <span
                               className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ${SITUACOES[l.situacao].pill}`}
@@ -707,6 +717,16 @@ export function Honorarios({ session }: { session: Session }) {
           }}
         />
       )}
+      {vencendo && (
+        <AlterarVencimento
+          linha={vencendo}
+          onClose={() => setVencendo(null)}
+          onSalvo={() => {
+            setVencendo(null)
+            carregar()
+          }}
+        />
+      )}
       {reajustando && (
         <ReajusteMassa
           clientes={clientes}
@@ -718,7 +738,16 @@ export function Honorarios({ session }: { session: Session }) {
           }}
         />
       )}
-      {importando && <ImportarExtrato abertos={abertos} usados={usados} onClose={() => setImportando(false)} onSalvo={carregar} />}
+      {importando && (
+        <ImportarExtrato
+          abertos={abertos}
+          usados={usados}
+          clientes={clientes}
+          comHonorario={new Set(hons.map((h) => h.cliente_id))}
+          onClose={() => setImportando(false)}
+          onSalvo={carregar}
+        />
+      )}
       {configurando && (
         <ConfigHonorarios
           cfg={cfg}

@@ -145,60 +145,101 @@ export function cnpjNaDescricao(cnpj: string | null, descricao: string) {
 }
 
 export type Confianca = 'alta' | 'media' | 'baixa'
+export type Nivel = 'ok' | 'erro' | 'advertencia' | 'info'
+
+export interface ClienteRef {
+  id: string
+  codigo: number
+  razao_social: string
+  nome_fantasia: string | null
+  cnpj: string | null
+  responsavel: string | null
+  status: string
+}
 
 export interface Sugestao {
   lancamento: Lancamento
+  /** Cliente identificado na descrição (inclusive inativo) */
+  cliente: ClienteRef | null
   /** chaveMensal do honorário sugerido */
   chave: string | null
   confianca: Confianca | null
+  nivel: Nivel
   motivo: string
 }
 
 const chaveDe = (l: Linha) => `${l.cliente.id}|${l.competencia}`
 
+/** Cliente citado na descrição do crédito: CNPJ primeiro, depois razão social, nome fantasia e responsável. */
+export function identificarCliente(descricao: string, clientes: ClienteRef[]): ClienteRef | null {
+  return (
+    clientes.find((c) => cnpjNaDescricao(c.cnpj, descricao)) ??
+    clientes.find((c) => nomeNaDescricao(c.razao_social, descricao)) ??
+    clientes.find((c) => nomeNaDescricao(c.nome_fantasia, descricao)) ??
+    clientes.find((c) => nomeNaDescricao(c.responsavel, descricao, true)) ??
+    null
+  )
+}
+
 /**
- * Para cada crédito do extrato, sugere o honorário em aberto que ele paga:
- * - alta: cliente identificado (CNPJ ou nome) e valor igual ao honorário em aberto
- * - média: cliente identificado, mas valor diferente (confira)
- * - baixa: só o valor bate e com um único cliente (confira)
+ * Conciliação do extrato: para cada crédito, identifica o cliente e o honorário em aberto que ele paga.
+ * - ok: cliente e valor conferem com um honorário em aberto
+ * - advertência: valor diferente, cliente sem honorário em aberto, pagador só sugerido pelo valor ou não encontrado
+ * - erro: cliente inativo ou sem honorário cadastrado
  */
-export function sugerir(lancamentos: Lancamento[], abertos: Linha[], usados: Set<string>): Sugestao[] {
+export function sugerir(lancamentos: Lancamento[], abertos: Linha[], usados: Set<string>, clientes: ClienteRef[] = [], comHonorario?: Set<string>): Sugestao[] {
   const reservados = new Set<string>()
   const ord = [...abertos].sort((a, b) => a.competencia.localeCompare(b.competencia))
   const igual = (a: number, b: number) => Math.abs(a - b) < 0.005
-  return lancamentos.map((lanc) => {
-    if (lanc.valor <= 0) return { lancamento: lanc, chave: null, confianca: null, motivo: 'Débito' }
-    if (usados.has(lanc.id)) return { lancamento: lanc, chave: null, confianca: null, motivo: 'Já importado antes' }
+  const todos = clientes.length ? clientes : [...new Map(abertos.map((l) => [l.cliente.id, { ...l.cliente } as ClienteRef])).values()]
+  return lancamentos.map((lanc): Sugestao => {
+    const base = { lancamento: lanc, cliente: null, chave: null, confianca: null }
+    if (lanc.valor <= 0) return { ...base, nivel: 'info', motivo: 'Débito' }
+    if (usados.has(lanc.id)) return { ...base, nivel: 'info', motivo: 'Já importado antes' }
     const livres = ord.filter((l) => !reservados.has(chaveDe(l)))
-    const doCliente = livres.filter(
-      (l) =>
-        cnpjNaDescricao(l.cliente.cnpj, lanc.descricao) ||
-        nomeNaDescricao(l.cliente.razao_social, lanc.descricao) ||
-        nomeNaDescricao(l.cliente.nome_fantasia, lanc.descricao) ||
-        nomeNaDescricao(l.cliente.responsavel, lanc.descricao, true),
-    )
-    let escolhida: Linha | undefined
-    let confianca: Confianca | null = null
-    let motivo = 'Nenhum honorário em aberto encontrado'
-    if (doCliente.length) {
-      escolhida = doCliente.find((l) => igual(l.aberto, lanc.valor))
-      if (escolhida) {
-        confianca = 'alta'
-        motivo = 'Cliente e valor conferem'
-      } else {
-        escolhida = doCliente[0]
-        confianca = 'media'
-        motivo = 'Cliente identificado, valor diferente'
-      }
-    } else {
-      const porValor = livres.filter((l) => igual(l.aberto, lanc.valor))
-      if (porValor.length && new Set(porValor.map((l) => l.cliente.id)).size === 1) {
-        escolhida = porValor[0]
-        confianca = 'baixa'
-        motivo = 'Só o valor confere'
-      }
+    const cli = identificarCliente(lanc.descricao, todos)
+    const fim = (s: Omit<Sugestao, 'lancamento'>): Sugestao => {
+      if (s.chave) reservados.add(s.chave)
+      return { lancamento: lanc, ...s }
     }
-    if (escolhida) reservados.add(chaveDe(escolhida))
-    return { lancamento: lanc, chave: escolhida ? chaveDe(escolhida) : null, confianca, motivo }
+    if (cli) {
+      if (cli.status === 'encerrado') return fim({ cliente: cli, chave: null, confianca: null, nivel: 'erro', motivo: 'Cliente inativo na base (encerrado)' })
+      const doCliente = livres.filter((l) => l.cliente.id === cli.id)
+      const exato = doCliente.find((l) => igual(l.aberto, lanc.valor))
+      if (exato) return fim({ cliente: cli, chave: chaveDe(exato), confianca: 'alta', nivel: 'ok', motivo: 'Cliente e valor conferem' })
+      if (doCliente.length)
+        return fim({
+          cliente: cli,
+          chave: chaveDe(doCliente[0]),
+          confianca: 'media',
+          nivel: 'advertencia',
+          motivo: `Valor diferente do honorário em aberto (${doCliente[0].aberto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`,
+        })
+      if (comHonorario && !comHonorario.has(cli.id))
+        return fim({ cliente: cli, chave: null, confianca: null, nivel: 'erro', motivo: 'Cliente sem honorário cadastrado na base' })
+      return fim({
+        cliente: cli,
+        chave: null,
+        confianca: null,
+        nivel: 'advertencia',
+        motivo: 'Cliente sem honorário em aberto (pagamento em duplicidade ou adiantado?)',
+      })
+    }
+    const porValor = livres.filter((l) => igual(l.aberto, lanc.valor))
+    if (porValor.length && new Set(porValor.map((l) => l.cliente.id)).size === 1)
+      return fim({
+        cliente: null,
+        chave: chaveDe(porValor[0]),
+        confianca: 'baixa',
+        nivel: 'advertencia',
+        motivo: 'Pagador não identificado; sugerido só pelo valor',
+      })
+    return fim({ cliente: null, chave: null, confianca: null, nivel: 'advertencia', motivo: 'Pagador não encontrado na base de clientes' })
   })
+}
+
+/** Honorários vencidos dentro do período do extrato que não tiveram crédito correspondente. */
+export function vencidosSemCredito(abertos: Linha[], sugestoes: Sugestao[], de: string, ate: string, hoje: string) {
+  const pagos = new Set(sugestoes.map((s) => s.chave).filter(Boolean))
+  return abertos.filter((l) => l.vencimento >= de && l.vencimento <= ate && l.vencimento < hoje && !pagos.has(chaveDe(l)))
 }
