@@ -71,16 +71,25 @@ export function ImportarExtrato({
   }, [])
 
   const porChave = useMemo(() => new Map(abertos.map((l) => [chaveMensal(l.cliente.id, l.competencia), l])), [abertos])
-  const opcoes = useMemo(
+  // Cada cliente aparece uma vez; o mês é ligado automaticamente ao mês do crédito no extrato
+  const abertosPorCliente = useMemo(() => {
+    const m = new Map<string, Linha[]>()
+    for (const l of [...abertos].sort((a, b) => a.competencia.localeCompare(b.competencia))) m.set(l.cliente.id, [...(m.get(l.cliente.id) ?? []), l])
+    return m
+  }, [abertos])
+  const opcoesClientes = useMemo(
     () =>
-      [...abertos]
-        .sort((a, b) => a.cliente.razao_social.localeCompare(b.cliente.razao_social) || a.competencia.localeCompare(b.competencia))
-        .map((l) => ({
-          value: chaveMensal(l.cliente.id, l.competencia),
-          label: `${String(l.cliente.codigo).padStart(3, '0')} ${l.cliente.razao_social} · ${mesCurto(l.competencia)} · ${valorTexto(l.aberto)}`,
-        })),
-    [abertos],
+      [...abertosPorCliente.values()]
+        .map((ls) => ls[0].cliente)
+        .sort((a, b) => a.razao_social.localeCompare(b.razao_social))
+        .map((c) => ({ value: c.id, label: `${String(c.codigo).padStart(3, '0')} ${c.razao_social}` })),
+    [abertosPorCliente],
   )
+  /** Honorário do cliente no mês do crédito; se já estiver pago, o mais antigo em aberto. */
+  const linhaParaCredito = (clienteId: string, data: string) => {
+    const ls = abertosPorCliente.get(clienteId) ?? []
+    return ls.find((l) => l.competencia === data.slice(0, 7)) ?? ls[0]
+  }
 
   async function ler(f: File) {
     setErro(null)
@@ -319,27 +328,45 @@ export function ImportarExtrato({
                               Cliente: <b>{String(it.cliente.codigo).padStart(3, '0')}</b> {it.cliente.razao_social}
                             </div>
                           )}
-                          <select
-                            className="input w-full py-1.5 text-xs"
-                            value={it.chave}
-                            onChange={(e) =>
-                              alterar(i, {
-                                chave: e.target.value,
-                                marcado: !!e.target.value,
-                                confianca: null,
-                                nivel: e.target.value ? 'ok' : it.nivel,
-                                motivo: e.target.value ? 'Escolhido à mão' : it.motivo,
-                                tarifa: tarifaManual(e.target.value, it.lancamento.valor),
-                              })
-                            }
-                          >
-                            <option value="">— Não é honorário / não marcar —</option>
-                            {opcoes.map((o) => (
-                              <option key={o.value} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex flex-wrap gap-1.5">
+                            <select
+                              className="input min-w-56 flex-1 py-1.5 text-xs"
+                              value={l?.cliente.id ?? ''}
+                              onChange={(e) => {
+                                const linha = e.target.value ? linhaParaCredito(e.target.value, it.lancamento.data) : undefined
+                                const chave = linha ? chaveMensal(linha.cliente.id, linha.competencia) : ''
+                                alterar(i, {
+                                  chave,
+                                  marcado: !!chave,
+                                  confianca: null,
+                                  nivel: chave ? 'ok' : it.nivel,
+                                  motivo: chave ? 'Escolhido à mão' : it.motivo,
+                                  tarifa: tarifaManual(chave, it.lancamento.valor),
+                                })
+                              }}
+                            >
+                              <option value="">— Não é honorário / não marcar —</option>
+                              {opcoesClientes.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            {l && (
+                              <select
+                                className="input w-auto py-1.5 text-xs"
+                                value={it.chave}
+                                title="Competência do honorário"
+                                onChange={(e) => alterar(i, { chave: e.target.value, tarifa: tarifaManual(e.target.value, it.lancamento.valor) })}
+                              >
+                                {(abertosPorCliente.get(l.cliente.id) ?? []).map((x) => (
+                                  <option key={x.competencia} value={chaveMensal(x.cliente.id, x.competencia)}>
+                                    {mesCurto(x.competencia)} · {valorTexto(x.aberto)}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )

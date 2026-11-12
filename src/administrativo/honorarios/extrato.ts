@@ -216,7 +216,11 @@ export function sugerir(
     }
     if (cli) {
       if (cli.status === 'encerrado') return fim({ cliente: cli, chave: null, confianca: null, nivel: 'erro', motivo: 'Cliente inativo na base (encerrado)' })
-      const doCliente = livres.filter((l) => l.cliente.id === cli.id)
+      // Prioriza o honorário do mês do crédito; depois os mais antigos em aberto
+      const mesCredito = lanc.data.slice(0, 7)
+      const doCliente = livres
+        .filter((l) => l.cliente.id === cli.id)
+        .sort((a, b) => Number(b.competencia === mesCredito) - Number(a.competencia === mesCredito) || a.competencia.localeCompare(b.competencia))
       const exato = doCliente.find((l) => confere(l.aberto, lanc.valor))
       if (exato) {
         const tarifa = tarifaDe(exato.aberto, lanc.valor)
@@ -249,7 +253,9 @@ export function sugerir(
         motivo: 'Cliente sem honorário em aberto (pagamento em duplicidade ou adiantado?)',
       })
     }
-    const porValor = livres.filter((l) => confere(l.aberto, lanc.valor))
+    const porValor = livres
+      .filter((l) => confere(l.aberto, lanc.valor))
+      .sort((a, b) => Number(b.competencia === lanc.data.slice(0, 7)) - Number(a.competencia === lanc.data.slice(0, 7)))
     if (porValor.length && new Set(porValor.map((l) => l.cliente.id)).size === 1)
       return fim({
         cliente: null,
