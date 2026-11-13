@@ -71,6 +71,9 @@ export function Fechamento({ session, departamento }: { session: Session; depart
   const [erro, setErro] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
   const [marcandoPlanilha, setMarcandoPlanilha] = useState(false)
+  // Filtro por coluna (obrigação / tarefa / sistema) e pela situação marcada nela
+  const [filtroOb, setFiltroOb] = useState('')
+  const [filtroOpcao, setFiltroOpcao] = useState('')
   const [filtro, setFiltro] = useState('')
   const [editando, setEditando] = useState<{ obrigacao: Obrigacao | null; nome?: string } | null>(null)
 
@@ -127,6 +130,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
   const valor = useCallback((o: Obrigacao, clienteId: string) => status.get(chave(o.id, clienteId, competenciaStatus(o, ref))), [status, ref])
   const feito = useCallback((o: Obrigacao, clienteId: string) => opcaoAtual(o, valor(o, clienteId)).concluido, [valor])
 
+  const obFiltro = colunas.find((o) => o.id === filtroOb) ?? null
   const linhas = useMemo(() => {
     const t = busca.trim().toLowerCase()
     const dig = t.replace(/\D/g, '')
@@ -134,10 +138,11 @@ export function Fechamento({ session, departamento }: { session: Session; depart
       const feitas = colunas.filter((o) => feito(o, e.id)).length
       if (filtro === 'pendentes' && colunas.length && feitas === colunas.length) return false
       if (filtro === 'concluidas' && (!colunas.length || feitas < colunas.length)) return false
+      if (obFiltro && filtroOpcao && opcaoAtual(obFiltro, valor(obFiltro, e.id)).id !== filtroOpcao) return false
       if (!t) return true
       return e.razao_social.toLowerCase().includes(t) || String(e.codigo).padStart(3, '0').includes(t) || (dig.length >= 3 && (e.cnpj ?? '').includes(dig))
     })
-  }, [doMes, colunas, busca, filtro, feito])
+  }, [doMes, colunas, busca, filtro, feito, obFiltro, filtroOpcao, valor])
 
   const totalCelulas = doMes.length * colunas.length
   const totalFeito = useMemo(() => doMes.reduce((s, e) => s + colunas.filter((o) => feito(o, e.id)).length, 0), [doMes, colunas, feito])
@@ -370,6 +375,25 @@ export function Fechamento({ session, departamento }: { session: Session; depart
             vazio="Todas as empresas"
             className="input w-auto"
           />
+          <Select
+            value={obFiltro ? filtroOb : ''}
+            onChange={(v) => {
+              setFiltroOb(v)
+              setFiltroOpcao('')
+            }}
+            opcoes={colunas.map((o) => ({ value: o.id, label: o.nome }))}
+            vazio={`Filtrar por ${termo.um}`}
+            className={`input w-auto max-w-56 ${obFiltro ? 'border-brand-300 bg-brand-50 text-brand-800' : ''}`}
+          />
+          {obFiltro && (
+            <Select
+              value={filtroOpcao}
+              onChange={setFiltroOpcao}
+              opcoes={obFiltro.opcoes.map((x) => ({ value: x.id, label: x.label }))}
+              vazio="Qualquer situação"
+              className={`input w-auto ${filtroOpcao ? corDe(obFiltro.opcoes.find((x) => x.id === filtroOpcao)?.cor ?? 'cinza').pill : ''}`}
+            />
+          )}
           <button className="btn-primary from-emerald-500 to-emerald-600 shadow-emerald-500/20" onClick={exportar} disabled={!linhas.length || !colunas.length}>
             <FileSpreadsheet className="h-4 w-4" />
             Excel
