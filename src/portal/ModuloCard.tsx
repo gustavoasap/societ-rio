@@ -31,6 +31,9 @@ export function ModuloCard({ modulo: m, departamento }: { modulo: Modulo; depart
           {m.status === 'disponivel' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
           {TEXTO[m.status]}
         </span>
+        {m.somente_socios && (
+          <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-700 ring-1 ring-violet-200 ring-inset">Só sócios</span>
+        )}
         {abre && (
           <span className="flex items-center gap-1 text-sm font-bold text-brand-600">
             Abrir {externo ? <ArrowUpRight className="h-4 w-4" /> : <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />}

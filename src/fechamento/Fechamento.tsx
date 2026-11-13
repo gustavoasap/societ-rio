@@ -26,6 +26,8 @@ import { ObrigacaoForm } from './ObrigacaoForm'
 import {
   NOME_DEPARTAMENTO,
   TITULO_CONTROLE,
+  SLUG_DEPARTAMENTO,
+  TERMO,
   SUGESTOES,
   COMP_UNICA,
   chave,
@@ -194,6 +196,8 @@ export function Fechamento({ session, departamento }: { session: Session; depart
   }
 
   const nomeDep = NOME_DEPARTAMENTO[departamento]
+  const termo = TERMO[departamento]
+  const Termos = termo.uns.charAt(0).toUpperCase() + termo.uns.slice(1)
   const rotulo = visao === 'mes' ? `competência ${nomeMes(mes)}` : ano
   const pct = totalCelulas ? Math.round((totalFeito / totalCelulas) * 100) : 0
 
@@ -223,17 +227,21 @@ export function Fechamento({ session, departamento }: { session: Session; depart
                 Página inicial
               </Link>{' '}
               ›{' '}
-              <Link para={`/d/${departamento}`} className="hover:underline">
+              <Link para={`/d/${SLUG_DEPARTAMENTO[departamento]}`} className="hover:underline">
                 {nomeDep}
               </Link>{' '}
               · {TITULO_CONTROLE[departamento]}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{TITULO_CONTROLE[departamento]}</h1>
-            <p className="mt-1 text-sm text-white/60">{nomeDep}: obrigações por competência de cada empresa ativa da Base de Clientes.</p>
+            <p className="mt-1 text-sm text-white/60">
+              {departamento === 'cadastros'
+                ? 'Cadastro de cada empresa ativa da Base de Clientes nos sistemas do escritório. Visível só para os sócios.'
+                : `${nomeDep}: ${termo.uns} por competência de cada empresa ativa da Base de Clientes.`}
+            </p>
           </div>
           <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando({ obrigacao: null })}>
             <Plus className="h-4 w-4" />
-            Nova obrigação
+            {termo.novo}
           </button>
         </div>
       </div>
@@ -330,9 +338,13 @@ export function Fechamento({ session, departamento }: { session: Session; depart
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
             { r: visao === 'mes' ? 'Empresas na competência' : 'Empresas no ano', v: String(doMes.length), d: `ativas em ${rotulo}` },
-            { r: 'Obrigações', v: String(colunas.length), d: visao === 'mes' ? 'mensais e anuais em entrega' : 'únicas e anuais' },
+            { r: Termos, v: String(colunas.length), d: visao === 'mes' ? 'mensais e anuais em entrega' : 'únicas e anuais' },
             { r: 'Progresso geral', v: `${pct}%`, d: `${totalFeito} de ${totalCelulas} concluídas`, barra: true },
-            { r: 'Empresas fechadas', v: String(empresasCompletas), d: 'com todas as obrigações concluídas' },
+            {
+              r: 'Empresas fechadas',
+              v: String(empresasCompletas),
+              d: `com tod${termo.artigo}s ${termo.artigo === 'a' ? 'as' : 'os'} ${termo.uns} concluíd${termo.artigo}s`,
+            },
           ].map((k) => (
             <div key={k.r} className="min-w-0 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70 sm:p-5">
               <div className="text-sm font-medium text-slate-500">{k.r}</div>
@@ -355,16 +367,16 @@ export function Fechamento({ session, departamento }: { session: Session; depart
             <h2 className="mt-3 text-lg font-bold text-slate-800">
               {obrigacoes.length
                 ? visao === 'mes'
-                  ? `Nenhuma obrigação mensal ou anual em entrega na competência ${nomeMes(mes)}`
-                  : `Nenhuma obrigação única ou anual em ${ano}`
-                : 'Crie as obrigações do controle'}
+                  ? `Nenhum${termo.artigo === 'a' ? 'a' : ''} ${termo.um} mensal ou anual em entrega na competência ${nomeMes(mes)}`
+                  : `Nenhum${termo.artigo === 'a' ? 'a' : ''} ${termo.um} únic${termo.artigo} ou anual em ${ano}`
+                : `Crie ${termo.artigo}s ${termo.uns} do controle`}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               {obrigacoes.length
                 ? visao === 'mes'
-                  ? 'Obrigações únicas ficam na Visão geral.'
-                  : 'Obrigações mensais ficam na visão Por competência.'
-                : 'Cada obrigação vira uma coluna, com uma caixa de seleção para cada empresa.'}
+                  ? `${Termos} únic${termo.artigo}s ficam na Visão geral.`
+                  : `${Termos} mensais ficam na visão Por competência.`
+                : `Cada ${termo.um} vira uma coluna, com uma caixa de seleção para cada empresa.`}
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {SUGESTOES[departamento]
@@ -377,7 +389,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
                 ))}
               <button className="btn-primary btn-sm" onClick={() => setEditando({ obrigacao: null })}>
                 <Plus className="h-3.5 w-3.5" />
-                Outra obrigação
+                {termo.artigo === 'a' ? 'Outra' : 'Outro'} {termo.um}
               </button>
             </div>
           </div>
@@ -427,7 +439,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
                               <button
                                 className="icon-btn h-6 w-6"
                                 onClick={() => setEditando({ obrigacao: o })}
-                                title="Editar obrigação"
+                                title={`Editar ${termo.um}`}
                                 aria-label={`Editar ${o.nome}`}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
@@ -510,7 +522,9 @@ export function Fechamento({ session, departamento }: { session: Session; depart
               <span>
                 {linhas.length} de {doMes.length} empresa(s) · {rotulo}
               </span>
-              <span>Passe o mouse sobre o nome da obrigação para editar ou mudar a coluna de lugar.</span>
+              <span>
+                Passe o mouse sobre o nome d{termo.artigo} {termo.um} para editar ou mudar a coluna de lugar.
+              </span>
             </div>
           </div>
         )}
@@ -538,3 +552,4 @@ export const FechamentoContabil = ({ session }: { session: Session }) => <Fecham
 export const FechamentoFiscal = ({ session }: { session: Session }) => <Fechamento session={session} departamento="fiscal" />
 export const FechamentoPessoal = ({ session }: { session: Session }) => <Fechamento session={session} departamento="pessoal" />
 export const FechamentoSocietario = ({ session }: { session: Session }) => <Fechamento session={session} departamento="societario" />
+export const ControleCadastros = ({ session }: { session: Session }) => <Fechamento session={session} departamento="cadastros" />

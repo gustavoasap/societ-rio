@@ -27,6 +27,8 @@ export interface Modulo {
   link: string | null
   status: StatusModulo
   ordem: number
+  /** Só os sócios (administradores) veem */
+  somente_socios?: boolean
 }
 
 export interface Acesso {

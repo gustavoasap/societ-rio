@@ -8,6 +8,7 @@ import {
   MESES_CURTOS,
   OPCOES_PADRAO,
   PERIODICIDADES,
+  TERMO,
   corDe,
   competenciaAtual,
   competenciaDe,
@@ -36,7 +37,8 @@ export function ObrigacaoForm({
   onSalvo: () => void
 }) {
   const [nome, setNome] = useState(obrigacao?.nome ?? nomeSugerido ?? '')
-  const [periodicidade, setPeriodicidade] = useState<Periodicidade>(obrigacao?.periodicidade ?? 'mensal')
+  // Cadastro em sistema é feito uma vez por empresa
+  const [periodicidade, setPeriodicidade] = useState<Periodicidade>(obrigacao?.periodicidade ?? (departamento === 'cadastros' ? 'unica' : 'mensal'))
   const [meses, setMeses] = useState<number[]>(obrigacao?.meses_entrega ?? [])
   const [limitarInicio, setLimitarInicio] = useState(!!obrigacao?.inicio)
   const [inicio, setInicio] = useState(obrigacao?.inicio ? mesDe(obrigacao.inicio) : competenciaAtual())
@@ -44,6 +46,7 @@ export function ObrigacaoForm({
   const [fim, setFim] = useState(obrigacao?.fim ? mesDe(obrigacao.fim) : competenciaAtual())
   const [opcoes, setOpcoes] = useState<Opcao[]>(() => (obrigacao?.opcoes ?? OPCOES_PADRAO).map((o) => ({ ...o })))
   const [erro, setErro] = useState<string | null>(null)
+  const termo = TERMO[departamento]
   const [salvando, setSalvando] = useState(false)
 
   const alterar = (i: number, campo: keyof Opcao, valor: string | boolean) => setOpcoes((l) => l.map((o, j) => (j === i ? { ...o, [campo]: valor } : o)))
@@ -61,7 +64,7 @@ export function ObrigacaoForm({
 
   async function salvar() {
     const limpas = opcoes.map((o) => ({ ...o, label: o.label.trim() })).filter((o) => o.label)
-    if (!nome.trim()) return setErro('Informe o nome da obrigação.')
+    if (!nome.trim()) return setErro(`Informe o nome d${termo.artigo} ${termo.um}.`)
     if (!limpas.length) return setErro('Crie pelo menos uma opção.')
     if (new Set(limpas.map((o) => o.label.toLowerCase())).size !== limpas.length) return setErro('Há opções com o mesmo nome.')
     if (periodicidade === 'anual' && !meses.length) return setErro('Marque o mês (ou os meses) do período de entrega.')
@@ -98,7 +101,7 @@ export function ObrigacaoForm({
     if (!obrigacao) return
     if (
       !confirm(
-        `Excluir a obrigação "${obrigacao.nome}" e TODAS as marcações dela em todos os meses?\n\nSe ela só deixou de existir a partir de um mês, use "Encerrar a partir de" para manter o histórico.`,
+        `Excluir ${termo.artigo} ${termo.um} "${obrigacao.nome}" e TODAS as marcações dela em todos os meses?\n\nSe ela só deixou de existir a partir de um mês, use "Encerrar a partir de" para manter o histórico.`,
       )
     )
       return
@@ -111,7 +114,7 @@ export function ObrigacaoForm({
 
   return (
     <Modal
-      title={obrigacao ? `Editar obrigação` : 'Nova obrigação'}
+      title={obrigacao ? `Editar ${termo.um}` : termo.novo}
       subtitulo="Defina o nome, a periodicidade e as opções da caixa de seleção"
       onClose={onClose}
       largura="max-w-3xl"
@@ -135,14 +138,14 @@ export function ObrigacaoForm({
     >
       {erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
       <div className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
-        <Field label="Nome da obrigação *">
+        <Field label={`Nome d${termo.artigo} ${termo.um} *`}>
           <input
             id="obrigacao-nome"
             className="input"
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             autoFocus
-            placeholder="Ex.: Conciliação bancária"
+            placeholder={departamento === 'cadastros' ? 'Ex.: Sistema contábil, banco, portal da prefeitura' : 'Ex.: Conciliação bancária'}
           />
         </Field>
         <div>
@@ -183,7 +186,9 @@ export function ObrigacaoForm({
                 )
               })}
             </div>
-            <p className="mt-1 text-xs text-slate-500">A obrigação aparece na visão por competência nesses meses e fica com uma marcação por ano.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {termo.artigo === 'a' ? 'A' : 'O'} {termo.um} aparece na visão por competência nesses meses e fica com uma marcação por ano.
+            </p>
           </div>
         )}
         <div className="flex flex-wrap items-end gap-4">

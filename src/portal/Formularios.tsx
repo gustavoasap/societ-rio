@@ -69,7 +69,12 @@ export function DepartamentoForm({ inicial, onClose, onSalvo }: { inicial: Depar
   }
 
   return (
-    <Modal title={inicial ? 'Editar departamento' : 'Novo departamento'} onClose={onClose} largura="max-w-2xl" footer={<Rodape salvando={salvando} onClose={onClose} form="form-dep" />}>
+    <Modal
+      title={inicial ? 'Editar departamento' : 'Novo departamento'}
+      onClose={onClose}
+      largura="max-w-2xl"
+      footer={<Rodape salvando={salvando} onClose={onClose} form="form-dep" />}
+    >
       <form id="form-dep" onSubmit={salvar} className="space-y-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
         <div className="grid gap-4 sm:grid-cols-[1fr_6.875rem]">
           <Field label="Nome">
@@ -129,6 +134,7 @@ export function ModuloForm({
   const [icone, setIcone] = useState(inicial?.icone ?? 'LayoutGrid')
   const [link, setLink] = useState(inicial?.link ?? '')
   const [status, setStatus] = useState<StatusModulo>(inicial?.status ?? 'em_breve')
+  const [socios, setSocios] = useState(!!inicial?.somente_socios)
   const [ordem, setOrdem] = useState(String(inicial?.ordem ?? 10))
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
@@ -140,17 +146,29 @@ export function ModuloForm({
     if (l && !l.startsWith('/') && !/^https?:\/\//i.test(l)) return setErro('O link deve começar com / (página do portal) ou com https:// (outro site).')
     if (status === 'disponivel' && !l) return setErro('Para ficar disponível, a ferramenta precisa de um link.')
     setSalvando(true)
-    const dados = { departamento_id: departamentoId, nome: nome.trim(), descricao: descricao.trim() || null, icone, link: l || null, status, ordem: Number(ordem) || 0 }
-    const { error } = inicial
-      ? await supabase.from('portal_modulos').update(dados).eq('id', inicial.id)
-      : await supabase.from('portal_modulos').insert(dados)
+    const dados = {
+      departamento_id: departamentoId,
+      nome: nome.trim(),
+      descricao: descricao.trim() || null,
+      icone,
+      link: l || null,
+      status,
+      ordem: Number(ordem) || 0,
+      somente_socios: socios,
+    }
+    const { error } = inicial ? await supabase.from('portal_modulos').update(dados).eq('id', inicial.id) : await supabase.from('portal_modulos').insert(dados)
     setSalvando(false)
     if (error) return setErro(error.message)
     onSalvo()
   }
 
   return (
-    <Modal title={inicial ? 'Editar ferramenta' : 'Nova ferramenta'} onClose={onClose} largura="max-w-2xl" footer={<Rodape salvando={salvando} onClose={onClose} form="form-mod" />}>
+    <Modal
+      title={inicial ? 'Editar ferramenta' : 'Nova ferramenta'}
+      onClose={onClose}
+      largura="max-w-2xl"
+      footer={<Rodape salvando={salvando} onClose={onClose} form="form-mod" />}
+    >
       <form id="form-mod" onSubmit={salvar} className="space-y-4 rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Departamento">
@@ -168,6 +186,10 @@ export function ModuloForm({
             <input className="input" type="number" value={ordem} onChange={(e) => setOrdem(e.target.value)} />
           </Field>
         </div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={socios} onChange={(e) => setSocios(e.target.checked)} />
+          Só os sócios (administradores) podem ver e abrir esta ferramenta
+        </label>
         <Field label="Descrição">
           <input className="input" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Uma frase sobre o que a ferramenta faz" />
         </Field>

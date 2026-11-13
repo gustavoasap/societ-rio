@@ -11,7 +11,7 @@ import { Caucao } from '../societario/caucao/Caucao'
 import { Clientes } from '../administrativo/Clientes'
 import { Crm } from '../administrativo/crm/Crm'
 import { Honorarios } from '../administrativo/honorarios/Honorarios'
-import { FechamentoContabil, FechamentoFiscal, FechamentoPessoal, FechamentoSocietario } from '../fechamento/Fechamento'
+import { ControleCadastros, FechamentoContabil, FechamentoFiscal, FechamentoPessoal, FechamentoSocietario } from '../fechamento/Fechamento'
 import { Tributario } from '../tributario/components/Tributario'
 import { Admin } from './Admin'
 import { DepartamentoForm, ModuloForm } from './Formularios'
@@ -30,6 +30,7 @@ const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> 
   '/administrativo/clientes': Clientes,
   '/administrativo/crm': Crm,
   '/administrativo/honorarios': Honorarios,
+  '/administrativo/cadastros': ControleCadastros,
   '/contabil/fechamento': FechamentoContabil,
   '/fiscal/fechamento': FechamentoFiscal,
   '/pessoal/fechamento': FechamentoPessoal,
@@ -54,7 +55,8 @@ export function Portal({ session }: { session: Session }) {
   const admin = !!perfil?.admin
   const Ferramenta = FERRAMENTAS_INTERNAS[rota]
   if (Ferramenta) {
-    const liberada = modulos.some((m) => m.link === rota && (m.status === 'disponivel' || admin))
+    // O banco já esconde dos demais as ferramentas só dos sócios; a checagem aqui é uma segunda trava
+    const liberada = modulos.some((m) => m.link === rota && (m.status === 'disponivel' || admin) && (!m.somente_socios || admin))
     if (liberada) return <Ferramenta session={session} />
   }
 

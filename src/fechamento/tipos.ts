@@ -1,10 +1,29 @@
-export type Departamento = 'contabil' | 'fiscal' | 'pessoal' | 'societario'
+export type Departamento = 'contabil' | 'fiscal' | 'pessoal' | 'societario' | 'cadastros'
 
 export const NOME_DEPARTAMENTO: Record<Departamento, string> = {
   contabil: 'Contábil',
   fiscal: 'Fiscal',
   pessoal: 'Departamento Pessoal',
   societario: 'Societário',
+  cadastros: 'Administrativo',
+}
+
+/** Página do departamento (o Controle de Cadastros fica no Administrativo e só os sócios veem). */
+export const SLUG_DEPARTAMENTO: Record<Departamento, string> = {
+  contabil: 'contabil',
+  fiscal: 'fiscal',
+  pessoal: 'pessoal',
+  societario: 'societario',
+  cadastros: 'administrativo',
+}
+
+/** Como cada controle chama as colunas. */
+export const TERMO: Record<Departamento, { um: string; uns: string; novo: string; artigo: 'a' | 'o' }> = {
+  contabil: { um: 'obrigação', uns: 'obrigações', novo: 'Nova obrigação', artigo: 'a' },
+  fiscal: { um: 'obrigação', uns: 'obrigações', novo: 'Nova obrigação', artigo: 'a' },
+  pessoal: { um: 'obrigação', uns: 'obrigações', novo: 'Nova obrigação', artigo: 'a' },
+  societario: { um: 'tarefa', uns: 'tarefas', novo: 'Nova tarefa', artigo: 'a' },
+  cadastros: { um: 'sistema', uns: 'sistemas', novo: 'Novo sistema', artigo: 'o' },
 }
 
 /** Nome do controle em cada departamento (mesmo funcionamento em todos). */
@@ -13,6 +32,7 @@ export const TITULO_CONTROLE: Record<Departamento, string> = {
   fiscal: 'Controle de Fechamento Mensal',
   pessoal: 'Controle de Fechamento Mensal',
   societario: 'Controle de Tarefas Mensal',
+  cadastros: 'Controle de Cadastros',
 }
 
 export type Cor = 'vermelho' | 'laranja' | 'amarelo' | 'verde' | 'azul' | 'roxo' | 'cinza'
@@ -182,5 +202,6 @@ export const SUGESTOES: Record<Departamento, string[]> = {
   contabil: ['Conciliação bancária', 'Lançamentos contábeis', 'Conciliação de contas', 'Balancete', 'Envio de relatórios'],
   fiscal: ['Importação de notas', 'Apuração', 'DAS / Guias', 'Obrigações acessórias', 'Envio de guias ao cliente'],
   pessoal: ['Folha de pagamento', 'Pró-labore', 'eSocial', 'FGTS Digital', 'DCTFWeb', 'Envio de guias ao cliente'],
+  cadastros: ['Sistema contábil', 'Sistema fiscal', 'Folha de pagamento', 'Banco / extrato', 'Portal do cliente'],
   societario: ['Alvarás e licenças', 'Certidões negativas', 'Vencimento do certificado digital', 'Vencimento de procurações', 'Alterações contratuais'],
 }
