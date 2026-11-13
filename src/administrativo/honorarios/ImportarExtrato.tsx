@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { formatarData } from '../../lib/format'
 import { baixarArquivo, gerarXlsxAbas, TIPO_XLSX } from '../../lib/planilha'
 import { Modal } from '../../components/ui'
+import { BuscaCliente } from '../../components/BuscaCliente'
 import { chaveMensal, hojeIso, type ClienteHon, type Linha } from './calculo'
 import { decodificar, lerExtrato, sugerir, vencidosSemCredito, type ClienteRef, type Confianca, type Lancamento, type Nivel } from './extrato'
 import { lerPdf } from './extratoPdf'
@@ -77,14 +78,7 @@ export function ImportarExtrato({
     for (const l of [...abertos].sort((a, b) => a.competencia.localeCompare(b.competencia))) m.set(l.cliente.id, [...(m.get(l.cliente.id) ?? []), l])
     return m
   }, [abertos])
-  const opcoesClientes = useMemo(
-    () =>
-      [...abertosPorCliente.values()]
-        .map((ls) => ls[0].cliente)
-        .sort((a, b) => a.razao_social.localeCompare(b.razao_social))
-        .map((c) => ({ value: c.id, label: `${String(c.codigo).padStart(3, '0')} ${c.razao_social}` })),
-    [abertosPorCliente],
-  )
+  const clientesComAberto = useMemo(() => [...abertosPorCliente.values()].map((ls) => ls[0].cliente), [abertosPorCliente])
   /** Honorário do cliente no mês do crédito; se já estiver pago, o mais antigo em aberto. */
   const linhaParaCredito = (clienteId: string, data: string) => {
     const ls = abertosPorCliente.get(clienteId) ?? []
@@ -329,11 +323,13 @@ export function ImportarExtrato({
                             </div>
                           )}
                           <div className="flex flex-wrap gap-1.5">
-                            <select
-                              className="input min-w-56 flex-1 py-1.5 text-xs"
+                            <BuscaCliente
+                              className="min-w-64 flex-1"
+                              itens={clientesComAberto}
                               value={l?.cliente.id ?? ''}
-                              onChange={(e) => {
-                                const linha = e.target.value ? linhaParaCredito(e.target.value, it.lancamento.data) : undefined
+                              vazio="Não é honorário / não marcar"
+                              onChange={(id) => {
+                                const linha = id ? linhaParaCredito(id, it.lancamento.data) : undefined
                                 const chave = linha ? chaveMensal(linha.cliente.id, linha.competencia) : ''
                                 alterar(i, {
                                   chave,
@@ -344,14 +340,7 @@ export function ImportarExtrato({
                                   tarifa: tarifaManual(chave, it.lancamento.valor),
                                 })
                               }}
-                            >
-                              <option value="">— Não é honorário / não marcar —</option>
-                              {opcoesClientes.map((o) => (
-                                <option key={o.value} value={o.value}>
-                                  {o.label}
-                                </option>
-                              ))}
-                            </select>
+                            />
                             {l && (
                               <select
                                 className="input w-auto py-1.5 text-xs"

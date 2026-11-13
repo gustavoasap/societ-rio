@@ -5,6 +5,7 @@ import { formatarData } from '../../lib/format'
 import { baixarArquivo, gerarXlsx, TIPO_XLSX } from '../../lib/planilha'
 import { CampoMes } from '../../components/CampoData'
 import { Field, Modal } from '../../components/ui'
+import { BuscaCliente } from '../../components/BuscaCliente'
 import { SITUACOES, competenciaDe, fimPeriodo, mesDe, mesHoje, type ClienteHon, type Linha, type PeriodoParceiro } from './calculo'
 import { mesCurto, nomeMes, valorTexto } from './util'
 
@@ -222,17 +223,7 @@ export function PeriodosParceiro({
       {erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
       <div className="grid gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70 sm:grid-cols-6">
         <Field label="Cliente *" className="sm:col-span-3">
-          <select className="input" value={cliente} onChange={(e) => setCliente(e.target.value)}>
-            <option value="">Escolha o cliente</option>
-            {[...clientes]
-              .filter((c) => c.status !== 'encerrado')
-              .sort((a, b) => a.codigo - b.codigo)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {cod(c.codigo)} - {c.razao_social}
-                </option>
-              ))}
-          </select>
+          <BuscaCliente itens={clientes.filter((c) => c.status !== 'encerrado')} value={cliente} onChange={setCliente} />
         </Field>
         <Field label="Parceiro responsável *" className="sm:col-span-3">
           <select className="input" value={parceiro} onChange={(e) => setParceiro(e.target.value)}>
