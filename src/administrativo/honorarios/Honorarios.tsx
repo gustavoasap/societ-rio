@@ -260,6 +260,24 @@ export function Honorarios({ session }: { session: Session }) {
   const pct = resumo.previsto ? Math.round((resumo.recebido / resumo.previsto) * 100) : 0
   const selecionadas = linhas.filter((l) => selecao.has(l.cliente.id) && l.aberto > 0 && !l.mensal?.recebido_em)
 
+  /** Mês "sem mensalidade": valor zerado, ninguém paga (nem parceiro, nem cliente) e não entra em inadimplência. */
+  const semMensalidade = (l: Linha) => l.valor === 0 && !l.mensal?.recebido_em && !!l.mensal?.motivo_ajuste?.startsWith('Sem mensalidade')
+
+  async function alternarSemMensalidade(l: Linha) {
+    const sem = !semMensalidade(l)
+    const quem = l.parceiro ? `O parceiro ${l.parceiro.nome} não paga e o cliente não é cobrado.` : 'O cliente não é cobrado.'
+    if (sem && !confirm(`Não considerar a mensalidade de ${l.cliente.razao_social} em ${nomeMes(l.competencia)}?\n${quem}`)) return
+    const { error } = await salvarMensal(
+      l.cliente.id,
+      l.competencia,
+      sem
+        ? { valor_ajustado: 0, motivo_ajuste: l.parceiro ? `Sem mensalidade - ${l.parceiro.nome}` : 'Sem mensalidade no mês' }
+        : { valor_ajustado: null, motivo_ajuste: null },
+    )
+    if (error) setErro(error.message)
+    carregar()
+  }
+
   async function desfazer(l: Linha) {
     if (!confirm(`Desfazer o recebimento de ${l.cliente.razao_social} (${nomeMes(l.competencia)})?`)) return
     const { error } = await salvarMensal(l.cliente.id, l.competencia, {
@@ -625,6 +643,7 @@ export function Honorarios({ session }: { session: Session }) {
                         />
                       </th>
                       <th className="px-2 py-3">Cliente</th>
+                      <th className="w-24 px-2 py-3">Abertura</th>
                       <th className="px-2 py-3 text-right">Honorário</th>
                       <th className="px-2 py-3">Vencimento</th>
                       <th className="px-2 py-3">Situação</th>
@@ -654,21 +673,19 @@ export function Honorarios({ session }: { session: Session }) {
                               aria-label={`Selecionar ${l.cliente.razao_social}`}
                             />
                           </td>
-                          <td className="px-2 py-2.5">
+                          <td className="min-w-60 px-2 py-2.5">
                             <div className="flex items-baseline gap-2">
                               <span className="font-mono text-xs text-slate-400">{String(l.cliente.codigo).padStart(3, '0')}</span>
                               <span className="font-semibold text-slate-800">{l.cliente.razao_social}</span>
-                              {l.cliente.data_abertura && (
-                                <span className="text-[0.6875rem] whitespace-nowrap text-slate-500">
-                                  abertura <b className="font-bold text-slate-800">{formatarData(l.cliente.data_abertura)}</b>
-                                </span>
-                              )}
                             </div>
                             {l.parceiro && (
                               <span className="mt-0.5 ml-9 inline-block rounded-full bg-violet-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-violet-700 ring-1 ring-violet-200">
                                 Responsabilidade do parceiro {l.parceiro.nome} · {l.parceiro.parcela}/{l.parceiro.total}
                               </span>
                             )}
+                          </td>
+                          <td className="px-2 py-2.5 font-bold whitespace-nowrap text-slate-800">
+                            {l.cliente.data_abertura ? formatarData(l.cliente.data_abertura) : <span className="font-normal text-slate-300">—</span>}
                           </td>
                           <td className="px-2 py-2.5 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
@@ -683,7 +700,7 @@ export function Honorarios({ session }: { session: Session }) {
                               </button>
                             </div>
                             {l.ajustado && (
-                              <div className="text-[0.6875rem] text-violet-600" title={l.mensal?.motivo_ajuste ?? ''}>
+                              <div className="ml-auto max-w-44 text-[0.6875rem] whitespace-normal text-violet-600" title={l.mensal?.motivo_ajuste ?? ''}>
                                 base {l.base !== null ? valorTexto(l.base) : '—'} · {l.mensal?.motivo_ajuste}
                               </div>
                             )}
@@ -702,7 +719,7 @@ export function Honorarios({ session }: { session: Session }) {
                             <span
                               className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ${SITUACOES[l.situacao].pill}`}
                             >
-                              {SITUACOES[l.situacao].label}
+                              {semMensalidade(l) ? 'Sem mensalidade' : SITUACOES[l.situacao].label}
                             </span>
                           </td>
                           <td className="px-2 py-2.5 text-xs whitespace-nowrap text-slate-600">
@@ -736,6 +753,20 @@ export function Honorarios({ session }: { session: Session }) {
                             >
                               <Handshake className="h-3.5 w-3.5" />
                             </button>
+                            {!l.mensal?.recebido_em && (
+                              <label
+                                className={`ml-1 inline-flex cursor-pointer items-center gap-1 rounded-lg px-1.5 py-1 align-middle text-[0.6875rem] font-semibold ring-1 ${semMensalidade(l) ? 'bg-slate-800 text-white ring-slate-800' : 'text-slate-500 ring-slate-200 hover:bg-slate-50'}`}
+                                title="Neste mês a mensalidade não é considerada: ninguém paga e não entra em inadimplência"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="h-3.5 w-3.5 accent-slate-800"
+                                  checked={semMensalidade(l)}
+                                  onChange={() => alternarSemMensalidade(l)}
+                                />
+                                Sem mensalidade
+                              </label>
+                            )}
                           </td>
                         </tr>
                       )
@@ -748,7 +779,10 @@ export function Honorarios({ session }: { session: Session }) {
                 <span>
                   {linhas.length} de {doMes.length} cliente(s) · {nomeMes(mes)}
                 </span>
-                <span>Clientes inativos não entram no controle. Use o lápis para alterar o valor de um mês (serviço extra, negociação).</span>
+                <span>
+                  Clientes inativos não entram no controle. Use o lápis para alterar o valor de um mês (serviço extra, negociação) e marque “Sem mensalidade”
+                  quando o mês não deve ser considerado.
+                </span>
               </div>
             </div>
           </>
