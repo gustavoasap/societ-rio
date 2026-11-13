@@ -115,7 +115,14 @@ export function Fechamento({ session, departamento }: { session: Session; depart
   }, [carregarMes])
 
   const colunas = useMemo(() => obrigacoes.filter((o) => (visao === 'mes' ? obrigacaoNoMes(o, mes) : obrigacaoNaGeral(o, ano))), [obrigacoes, visao, mes, ano])
-  const doMes = useMemo(() => empresas.filter((e) => (visao === 'mes' ? empresaNoMes(e, mes) : empresaNoAno(e, ano))), [empresas, visao, mes, ano])
+  // Controle de Cadastros e Visão geral: só empresas ativas. Por competência: até a competência da baixa.
+  const doMes = useMemo(
+    () =>
+      empresas.filter((e) =>
+        departamento === 'cadastros' && e.status === 'encerrado' ? false : visao === 'mes' ? empresaNoMes(e, mes) : empresaNoAno(e, ano),
+      ),
+    [empresas, visao, mes, ano, departamento],
+  )
 
   const valor = useCallback((o: Obrigacao, clienteId: string) => status.get(chave(o.id, clienteId, competenciaStatus(o, ref))), [status, ref])
   const feito = useCallback((o: Obrigacao, clienteId: string) => opcaoAtual(o, valor(o, clienteId)).concluido, [valor])
@@ -589,7 +596,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
       {marcandoPlanilha && (
         <ImportarMarcacoes
           obrigacoes={obrigacoes}
-          empresas={empresas}
+          empresas={empresas.filter((e) => e.status !== 'encerrado')}
           referencia={ref}
           onClose={() => setMarcandoPlanilha(false)}
           onSalvo={() => carregarMes()}

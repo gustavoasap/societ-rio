@@ -145,9 +145,9 @@ export function empresaNoMes(e: Pick<EmpresaFech, 'status' | 'data_abertura' | '
   return true
 }
 
-/** Empresa ativa em algum mês do ano (visão geral). */
+/** Visão geral: só empresas ativas (inativas não aparecem), já abertas até o fim do ano. */
 export function empresaNoAno(e: Pick<EmpresaFech, 'status' | 'data_abertura' | 'data_encerramento'>, ano: string) {
-  return empresaNoMes(e, `${ano}-12`) || (e.status === 'encerrado' && !!e.data_encerramento && e.data_encerramento.slice(0, 4) === ano)
+  return e.status !== 'encerrado' && empresaNoMes(e, `${ano}-12`)
 }
 
 const vigente = (o: Pick<Obrigacao, 'inicio' | 'fim'>, mes: string) => (!o.inicio || mesDe(o.inicio) <= mes) && (!o.fim || mesDe(o.fim) >= mes)

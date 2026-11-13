@@ -77,7 +77,9 @@ describe('periodicidade', () => {
     const e = { status: 'encerrado' as const, data_abertura: '2020-01-10', data_encerramento: '2026-06-15' }
     expect(empresaNoMes(e, '2026-06')).toBe(true)
     expect(empresaNoMes(e, '2026-07')).toBe(false)
-    expect(empresaNoAno(e, '2026')).toBe(true)
+    // Visão geral não mostra empresas inativas
+    expect(empresaNoAno(e, '2026')).toBe(false)
+    expect(empresaNoAno({ ...e, status: 'assinado' as const, data_encerramento: null }, '2026')).toBe(true)
     expect(empresaNoAno(e, '2027')).toBe(false)
   })
   it('texto dos meses', () => {
