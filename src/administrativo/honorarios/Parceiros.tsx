@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { FileSpreadsheet, Plus, Trash2, Wallet } from 'lucide-react'
+import { Ban, FileSpreadsheet, Plus, RotateCcw, Trash2, Wallet } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { formatarData } from '../../lib/format'
 import { baixarArquivo, gerarXlsx, TIPO_XLSX } from '../../lib/planilha'
@@ -7,7 +7,7 @@ import { CampoMes } from '../../components/CampoData'
 import { Field, Modal } from '../../components/ui'
 import { BuscaCliente } from '../../components/BuscaCliente'
 import { SITUACOES, competenciaDe, fimPeriodo, mesDe, mesHoje, type ClienteHon, type Linha, type PeriodoParceiro } from './calculo'
-import { mesCurto, nomeMes, valorTexto } from './util'
+import { mesCurto, nomeMes, salvarMensal, valorTexto } from './util'
 
 const formatarCnpj = (c: string | null) => (c && c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : (c ?? ''))
 const cod = (n: number) => String(n).padStart(3, '0')
@@ -19,17 +19,53 @@ export function MensalidadesParceiro({
   linhas,
   onClose,
   onReceber,
+  onAlterado,
 }: {
   nome: string
   mes: string
   linhas: Linha[]
   onClose: () => void
   onReceber: (l: Linha[]) => void
+  /** Depois de marcar/desfazer "sem mensalidade", recarrega o controle */
+  onAlterado: () => void
 }) {
   const ord = [...linhas].sort((a, b) => a.cliente.codigo - b.cliente.codigo)
   const total = ord.reduce((s, l) => s + l.valor, 0)
   const recebido = ord.reduce((s, l) => s + l.recebido, 0)
   const pendentes = ord.filter((l) => l.aberto > 0 && !l.mensal?.recebido_em)
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+  const semMensalidade = (l: Linha) => l.valor === 0 && !l.mensal?.recebido_em
+  // Só dá para zerar o mês de quem ainda não pagou
+  const zeraveis = ord.filter((l) => !l.mensal?.recebido_em && l.valor > 0)
+  const zerados = ord.filter(semMensalidade)
+
+  async function marcarSem(ls: Linha[], sem: boolean) {
+    if (!ls.length) return
+    if (
+      sem &&
+      ls.length > 1 &&
+      !confirm(
+        `Marcar ${nomeMes(mes)} como SEM MENSALIDADE para ${ls.length} cliente(s) da ${nome}? O parceiro não paga e os clientes não são cobrados neste mês.`,
+      )
+    )
+      return
+    setSalvando(true)
+    setErro('')
+    for (const l of ls) {
+      const { error } = await salvarMensal(
+        l.cliente.id,
+        mes,
+        sem ? { valor_ajustado: 0, motivo_ajuste: `Sem mensalidade - ${nome}` } : { valor_ajustado: null, motivo_ajuste: null },
+      )
+      if (error) {
+        setErro(`Não foi possível salvar ${l.cliente.razao_social}: ${error.message}`)
+        break
+      }
+    }
+    setSalvando(false)
+    onAlterado()
+  }
 
   function exportar() {
     const arq = gerarXlsx({
@@ -38,6 +74,7 @@ export function MensalidadesParceiro({
         { titulo: 'Cód.', largura: 7 },
         { titulo: 'Razão social', largura: 42 },
         { titulo: 'CNPJ', largura: 20 },
+        { titulo: 'Data de abertura', tipo: 'data', largura: 14 },
         { titulo: 'Parcela', largura: 9 },
         { titulo: 'Valor', tipo: 'moeda', largura: 14 },
         { titulo: 'Situação', largura: 16 },
@@ -46,11 +83,12 @@ export function MensalidadesParceiro({
         cod(l.cliente.codigo),
         l.cliente.razao_social,
         formatarCnpj(l.cliente.cnpj),
+        l.cliente.data_abertura ?? '',
         `${l.parceiro!.parcela}/${l.parceiro!.total}`,
         l.valor,
-        SITUACOES[l.situacao].label,
+        semMensalidade(l) ? 'Sem mensalidade' : SITUACOES[l.situacao].label,
       ]),
-      total: ['', `TOTAL (${ord.length} clientes)`, '', '', total, ''],
+      total: ['', `TOTAL (${ord.length} clientes)`, '', '', '', total, ''],
     })
     baixarArquivo(`mensalidades-${nome.toLowerCase().replace(/\W+/g, '-')}-${mes}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
   }
@@ -63,10 +101,21 @@ export function MensalidadesParceiro({
       largura="max-w-4xl"
       footer={
         <>
-          <button className="btn-secondary mr-auto" onClick={exportar}>
+          <button className="btn-secondary" onClick={exportar}>
             <FileSpreadsheet className="h-4 w-4" />
             Excel para o boleto
           </button>
+          {zeraveis.length > 0 ? (
+            <button className="btn-secondary mr-auto text-slate-700" disabled={salvando} onClick={() => marcarSem(zeraveis, true)}>
+              <Ban className="h-4 w-4" />
+              Sem mensalidade neste mês
+            </button>
+          ) : (
+            <button className="btn-secondary mr-auto" disabled={salvando || !zerados.length} onClick={() => marcarSem(zerados, false)}>
+              <RotateCcw className="h-4 w-4" />
+              Voltar a cobrar este mês
+            </button>
+          )}
           <button className="btn-secondary" onClick={onClose}>
             Fechar
           </button>
@@ -79,6 +128,15 @@ export function MensalidadesParceiro({
         </>
       }
     >
+      {erro && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
+      {zerados.length > 0 && (
+        <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
+          <b>
+            {zerados.length} cliente(s) sem mensalidade em {nomeMes(mes)}
+          </b>
+          : a {nome} não paga e o cliente não é cobrado neste mês (não entra em inadimplência).
+        </p>
+      )}
       <div className="grid grid-cols-3 gap-3">
         {[
           { r: 'Total a cobrar do parceiro', v: valorTexto(total), c: 'text-slate-900' },
@@ -97,9 +155,11 @@ export function MensalidadesParceiro({
             <tr className="border-b border-slate-100">
               <th className="py-2.5 pr-2 pl-4">Cliente</th>
               <th className="px-2 py-2.5">CNPJ</th>
+              <th className="px-2 py-2.5">Abertura</th>
               <th className="px-2 py-2.5 text-center">Parcela</th>
               <th className="px-2 py-2.5 text-right">Valor</th>
               <th className="py-2.5 pr-4 pl-2">Situação</th>
+              <th className="py-2.5 pr-4 pl-2" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -110,6 +170,9 @@ export function MensalidadesParceiro({
                   <span className="font-semibold text-slate-800">{l.cliente.razao_social}</span>
                 </td>
                 <td className="px-2 py-2 font-mono text-xs text-slate-500">{formatarCnpj(l.cliente.cnpj)}</td>
+                <td className="px-2 py-2 font-bold whitespace-nowrap text-slate-800">
+                  {l.cliente.data_abertura ? formatarData(l.cliente.data_abertura) : '—'}
+                </td>
                 <td className="px-2 py-2 text-center font-bold text-violet-700 tabular-nums">
                   {l.parceiro!.parcela}/{l.parceiro!.total}
                   {l.parceiro!.parcela === l.parceiro!.total && <div className="text-[0.625rem] font-semibold text-violet-500">última</div>}
@@ -117,20 +180,45 @@ export function MensalidadesParceiro({
                 <td className="px-2 py-2 text-right font-semibold whitespace-nowrap tabular-nums">{valorTexto(l.valor)}</td>
                 <td className="py-2 pr-4 pl-2">
                   <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap ${SITUACOES[l.situacao].pill}`}>
-                    {SITUACOES[l.situacao].label}
+                    {semMensalidade(l) ? 'Sem mensalidade' : SITUACOES[l.situacao].label}
                   </span>
                   {l.mensal?.recebido_em && <span className="ml-1 text-xs text-slate-500">{formatarData(l.mensal.recebido_em)}</span>}
+                </td>
+                <td className="py-2 pr-4 pl-2 text-right whitespace-nowrap">
+                  {semMensalidade(l) ? (
+                    <button
+                      className="btn-secondary px-2.5 py-1 text-xs"
+                      disabled={salvando}
+                      onClick={() => marcarSem([l], false)}
+                      title="Voltar a cobrar este mês"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Desfazer
+                    </button>
+                  ) : (
+                    !l.mensal?.recebido_em && (
+                      <button
+                        className="btn-secondary px-2.5 py-1 text-xs"
+                        disabled={salvando}
+                        onClick={() => marcarSem([l], true)}
+                        title="Neste mês o parceiro não paga e o cliente não é cobrado"
+                      >
+                        <Ban className="h-3.5 w-3.5" />
+                        Sem mensalidade
+                      </button>
+                    )
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t border-slate-200 font-bold">
-              <td className="py-2.5 pl-4" colSpan={3}>
+              <td className="py-2.5 pl-4" colSpan={4}>
                 Total ({ord.length} clientes)
               </td>
               <td className="px-2 py-2.5 text-right tabular-nums">{valorTexto(total)}</td>
-              <td />
+              <td colSpan={2} />
             </tr>
           </tfoot>
         </table>
@@ -224,6 +312,14 @@ export function PeriodosParceiro({
       <div className="grid gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70 sm:grid-cols-6">
         <Field label="Cliente *" className="sm:col-span-3">
           <BuscaCliente itens={clientes.filter((c) => c.status !== 'encerrado')} value={cliente} onChange={setCliente} />
+          {porId.get(cliente) && (
+            <span className="mt-1 block text-xs text-slate-500">
+              Data de abertura:{' '}
+              <b className="font-bold text-slate-800">
+                {porId.get(cliente)!.data_abertura ? formatarData(porId.get(cliente)!.data_abertura!) : 'não informada'}
+              </b>
+            </span>
+          )}
         </Field>
         <Field label="Parceiro responsável *" className="sm:col-span-3">
           <select className="input" value={parceiro} onChange={(e) => setParceiro(e.target.value)}>
@@ -270,6 +366,7 @@ export function PeriodosParceiro({
             <thead className="sticky top-0 bg-white text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
               <tr className="border-b border-slate-100">
                 <th className="py-2 pr-2 pl-4">Cliente</th>
+                <th className="px-2 py-2">Abertura</th>
                 <th className="px-2 py-2">Parceiro</th>
                 <th className="px-2 py-2">Período</th>
                 <th className="px-2 py-2">Agora</th>
@@ -292,6 +389,7 @@ export function PeriodosParceiro({
                       <span className="font-semibold text-slate-800">{c?.razao_social ?? 'Cliente inativo'}</span>
                       {p.observacao && <div className="text-xs text-slate-400">{p.observacao}</div>}
                     </td>
+                    <td className="px-2 py-2 font-bold whitespace-nowrap text-slate-800">{c?.data_abertura ? formatarData(c.data_abertura) : '—'}</td>
                     <td className="px-2 py-2 font-semibold text-violet-700">{nomeParceiro.get(p.parceiro_id)}</td>
                     <td className="px-2 py-2 whitespace-nowrap text-slate-600">
                       {mesCurto(ini)} a {mesCurto(f)} · {p.meses} meses

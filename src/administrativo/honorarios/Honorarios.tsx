@@ -521,7 +521,7 @@ export function Honorarios({ session }: { session: Session }) {
                       <span className="block text-sm font-bold text-violet-800">Mensalidades - {g.nome}</span>
                       <span className="block text-xs text-slate-500">
                         {g.linhas.length} cliente(s) · {valorTexto(g.total)}
-                        {g.aberto > 0 ? ` · em aberto ${valorTexto(g.aberto)}` : ' · recebido'}
+                        {g.total === 0 ? ' · sem mensalidade no mês' : g.aberto > 0 ? ` · em aberto ${valorTexto(g.aberto)}` : ' · recebido'}
                       </span>
                     </span>
                   </button>
@@ -939,6 +939,7 @@ export function Honorarios({ session }: { session: Session }) {
           linhas={porParceiro.find((g) => g.id === verParceiro)!.linhas}
           onClose={() => setVerParceiro(null)}
           onReceber={(ls) => setRecebendo(ls)}
+          onAlterado={carregar}
         />
       )}
       {recebendo && (
