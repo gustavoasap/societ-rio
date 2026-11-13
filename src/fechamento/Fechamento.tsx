@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ClipboardList,
   FileSpreadsheet,
+  FileUp,
   FolderOpen,
   House,
   LayoutGrid,
@@ -23,6 +24,9 @@ import { CampoMes } from '../components/CampoData'
 import { formatarData } from '../lib/format'
 import { Select } from '../components/ui'
 import { ObrigacaoForm } from './ObrigacaoForm'
+import { ImportarMarcacoes } from './ImportarMarcacoes'
+import { gerarXlsxTexto } from '../lib/planilhaSimples'
+import { CABECALHO_CONTA_AZUL, LARGURAS_CONTA_AZUL, linhaContaAzul, type ClienteContaAzul } from './contaAzul'
 import {
   NOME_DEPARTAMENTO,
   TITULO_CONTROLE,
@@ -66,6 +70,7 @@ export function Fechamento({ session, departamento }: { session: Session; depart
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
+  const [marcandoPlanilha, setMarcandoPlanilha] = useState(false)
   const [filtro, setFiltro] = useState('')
   const [editando, setEditando] = useState<{ obrigacao: Obrigacao | null; nome?: string } | null>(null)
 
@@ -164,6 +169,35 @@ export function Fechamento({ session, departamento }: { session: Session; depart
     const r = await Promise.all(reordenada.map((x) => supabase.from('fech_obrigacoes').update({ ordem: x.ordem }).eq('id', x.id)))
     const falha = r.find((x) => x.error)
     if (falha?.error) setErro(falha.error.message)
+  }
+
+  const obContaAzul = obrigacoes.find((o) => /conta\s*azul/i.test(o.nome))
+
+  /** Planilha de importação do Conta Azul com as empresas ainda pendentes em "Conta Azul" (dados da Base de Clientes). */
+  async function exportarContaAzul() {
+    if (!obContaAzul) return
+    setErro(null)
+    const comp = competenciaStatus(obContaAzul, ref)
+    const { data: st, error: e1 } = await supabase.from('fech_status').select('cliente_id, valor').eq('obrigacao_id', obContaAzul.id).eq('competencia', comp)
+    if (e1) return setErro(e1.message)
+    const marcados = new Map(((st as { cliente_id: string; valor: string }[]) ?? []).map((x) => [x.cliente_id, x.valor]))
+    const pendente = obContaAzul.opcoes[0]?.id
+    const ids = doMes.filter((e) => opcaoAtual(obContaAzul, marcados.get(e.id)).id === pendente).map((e) => e.id)
+    if (!ids.length) return setErro('Nenhuma empresa pendente no Conta Azul.')
+    const dados: ClienteContaAzul[] = []
+    for (let i = 0; i < ids.length; i += 150) {
+      const { data, error } = await supabase
+        .from('adm_clientes')
+        .select('codigo, razao_social, cnpj, email, telefone, endereco, inscricao, tipo_inscricao, data_abertura')
+        .in('id', ids.slice(i, i + 150))
+      if (error) return setErro(error.message)
+      dados.push(...((data as ClienteContaAzul[]) ?? []))
+    }
+    const d = new Date()
+    const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const linhasCa = dados.sort((a, b) => a.razao_social.localeCompare(b.razao_social)).map((c) => linhaContaAzul(c, hoje))
+    const arq = gerarXlsxTexto(`pessoas-clientes-${hoje}`, CABECALHO_CONTA_AZUL, linhasCa, LARGURAS_CONTA_AZUL)
+    baixarArquivo(`pessoas-clientes-${hoje}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
   }
 
   function exportar() {
@@ -333,6 +367,28 @@ export function Fechamento({ session, departamento }: { session: Session; depart
             <FileSpreadsheet className="h-4 w-4" />
             Excel
           </button>
+          <button
+            className="btn-secondary"
+            onClick={() => setMarcandoPlanilha(true)}
+            disabled={!obrigacoes.length}
+            title="Marcar empresas pelo CNPJ de uma planilha"
+          >
+            <FileUp className="h-4 w-4" />
+            Marcar por planilha
+          </button>
+          {departamento === 'cadastros' && (
+            <button
+              className="btn-secondary"
+              onClick={exportarContaAzul}
+              disabled={!obContaAzul}
+              title={
+                obContaAzul ? `Empresas pendentes em “${obContaAzul.nome}”, no modelo de importação do Conta Azul` : 'Crie o sistema “Conta Azul” para usar'
+              }
+            >
+              <FileSpreadsheet className="h-4 w-4 text-sky-600" />
+              Exportar planilha - Conta Azul
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -530,6 +586,15 @@ export function Fechamento({ session, departamento }: { session: Session; depart
         )}
       </main>
 
+      {marcandoPlanilha && (
+        <ImportarMarcacoes
+          obrigacoes={obrigacoes}
+          empresas={empresas}
+          referencia={ref}
+          onClose={() => setMarcandoPlanilha(false)}
+          onSalvo={() => carregarMes()}
+        />
+      )}
       {editando && (
         <ObrigacaoForm
           departamento={departamento}
