@@ -733,40 +733,50 @@ export function Honorarios({ session }: { session: Session }) {
                               '—'
                             )}
                           </td>
-                          <td className="py-2.5 pr-4 pl-2 text-right whitespace-nowrap">
-                            {l.mensal?.recebido_em ? (
-                              <button className="btn-secondary btn-sm" onClick={() => desfazer(l)} title="Desfazer recebimento">
-                                <Undo2 className="h-3.5 w-3.5" />
-                                Desfazer
-                              </button>
-                            ) : l.valor > 0 ? (
-                              <button className="btn-primary btn-sm from-emerald-500 to-emerald-600" onClick={() => setRecebendo([l])}>
-                                <Wallet className="h-3.5 w-3.5" />
-                                Recebido
-                              </button>
-                            ) : null}
-                            <button
-                              className="icon-btn ml-1 h-7 w-7 align-middle"
-                              onClick={() => setPeriodosAbertos({ cliente: l.cliente.id })}
-                              title="Período pago pelo parceiro"
-                              aria-label={`Período pago pelo parceiro de ${l.cliente.razao_social}`}
-                            >
-                              <Handshake className="h-3.5 w-3.5" />
-                            </button>
-                            {!l.mensal?.recebido_em && (
-                              <label
-                                className={`ml-1 inline-flex cursor-pointer items-center gap-1 rounded-lg px-1.5 py-1 align-middle text-[0.6875rem] font-semibold ring-1 ${semMensalidade(l) ? 'bg-slate-800 text-white ring-slate-800' : 'text-slate-500 ring-slate-200 hover:bg-slate-50'}`}
-                                title="Neste mês a mensalidade não é considerada: ninguém paga e não entra em inadimplência"
+                          <td className="py-2.5 pr-4 pl-2 whitespace-nowrap">
+                            {/* Três vagas de largura fixa: os ícones ficam alinhados mesmo quando um botão não aparece */}
+                            <div className="flex items-center justify-end gap-1.5">
+                              <div className="flex w-[6.5rem] justify-end">
+                                {l.mensal?.recebido_em ? (
+                                  <button className="btn-secondary btn-sm w-full justify-center" onClick={() => desfazer(l)} title="Desfazer recebimento">
+                                    <Undo2 className="h-3.5 w-3.5" />
+                                    Desfazer
+                                  </button>
+                                ) : l.valor > 0 ? (
+                                  <button
+                                    className="btn-primary btn-sm w-full justify-center from-emerald-500 to-emerald-600"
+                                    onClick={() => setRecebendo([l])}
+                                  >
+                                    <Wallet className="h-3.5 w-3.5" />
+                                    Recebido
+                                  </button>
+                                ) : null}
+                              </div>
+                              <button
+                                className="icon-btn h-7 w-7 shrink-0"
+                                onClick={() => setPeriodosAbertos({ cliente: l.cliente.id })}
+                                title="Período pago pelo parceiro"
+                                aria-label={`Período pago pelo parceiro de ${l.cliente.razao_social}`}
                               >
-                                <input
-                                  type="checkbox"
-                                  className="h-3.5 w-3.5 accent-slate-800"
-                                  checked={semMensalidade(l)}
-                                  onChange={() => alternarSemMensalidade(l)}
-                                />
-                                Sem mensalidade
-                              </label>
-                            )}
+                                <Handshake className="h-3.5 w-3.5" />
+                              </button>
+                              <div className="flex w-[8.25rem]">
+                                {!l.mensal?.recebido_em && (
+                                  <label
+                                    className={`inline-flex w-full cursor-pointer items-center gap-1 rounded-lg px-1.5 py-1 text-[0.6875rem] font-semibold ring-1 ${semMensalidade(l) ? 'bg-slate-800 text-white ring-slate-800' : 'text-slate-500 ring-slate-200 hover:bg-slate-50'}`}
+                                    title="Neste mês a mensalidade não é considerada: ninguém paga e não entra em inadimplência"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="h-3.5 w-3.5 accent-slate-800"
+                                      checked={semMensalidade(l)}
+                                      onChange={() => alternarSemMensalidade(l)}
+                                    />
+                                    Sem mensalidade
+                                  </label>
+                                )}
+                              </div>
+                            </div>
                           </td>
                         </tr>
                       )
