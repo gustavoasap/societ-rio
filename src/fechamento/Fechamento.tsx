@@ -88,7 +88,15 @@ export function Fechamento({ session, departamento }: { session: Session; depart
     if (falha) setErro(falha.message)
     const lista = (o.data as Obrigacao[]) ?? []
     setObrigacoes(lista)
-    setEmpresas((e.data as EmpresaFech[]) ?? [])
+    let todas = (e.data as EmpresaFech[]) ?? []
+    // Controle de Cadastros: clientes confirmados como "sem honorário" não entram
+    if (departamento === 'cadastros') {
+      const { data: sem, error: e2 } = await supabase.from('adm_clientes').select('id').eq('sem_honorario', true)
+      if (e2) setErro(e2.message)
+      const fora = new Set(((sem as { id: string }[]) ?? []).map((x) => x.id))
+      todas = todas.filter((x) => !fora.has(x.id))
+    }
+    setEmpresas(todas)
     return lista
   }, [departamento])
 
