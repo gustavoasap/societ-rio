@@ -11,6 +11,7 @@ export interface ClienteHon {
   status: 'pendente' | 'assinado' | 'encerrado'
   data_inicio_servicos: string | null
   carencia_meses: number | null
+  data_abertura?: string | null
   sem_honorario: boolean
   sem_honorario_motivo: string | null
 }
@@ -42,6 +43,8 @@ export interface ConfigHon {
   vence_mes_seguinte: boolean
   /** Tarifa cobrada por boleto (o crédito no extrato vem com o honorário menos a tarifa) */
   tarifa_boleto: number
+  /** Inadimplência automática só a partir desta competência (antes: planilha importada do sistema) */
+  inadimplencia_desde: string
 }
 
 export type Situacao = 'recebido' | 'parcial' | 'vencido' | 'a_vencer' | 'isento'
@@ -192,9 +195,11 @@ export interface Inadimplente {
   diasAtraso: number
 }
 
-export function inadimplentes(linhas: Linha[], hoje: string): Inadimplente[] {
+export function inadimplentes(linhas: Linha[], hoje: string, desde?: string): Inadimplente[] {
   const porCliente = new Map<string, Linha[]>()
-  for (const l of linhas) if (emAtraso(l, hoje) && !l.parceiro) porCliente.set(l.cliente.id, [...(porCliente.get(l.cliente.id) ?? []), l])
+  const de = desde ? mesDe(desde) : ''
+  for (const l of linhas)
+    if (emAtraso(l, hoje) && !l.parceiro && l.competencia >= de) porCliente.set(l.cliente.id, [...(porCliente.get(l.cliente.id) ?? []), l])
   return [...porCliente.values()]
     .map((ls) => {
       const ord = [...ls].sort((a, b) => a.competencia.localeCompare(b.competencia))
@@ -227,4 +232,14 @@ export function resumoDoMes(linhas: Linha[], mes: string, hoje: string): ResumoM
     if (emAtraso(l, hoje)) r.atrasado += l.aberto
   }
   return { competencia: mes, previsto: centavos(r.previsto), recebido: centavos(r.recebido), aberto: centavos(r.aberto), atrasado: centavos(r.atrasado) }
+}
+
+/** Honorário em aberto importado da planilha do sistema (antes do controle automático). */
+export interface InadImportada {
+  id: string
+  cliente_id: string
+  vencimento: string | null
+  competencia: string | null
+  valor: number
+  descricao: string | null
 }

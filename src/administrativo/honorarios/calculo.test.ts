@@ -13,7 +13,7 @@ import {
 } from './calculo'
 import { lerCsv, lerOfx, nomeNaDescricao, sugerir } from './extrato'
 
-const cfg: ConfigHon = { inicio: '2026-10-01', dia_vencimento: 10, vence_mes_seguinte: false, tarifa_boleto: 0 }
+const cfg: ConfigHon = { inicio: '2026-10-01', dia_vencimento: 10, vence_mes_seguinte: false, tarifa_boleto: 0, inadimplencia_desde: '2026-10-01' }
 const cli = (o: Partial<ClienteHon> = {}): ClienteHon => ({
   id: 'c1',
   codigo: 10,

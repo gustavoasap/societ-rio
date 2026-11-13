@@ -175,6 +175,7 @@ export function ConfigHonorarios({ cfg, onClose, onSalvo }: { cfg: ConfigHon; on
   const [dia, setDia] = useState(String(cfg.dia_vencimento))
   const [seguinte, setSeguinte] = useState(cfg.vence_mes_seguinte)
   const [tarifa, setTarifa] = useState(moedaDigitada(String(cfg.tarifa_boleto ?? 0)))
+  const [desdeInad, setDesdeInad] = useState((cfg.inadimplencia_desde ?? '2026-11-01').slice(0, 7))
   const [erro, setErro] = useState<string | null>(null)
 
   async function salvar() {
@@ -184,7 +185,14 @@ export function ConfigHonorarios({ cfg, onClose, onSalvo }: { cfg: ConfigHon; on
     if (t < 0) return setErro('Tarifa inválida.')
     const { error } = await supabase
       .from('adm_hon_config')
-      .update({ inicio: competenciaDe(inicio), dia_vencimento: d, vence_mes_seguinte: seguinte, tarifa_boleto: t, updated_at: new Date().toISOString() })
+      .update({
+        inicio: competenciaDe(inicio),
+        dia_vencimento: d,
+        vence_mes_seguinte: seguinte,
+        tarifa_boleto: t,
+        inadimplencia_desde: competenciaDe(desdeInad),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', 1)
     if (error) return setErro(error.message)
     onSalvo()
@@ -220,6 +228,10 @@ export function ConfigHonorarios({ cfg, onClose, onSalvo }: { cfg: ConfigHon; on
           <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={seguinte} onChange={(e) => setSeguinte(e.target.checked)} />
           Vence no mês seguinte ao da competência
         </label>
+        <Field label="Inadimplência automática a partir de">
+          <CampoMes value={desdeInad} onChange={setDesdeInad} className="input" />
+        </Field>
+        <p className="text-xs text-slate-500">Antes desse mês, os inadimplentes vêm da planilha importada do seu sistema (aba Inadimplentes).</p>
         <Field label="Tarifa por boleto emitido">
           <input
             className="input w-36"

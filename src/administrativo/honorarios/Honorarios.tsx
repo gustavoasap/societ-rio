@@ -22,7 +22,7 @@ import { supabase } from '../../lib/supabase'
 import { Link } from '../../lib/rotas'
 import { comRetentativa } from '../../lib/retentar'
 import { formatarData } from '../../lib/format'
-import { baixarArquivo, gerarXlsx, TIPO_XLSX, type ValorCelula } from '../../lib/planilha'
+import { baixarArquivo, gerarXlsx, gerarXlsxAbas, TIPO_XLSX, type ValorCelula } from '../../lib/planilha'
 import { CampoMes } from '../../components/CampoData'
 import { Select } from '../../components/ui'
 import { BarrasAgrupadas, Legenda } from '../../tributario/components/graficos'
@@ -32,6 +32,7 @@ import {
   hojeIso,
   inadimplentes,
   linhaDoMes,
+  honorarioDoMes,
   parceiroDoMes,
   mesDe,
   mesHoje,
@@ -43,12 +44,14 @@ import {
   type HonorarioBase,
   type Linha,
   type Mensal,
+  type InadImportada,
   type PeriodoParceiro,
   type Situacao,
 } from './calculo'
 import { AjustarValor, AlterarVencimento, ConfigHonorarios, MarcarRecebido } from './Modais'
 import { mesCurto, nomeMes, salvarMensal, valorTexto } from './util'
 import { ImportarExtrato } from './ImportarExtrato'
+import { ImportarInadimplencia } from './ImportarInadimplencia'
 import { ReajusteMassa } from './ReajusteMassa'
 import { MensalidadesParceiro, PeriodosParceiro } from './Parceiros'
 import { marcarSemHonorario } from '../acoes'
@@ -63,11 +66,19 @@ const SERIES = [
 export function Honorarios({ session }: { session: Session }) {
   const [aba, setAba] = useState<Aba>('mes')
   const [mes, setMes] = useState(mesHoje)
-  const [cfg, setCfg] = useState<ConfigHon>({ inicio: '2026-10-01', dia_vencimento: 10, vence_mes_seguinte: false, tarifa_boleto: 0 })
+  const [cfg, setCfg] = useState<ConfigHon>({
+    inicio: '2026-10-01',
+    dia_vencimento: 10,
+    vence_mes_seguinte: false,
+    tarifa_boleto: 0,
+    inadimplencia_desde: '2026-11-01',
+  })
   const [clientes, setClientes] = useState<ClienteHon[]>([])
   const [hons, setHons] = useState<HonorarioBase[]>([])
   const [mensais, setMensais] = useState<Map<string, Mensal>>(new Map())
   const [periodos, setPeriodos] = useState<PeriodoParceiro[]>([])
+  const [importadas, setImportadas] = useState<InadImportada[]>([])
+  const [importandoInad, setImportandoInad] = useState(false)
   const [parceiros, setParceiros] = useState<{ id: string; nome: string }[]>([])
   const [verParceiro, setVerParceiro] = useState<string | null>(null)
   const [periodosAbertos, setPeriodosAbertos] = useState<{ cliente?: string } | null>(null)
@@ -85,13 +96,13 @@ export function Honorarios({ session }: { session: Session }) {
   const [vencendo, setVencendo] = useState<Linha | null>(null)
 
   const carregar = useCallback(async () => {
-    const [c, cl, h, m, pp, pa] = await comRetentativa(() =>
+    const [c, cl, h, m, pp, pa, ii] = await comRetentativa(() =>
       Promise.all([
-        supabase.from('adm_hon_config').select('inicio, dia_vencimento, vence_mes_seguinte, tarifa_boleto').eq('id', 1).maybeSingle(),
+        supabase.from('adm_hon_config').select('inicio, dia_vencimento, vence_mes_seguinte, tarifa_boleto, inadimplencia_desde').eq('id', 1).maybeSingle(),
         supabase
           .from('adm_clientes')
           .select(
-            'id, codigo, razao_social, nome_fantasia, cnpj, responsavel, status, data_inicio_servicos, carencia_meses, sem_honorario, sem_honorario_motivo',
+            'id, codigo, razao_social, nome_fantasia, cnpj, responsavel, status, data_abertura, data_inicio_servicos, carencia_meses, sem_honorario, sem_honorario_motivo',
           )
           .neq('status', 'encerrado')
           .order('codigo'),
@@ -99,9 +110,10 @@ export function Honorarios({ session }: { session: Session }) {
         supabase.from('adm_hon_mensal').select('*').range(0, 19999),
         supabase.from('adm_hon_parceiro').select('id, cliente_id, parceiro_id, inicio, meses, observacao'),
         supabase.from('soc_parceiros').select('id, nome').order('nome'),
+        supabase.from('adm_hon_inad_importada').select('id, cliente_id, vencimento, competencia, valor, descricao').is('recebido_em', null).range(0, 9999),
       ]),
     )
-    const falha = c.error ?? cl.error ?? h.error ?? m.error ?? pp.error ?? pa.error
+    const falha = c.error ?? cl.error ?? h.error ?? m.error ?? pp.error ?? pa.error ?? ii.error
     if (falha) setErro(falha.message)
     if (c.data) setCfg(c.data as ConfigHon)
     setClientes((cl.data as ClienteHon[]) ?? [])
@@ -109,6 +121,7 @@ export function Honorarios({ session }: { session: Session }) {
     setMensais(new Map(((m.data as Mensal[]) ?? []).map((x) => [chaveMensal(x.cliente_id, mesDe(x.competencia)), x])))
     setPeriodos((pp.data as PeriodoParceiro[]) ?? [])
     setParceiros((pa.data as { id: string; nome: string }[]) ?? [])
+    setImportadas((ii.data as InadImportada[]) ?? [])
   }, [])
 
   useEffect(() => {
@@ -116,6 +129,7 @@ export function Honorarios({ session }: { session: Session }) {
   }, [carregar])
 
   const hoje = hojeIso()
+  const desdeInad = cfg.inadimplencia_desde ?? '2026-11-01'
   const inicio = mesDe(cfg.inicio)
   const ultimo = mesHoje() > mes ? mesHoje() : mes
   const honsPorCliente = useMemo(() => {
@@ -164,13 +178,13 @@ export function Honorarios({ session }: { session: Session }) {
   const parceirosAtraso = useMemo(() => {
     const m = new Map<string, { nome: string; linhas: Linha[] }>()
     for (const l of todas)
-      if (l.parceiro && l.aberto > 0 && l.vencimento < hoje) {
+      if (l.parceiro && l.aberto > 0 && l.vencimento < hoje && l.competencia >= desdeInad.slice(0, 7)) {
         const g = m.get(l.parceiro.parceiroId) ?? { nome: l.parceiro.nome, linhas: [] }
         g.linhas.push(l)
         m.set(l.parceiro.parceiroId, g)
       }
     return [...m.values()].map((g) => ({ ...g, total: g.linhas.reduce((s, l) => s + l.aberto, 0) }))
-  }, [todas, hoje])
+  }, [todas, hoje, desdeInad])
 
   const doMes = useMemo(() => todas.filter((l) => l.competencia === mes), [todas, mes])
   const resumo = useMemo(() => resumoDoMes(todas, mes, hoje), [todas, mes, hoje])
@@ -188,8 +202,44 @@ export function Honorarios({ session }: { session: Session }) {
     if (msg) setErro(msg)
     carregar()
   }
-  const listaInad = useMemo(() => inadimplentes(todas, hoje), [todas, hoje])
-  const totalInad = listaInad.reduce((s, i) => s + i.total, 0)
+  // Inadimplência automática só a partir da competência configurada; antes disso, a planilha importada do sistema
+  const listaInad = useMemo(() => inadimplentes(todas, hoje, desdeInad), [todas, hoje, desdeInad])
+  const totalAuto = listaInad.reduce((s, i) => s + i.total, 0)
+  const porIdCliente = useMemo(() => new Map(clientes.map((c) => [c.id, c])), [clientes])
+  const importadasPorCliente = useMemo(() => {
+    const m = new Map<string, InadImportada[]>()
+    for (const x of importadas) m.set(x.cliente_id, [...(m.get(x.cliente_id) ?? []), x])
+    return [...m.entries()]
+      .map(([id, ls]) => ({
+        id,
+        ls: ls.sort((a, b) => (a.vencimento ?? a.competencia ?? '').localeCompare(b.vencimento ?? b.competencia ?? '')),
+        total: ls.reduce((s, x) => s + Number(x.valor), 0),
+      }))
+      .sort((a, b) => b.total - a.total)
+  }, [importadas])
+  const totalImportado = importadas.reduce((s, x) => s + Number(x.valor), 0)
+  const totalInad = totalAuto + totalImportado
+  const honorarioNoMes = useCallback(
+    (clienteId: string, m: string) => {
+      const h = honorarioDoMes(honsPorCliente.get(clienteId) ?? [], m)
+      return h ? Number(h.valor) : null
+    },
+    [honsPorCliente],
+  )
+
+  async function baixarImportada(x: InadImportada) {
+    const c = porIdCliente.get(x.cliente_id)
+    const r = prompt(`Data do recebimento de ${valorTexto(Number(x.valor))} (${c?.razao_social ?? 'cliente'}) — DD/MM/AAAA:`, formatarData(hoje))
+    if (r === null) return
+    const m = r.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+    if (!m) return setErro('Data inválida. Use DD/MM/AAAA.')
+    const { error } = await supabase
+      .from('adm_hon_inad_importada')
+      .update({ recebido_em: `${m[3]}-${m[2]}-${m[1]}` })
+      .eq('id', x.id)
+    if (error) setErro(error.message)
+    carregar()
+  }
   const evolucao = useMemo(() => mesesEntre(inicio, mesHoje()).map((m) => resumoDoMes(todas, m, hoje)), [todas, inicio, hoje])
   const usados = useMemo(() => new Set([...mensais.values()].map((m) => m.extrato_id).filter((x): x is string => !!x)), [mensais])
   const abertos = useMemo(() => todas.filter((l) => l.aberto > 0), [todas])
@@ -227,6 +277,7 @@ export function Honorarios({ session }: { session: Session }) {
     const dados: ValorCelula[][] = linhas.map((l) => [
       String(l.cliente.codigo).padStart(3, '0'),
       l.cliente.razao_social,
+      l.cliente.data_abertura ? { valor: formatarData(l.cliente.data_abertura), destaque: 'negrito' as const } : '',
       l.base,
       l.valor,
       [l.ajustado ? (l.mensal?.motivo_ajuste ?? 'Ajustado') : '', l.parceiro ? `Pago por ${l.parceiro.nome} (${l.parceiro.parcela}/${l.parceiro.total})` : '']
@@ -243,6 +294,7 @@ export function Honorarios({ session }: { session: Session }) {
       colunas: [
         { titulo: 'Cód.', largura: 7 },
         { titulo: 'Razão social', largura: 42 },
+        { titulo: 'Data de abertura', largura: 14 },
         { titulo: 'Honorário da base', tipo: 'moeda', largura: 16 },
         { titulo: 'Valor do mês', tipo: 'moeda', largura: 14 },
         { titulo: 'Ajuste / observação', largura: 28 },
@@ -258,27 +310,51 @@ export function Honorarios({ session }: { session: Session }) {
   }
 
   function exportarInad() {
-    const arq = gerarXlsx({
-      aba: 'Inadimplentes',
-      colunas: [
-        { titulo: 'Cód.', largura: 7 },
-        { titulo: 'Razão social', largura: 42 },
-        { titulo: 'Responsável legal', largura: 30 },
-        { titulo: 'Meses em atraso', largura: 30 },
-        { titulo: 'Vencimento mais antigo', tipo: 'data', largura: 14 },
-        { titulo: 'Dias de atraso', tipo: 'numero', largura: 10 },
-        { titulo: 'Total em aberto', tipo: 'moeda', largura: 16 },
-      ],
-      linhas: listaInad.map((i) => [
-        String(i.cliente.codigo).padStart(3, '0'),
-        i.cliente.razao_social,
-        i.cliente.responsavel,
-        i.linhas.map((l) => mesCurto(l.competencia)).join(', '),
-        i.maisAntigo,
-        i.diasAtraso,
-        { valor: i.total, destaque: 'negativo' },
-      ]),
-    })
+    const arq = gerarXlsxAbas([
+      {
+        aba: 'Inadimplentes',
+        colunas: [
+          { titulo: 'Cód.', largura: 7 },
+          { titulo: 'Razão social', largura: 42 },
+          { titulo: 'Responsável legal', largura: 30 },
+          { titulo: 'Meses em atraso', largura: 30 },
+          { titulo: 'Vencimento mais antigo', tipo: 'data', largura: 14 },
+          { titulo: 'Dias de atraso', tipo: 'numero', largura: 10 },
+          { titulo: 'Total em aberto', tipo: 'moeda', largura: 16 },
+        ],
+        linhas: listaInad.map((i) => [
+          String(i.cliente.codigo).padStart(3, '0'),
+          i.cliente.razao_social,
+          i.cliente.responsavel,
+          i.linhas.map((l) => mesCurto(l.competencia)).join(', '),
+          i.maisAntigo,
+          i.diasAtraso,
+          { valor: i.total, destaque: 'negativo' },
+        ]),
+      },
+      {
+        aba: 'Até out-26 (sistema)',
+        colunas: [
+          { titulo: 'Cód.', largura: 7 },
+          { titulo: 'Razão social', largura: 42 },
+          { titulo: 'Vencimento', tipo: 'data', largura: 12 },
+          { titulo: 'Competência', largura: 12 },
+          { titulo: 'Valor em aberto', tipo: 'moeda', largura: 16 },
+          { titulo: 'Descrição', largura: 40 },
+        ],
+        linhas: importadas.map((x) => {
+          const c = porIdCliente.get(x.cliente_id)
+          return [
+            c ? String(c.codigo).padStart(3, '0') : '',
+            c?.razao_social ?? '(cliente inativo)',
+            x.vencimento,
+            x.competencia ? mesCurto(x.competencia.slice(0, 7)) : '',
+            Number(x.valor),
+            x.descricao,
+          ]
+        }),
+      },
+    ])
     baixarArquivo(`inadimplentes-${hoje}.xlsx`, arq as Uint8Array<ArrayBuffer>, TIPO_XLSX)
   }
 
@@ -286,7 +362,9 @@ export function Honorarios({ session }: { session: Session }) {
     { r: 'Honorário total', v: valorTexto(resumo.previsto), d: `${doMes.filter((l) => l.valor > 0).length} cliente(s) a receber em ${nomeMes(mes)}` },
     { r: 'Recebido', v: valorTexto(resumo.recebido), d: `${pct}% do total`, barra: true, cor: 'text-emerald-700' },
     { r: 'Diferença (em aberto)', v: valorTexto(resumo.aberto), d: 'honorário total − recebido', cor: resumo.aberto > 0 ? 'text-amber-700' : 'text-slate-900' },
-    { r: 'Vencido', v: valorTexto(resumo.atrasado), d: 'em aberto com vencimento passado', cor: resumo.atrasado > 0 ? 'text-rose-600' : 'text-slate-900' },
+    mes < desdeInad.slice(0, 7)
+      ? { r: 'Vencido', v: '—', d: `até ${mesCurto(somarMes(desdeInad.slice(0, 7), -1))}: planilha do sistema (aba Inadimplentes)`, cor: 'text-slate-400' }
+      : { r: 'Vencido', v: valorTexto(resumo.atrasado), d: 'em aberto com vencimento passado', cor: resumo.atrasado > 0 ? 'text-rose-600' : 'text-slate-900' },
   ]
 
   return (
@@ -580,6 +658,11 @@ export function Honorarios({ session }: { session: Session }) {
                             <div className="flex items-baseline gap-2">
                               <span className="font-mono text-xs text-slate-400">{String(l.cliente.codigo).padStart(3, '0')}</span>
                               <span className="font-semibold text-slate-800">{l.cliente.razao_social}</span>
+                              {l.cliente.data_abertura && (
+                                <span className="text-[0.6875rem] whitespace-nowrap text-slate-500">
+                                  abertura <b className="font-bold text-slate-800">{formatarData(l.cliente.data_abertura)}</b>
+                                </span>
+                              )}
                             </div>
                             {l.parceiro && (
                               <span className="mt-0.5 ml-9 inline-block rounded-full bg-violet-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-violet-700 ring-1 ring-violet-200">
@@ -673,14 +756,23 @@ export function Honorarios({ session }: { session: Session }) {
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
               <div>
-                <div className="text-sm font-medium text-slate-500">Total em atraso (desde {nomeMes(inicio)})</div>
+                <div className="text-sm font-medium text-slate-500">Total em atraso</div>
                 <div className="mt-1 text-2xl font-extrabold text-rose-600 tabular-nums">{valorTexto(totalInad)}</div>
-                <div className="text-xs text-slate-500">{listaInad.length} cliente(s) com honorário vencido e não recebido</div>
+                <div className="text-xs text-slate-500">
+                  Automático a partir de {nomeMes(desdeInad.slice(0, 7))}: {valorTexto(totalAuto)} ({listaInad.length} cliente(s)) · Até{' '}
+                  {mesCurto(somarMes(desdeInad.slice(0, 7), -1))}, planilha do sistema: {valorTexto(totalImportado)} ({importadasPorCliente.length} cliente(s))
+                </div>
               </div>
-              <button className="btn-primary from-emerald-500 to-emerald-600" onClick={exportarInad} disabled={!listaInad.length}>
-                <FileSpreadsheet className="h-4 w-4" />
-                Excel
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn-secondary" onClick={() => setImportandoInad(true)}>
+                  <FileUp className="h-4 w-4" />
+                  Importar planilha do sistema (até {mesCurto(somarMes(desdeInad.slice(0, 7), -1))})
+                </button>
+                <button className="btn-primary from-emerald-500 to-emerald-600" onClick={exportarInad} disabled={!listaInad.length && !importadas.length}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Excel
+                </button>
+              </div>
             </div>
             <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
               <div className="overflow-x-auto">
@@ -729,6 +821,47 @@ export function Honorarios({ session }: { session: Session }) {
                 {!listaInad.length && <p className="p-10 text-center text-sm text-slate-400">Nenhum cliente inadimplente. 🎉</p>}
               </div>
             </div>
+            {importadasPorCliente.length > 0 && (
+              <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
+                <div className="border-b border-slate-100 px-5 py-3">
+                  <h3 className="text-sm font-bold text-slate-800">Até {nomeMes(somarMes(desdeInad.slice(0, 7), -1))} — planilha do sistema</h3>
+                  <p className="text-xs text-slate-500">Honorários em aberto importados. Clique num valor para registrar o recebimento.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-slate-100">
+                      {importadasPorCliente.map((g) => {
+                        const c = porIdCliente.get(g.id)
+                        return (
+                          <tr key={g.id}>
+                            <td className="py-2.5 pr-2 pl-5">
+                              <span className="font-mono text-xs text-slate-400">{c ? String(c.codigo).padStart(3, '0') : '---'}</span>{' '}
+                              <span className="font-semibold text-slate-800">{c?.razao_social ?? 'Cliente inativo'}</span>
+                            </td>
+                            <td className="px-2 py-2.5">
+                              <div className="flex flex-wrap gap-1">
+                                {g.ls.map((x) => (
+                                  <button
+                                    key={x.id}
+                                    className="cursor-pointer rounded-md bg-rose-50 px-1.5 py-0.5 text-[0.6875rem] font-semibold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100"
+                                    title="Registrar recebimento"
+                                    onClick={() => baixarImportada(x)}
+                                  >
+                                    {x.vencimento ? formatarData(x.vencimento) : x.competencia ? mesCurto(x.competencia.slice(0, 7)) : ''} ·{' '}
+                                    {valorTexto(Number(x.valor))}
+                                  </button>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="py-2.5 pr-5 pl-2 text-right font-bold whitespace-nowrap text-rose-600 tabular-nums">{valorTexto(g.total)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             {parceirosAtraso.length > 0 && (
               <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-violet-200">
                 <h3 className="text-sm font-bold text-violet-800">Mensalidades de parceiros em atraso</h3>
@@ -859,6 +992,9 @@ export function Honorarios({ session }: { session: Session }) {
             carregar()
           }}
         />
+      )}
+      {importandoInad && (
+        <ImportarInadimplencia desde={desdeInad} honorarioNoMes={honorarioNoMes} onClose={() => setImportandoInad(false)} onSalvo={carregar} />
       )}
       {importando && (
         <ImportarExtrato
