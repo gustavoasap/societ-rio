@@ -6,7 +6,7 @@ import { camposDoCartao, consultarCnpj, enderecoTexto, type DadosCnpj } from '..
 import { formatarData, formatarMoeda } from '../lib/format'
 import { Info, Modal, Section } from '../components/ui'
 import type { Socio } from '../types'
-import { formatarCnpj, type Cliente } from './tipos'
+import { INSCRICOES, formatarCnpj, type Cliente } from './tipos'
 
 interface ProcessoSocios {
   id: string
@@ -118,6 +118,15 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
           </button>
         }
       >
+        {/* Inscrição vem do cadastro do cliente (a Receita não informa) */}
+        <div className="mb-4 grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl bg-slate-50/70 px-4 py-3 ring-1 ring-slate-100 sm:grid-cols-3">
+          <Info
+            label="Tipo de inscrição"
+            value={cliente.tipo_inscricao ? (INSCRICOES.find((i) => i.value === cliente.tipo_inscricao)?.label ?? cliente.tipo_inscricao) : 'Não informada'}
+          />
+          <Info label="Número da inscrição" value={cliente.inscricao ? <span className="font-mono">{cliente.inscricao}</span> : 'Não informado'} />
+          <p className="self-center text-[0.6875rem] text-slate-400">Dados do cadastro do cliente. Para alterar, use o lápis na Base de Clientes.</p>
+        </div>
         {carregando && <p className="py-6 text-center text-sm text-slate-400">Consultando a Receita Federal...</p>}
         {erro && !carregando && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
         {dados && !carregando && (
