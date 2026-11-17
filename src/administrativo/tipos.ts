@@ -1,6 +1,12 @@
 export type StatusCliente = 'pendente' | 'assinado' | 'encerrado'
 export type Etapa = 'pendente' | 'pdf_enviado' | 'concluida' | 'na'
 
+export interface SocioCadastro {
+  nome: string
+  cpf: string | null
+  qualificacao: string | null
+}
+
 export interface Cliente {
   id: string
   codigo: number
@@ -30,6 +36,8 @@ export interface Cliente {
   segmento: string | null
   tipo_inscricao: string | null
   inscricao: string | null
+  /** Sócios digitados no cadastro (a Receita não divulga o CPF completo) */
+  socios?: SocioCadastro[] | null
   procuracao: Etapa | null
   certificado_digital: Etapa | null
   onboarding: Etapa | null

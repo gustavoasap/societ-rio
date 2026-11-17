@@ -263,6 +263,7 @@ export function Clientes({ session }: { session: Session }) {
       { titulo: 'Segmento', largura: 12, valor: (c) => labelDe(SEGMENTOS, c.segmento) },
       { titulo: 'Tipo de inscrição', largura: 14, valor: (c) => labelDe(INSCRICOES, c.tipo_inscricao) },
       { titulo: 'Número da inscrição', largura: 18, valor: (c) => c.inscricao },
+      { titulo: 'Sócios (CPF)', largura: 50, valor: (c) => (c.socios ?? []).map((x) => (x.cpf ? `${x.nome} (${x.cpf})` : x.nome)).join('; ') },
       ...ETAPAS.map((e) => ({ titulo: e.label, largura: 14, valor: (c: Cliente) => (c[e.campo] ? labelDe(OPCOES_ETAPA, c[e.campo]) : '') })),
       { titulo: 'Honorário mensal', tipo: 'moeda', largura: 15, valor: (c) => vigentes.get(c.id)?.valor ?? null },
       { titulo: 'Dia de vencimento', tipo: 'numero', largura: 10, valor: (c) => vigentes.get(c.id)?.dia_vencimento ?? null },

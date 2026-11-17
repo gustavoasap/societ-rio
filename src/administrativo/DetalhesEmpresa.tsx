@@ -6,7 +6,9 @@ import { camposDoCartao, consultarCnpj, enderecoTexto, type DadosCnpj } from '..
 import { formatarData, formatarMoeda } from '../lib/format'
 import { Info, Modal, Section } from '../components/ui'
 import type { Socio } from '../types'
-import { INSCRICOES, formatarCnpj, type Cliente } from './tipos'
+import { INSCRICOES, formatarCnpj, type Cliente, type SocioCadastro } from './tipos'
+import { SociosCadastro } from './SociosCadastro'
+import { socioPorNome } from './socios'
 
 interface ProcessoSocios {
   id: string
@@ -39,6 +41,7 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
   const [processos, setProcessos] = useState<ProcessoSocios[]>([])
   const [gravando, setGravando] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
+  const [sociosCad, setSociosCad] = useState<SocioCadastro[]>(cliente.socios ?? [])
 
   const consultar = useCallback(
     async (sinal?: AbortSignal) => {
@@ -98,6 +101,11 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
   }
 
   const contrato = processos[0]
+  // Nomes para pré-preencher os sócios do cadastro: Receita + contrato social (com CPF)
+  const sugestoes = [
+    ...(contrato?.socios ?? []).filter((s) => s.nome?.trim()).map((s) => ({ nome: s.nome, cpf: s.cpf ?? null, qualificacao: s.qualificacao ?? null })),
+    ...(dados?.socios ?? []).map((s) => ({ nome: s.nome, cpf: null, qualificacao: s.qualificacao })),
+  ]
 
   return (
     <Modal
@@ -199,6 +207,15 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
       </Section>
 
       <Section title="Sócios" icone={Users} cor="violet">
+        <SociosCadastro
+          cliente={{ ...cliente, socios: sociosCad }}
+          sugestoes={sugestoes}
+          onSalvo={(s) => {
+            setSociosCad(s)
+            setAviso('Sócios salvos no cadastro.')
+            onAtualizado()
+          }}
+        />
         <h4 className="mb-2 text-xs font-bold tracking-wide text-slate-500 uppercase">Quadro societário na Receita Federal</h4>
         {dados?.socios.length ? (
           <div className="overflow-x-auto">
@@ -216,13 +233,23 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
                   <tr key={i}>
                     <td className="py-2 pr-3 font-semibold text-slate-800">{s.nome}</td>
                     <td className="px-3 py-2 text-slate-600">{s.qualificacao ?? '—'}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-500">{s.documento ?? '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-slate-500">
+                      {socioPorNome(sociosCad, s.nome)?.cpf ? (
+                        <span className="text-slate-800" title="CPF informado no cadastro">
+                          {socioPorNome(sociosCad, s.nome)!.cpf}
+                        </span>
+                      ) : (
+                        (s.documento ?? '—')
+                      )}
+                    </td>
                     <td className="py-2 pl-3 whitespace-nowrap text-slate-600">{s.desde ? formatarData(s.desde) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className="mt-1 text-[0.6875rem] text-slate-400">A Receita divulga o CPF dos sócios parcialmente mascarado.</p>
+            <p className="mt-1 text-[0.6875rem] text-slate-400">
+              A Receita não divulga o CPF completo dos sócios. Quando o CPF foi informado no cadastro (acima), ele aparece aqui.
+            </p>
           </div>
         ) : (
           <p className="text-sm text-slate-400">{carregando ? 'Consultando...' : 'Sem sócios informados pela Receita (ex.: empresário individual / MEI).'}</p>
