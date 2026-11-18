@@ -5,6 +5,18 @@ export interface SocioCadastro {
   nome: string
   cpf: string | null
   qualificacao: string | null
+  cep?: string | null
+  rua?: string | null
+  numero?: string | null
+  complemento?: string | null
+  bairro?: string | null
+  cidade?: string | null
+  uf?: string | null
+  cor_raca?: string | null
+  /** RG, CNH, RNE/RNM, Passaporte... */
+  doc_tipo?: string | null
+  doc_numero?: string | null
+  doc_orgao?: string | null
 }
 
 export interface Cliente {

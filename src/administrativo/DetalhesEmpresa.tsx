@@ -101,11 +101,6 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
   }
 
   const contrato = processos[0]
-  // Nomes para pré-preencher os sócios do cadastro: Receita + contrato social (com CPF)
-  const sugestoes = [
-    ...(contrato?.socios ?? []).filter((s) => s.nome?.trim()).map((s) => ({ nome: s.nome, cpf: s.cpf ?? null, qualificacao: s.qualificacao ?? null })),
-    ...(dados?.socios ?? []).map((s) => ({ nome: s.nome, cpf: null, qualificacao: s.qualificacao })),
-  ]
 
   return (
     <Modal
@@ -209,7 +204,6 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
       <Section title="Sócios" icone={Users} cor="violet">
         <SociosCadastro
           cliente={{ ...cliente, socios: sociosCad }}
-          sugestoes={sugestoes}
           onSalvo={(s) => {
             setSociosCad(s)
             setAviso('Sócios salvos no cadastro.')

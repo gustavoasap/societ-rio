@@ -18,7 +18,9 @@ export function mascaraCpf(v: string) {
 }
 
 export function mascaraCep(v: string) {
-  return digitos(v).slice(0, 8).replace(/(\d{5})(\d)/, '$1-$2')
+  return digitos(v)
+    .slice(0, 8)
+    .replace(/(\d{5})(\d)/, '$1-$2')
 }
 
 export function mascaraTelefone(v: string) {
@@ -89,6 +91,20 @@ export async function buscarCep(cep: string): Promise<{ endereco: string; munici
     if (j.erro) return null
     const partes = [j.logradouro, j.bairro, `${j.localidade}/${j.uf}`].filter(Boolean)
     return { endereco: partes.join(', '), municipio: `${j.localidade}/${j.uf}` }
+  } catch {
+    return null
+  }
+}
+
+/** Consulta o CEP na ViaCEP e devolve as partes do endereço. */
+export async function buscarCepPartes(cep: string): Promise<{ rua: string; bairro: string; cidade: string; uf: string } | null> {
+  const d = digitos(cep)
+  if (d.length !== 8) return null
+  try {
+    const r = await fetch(`https://viacep.com.br/ws/${d}/json/`)
+    const j = await r.json()
+    if (j.erro) return null
+    return { rua: j.logradouro ?? '', bairro: j.bairro ?? '', cidade: j.localidade ?? '', uf: j.uf ?? '' }
   } catch {
     return null
   }

@@ -20,6 +20,8 @@ import { CampoData } from '../components/CampoData'
 import { camposDoCartao, consultarCnpj, responsavelDoQsa } from '../lib/cnpj'
 import { consultarSerpro } from '../lib/cnpjSerpro'
 import { criarPastasDrive, obterUrlDrive } from './drive'
+import { SociosEditor } from './SociosEditor'
+import { cpfValido, mesclarSocios, socioVazio } from './socios'
 
 type Dados = Omit<Cliente, 'id' | 'codigo' | 'created_at'>
 
@@ -54,6 +56,7 @@ const VAZIO: Dados = {
   onboarding: 'pendente',
   link_drive: null,
   observacoes: null,
+  socios: [],
 }
 
 const texto = (v: string) => (v.trim() ? v.trim() : null)
@@ -93,7 +96,17 @@ export function ClienteForm({
       const dados = await consultarCnpj(cnpj, undefined, { serpro: consultarSerpro })
       const campos = camposDoCartao(dados)
       const resp = responsavelDoQsa(dados)
-      setD((s) => ({ ...s, ...campos, cnpj, ...(resp && !s.responsavel ? { responsavel: resp } : {}) }))
+      setD((s) => ({
+        ...s,
+        ...campos,
+        cnpj,
+        ...(resp && !s.responsavel ? { responsavel: resp } : {}),
+        // Sócios: nome completo e qualificação da Receita (completa os já digitados, sem sobrescrever)
+        socios: mesclarSocios(
+          s.socios ?? [],
+          dados.socios.map((x) => ({ ...socioVazio(), nome: x.nome.trim().toUpperCase(), qualificacao: x.qualificacao ?? '' })),
+        ),
+      }))
       setAvisoReceita(`Dados preenchidos pela Receita Federal (fonte: ${dados.fonte}). Confira e complete o restante.`)
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
@@ -110,6 +123,13 @@ export function ClienteForm({
     const cod = codigo.trim() ? Number(codigo) : null
     if (cod !== null && (!Number.isInteger(cod) || cod <= 0)) return setErro('O código precisa ser um número inteiro maior que zero.')
     if (cliente && cod === null) return setErro('Informe o código do cliente.')
+    const socios = (d.socios ?? [])
+      .map((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])) as typeof x)
+      .filter((x) => x.nome || x.cpf)
+    const semNome = socios.find((x) => !x.nome)
+    if (semNome) return setErro(`Informe o nome do sócio do CPF ${semNome.cpf}.`)
+    const cpfRuim = socios.find((x) => x.cpf && !cpfValido(x.cpf))
+    if (cpfRuim) return setErro(`CPF inválido para o sócio ${cpfRuim.nome}: ${cpfRuim.cpf}. Confira os números.`)
 
     setSalvando(true)
     const { id: _id, codigo: _codigo, created_at: _criado, updated_at: _atualizado, ...resto } = d as Dados & Partial<Cliente> & { updated_at?: string }
@@ -117,7 +137,7 @@ export function ClienteForm({
     const { status: _st, procuracao: _pr, certificado_digital: _cd, onboarding: _on, data_assinatura: _as, ...cadastro } = resto
     // Código vazio em cliente novo: o portal usa o próximo número livre
     const comCodigo: { codigo?: number } = cod !== null ? { codigo: cod } : {}
-    const dados = cliente ? { ...cadastro, ...comCodigo, cnpj: cnpj || null } : { ...resto, ...comCodigo, cnpj: cnpj || null }
+    const dados = cliente ? { ...cadastro, ...comCodigo, cnpj: cnpj || null, socios } : { ...resto, ...comCodigo, cnpj: cnpj || null, socios }
     const r = cliente
       ? await supabase.from('adm_clientes').update(dados).eq('id', cliente.id).select('id').single()
       : await supabase.from('adm_clientes').insert(dados).select('id').single()
@@ -385,6 +405,11 @@ export function ClienteForm({
               placeholder="https://drive.google.com/..."
             />
           </Field>
+        </section>
+
+        <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/70">
+          <h3 className="mb-3 text-sm font-bold text-slate-800">Sócios</h3>
+          <SociosEditor socios={d.socios ?? []} onChange={(v) => set('socios', v)} cnpj={d.cnpj} razaoSocial={d.razao_social} />
         </section>
 
         <p className="rounded-xl bg-brand-50 px-4 py-2.5 text-xs text-brand-800 ring-1 ring-brand-100">

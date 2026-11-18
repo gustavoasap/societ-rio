@@ -1,61 +1,30 @@
 import { useState } from 'react'
-import { Pencil, Plus, Trash2, UserPlus } from 'lucide-react'
+import { Pencil, UserPlus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { mascaraCpf } from '../lib/format'
-import type { Cliente, SocioCadastro } from './tipos'
+import { SociosEditor } from './SociosEditor'
 import { cpfValido } from './socios'
+import type { Cliente, SocioCadastro } from './tipos'
 
-const digitos = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '')
-const semAcento = (s: string) =>
-  s
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toUpperCase()
+const enderecoLinha = (s: SocioCadastro) =>
+  [[s.rua, s.numero].filter(Boolean).join(', '), s.complemento, s.bairro, [s.cidade, s.uf].filter(Boolean).join('/'), s.cep ? `CEP ${s.cep}` : '']
+    .filter(Boolean)
+    .join(' - ')
 
-interface Sugestao {
-  nome: string
-  qualificacao: string | null
-  cpf?: string | null
-}
-
-/** Sócios digitados na Base de Clientes (nome, CPF e qualificação), editáveis nos Detalhes da Empresa. */
-export function SociosCadastro({ cliente, sugestoes, onSalvo }: { cliente: Cliente; sugestoes: Sugestao[]; onSalvo: (s: SocioCadastro[]) => void }) {
+/** Sócios do cadastro (Base de Clientes) nos Detalhes da Empresa: resumo e edição. */
+export function SociosCadastro({ cliente, onSalvo }: { cliente: Cliente; onSalvo: (s: SocioCadastro[]) => void }) {
   const salvos = cliente.socios ?? []
   const [editando, setEditando] = useState(false)
   const [lista, setLista] = useState<SocioCadastro[]>([])
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
-  function preencher(base: SocioCadastro[]) {
-    // Completa com os sócios da Receita/contrato que ainda não estão na lista (CPF do contrato quando houver)
-    const r = base.map((s) => ({ ...s }))
-    for (const g of sugestoes) {
-      const ja = r.find((s) => semAcento(s.nome) === semAcento(g.nome))
-      if (ja) {
-        if (!digitos(ja.cpf) && g.cpf) ja.cpf = mascaraCpf(g.cpf)
-        if (!ja.qualificacao && g.qualificacao) ja.qualificacao = g.qualificacao
-      } else if (g.nome.trim()) r.push({ nome: g.nome.trim().toUpperCase(), cpf: g.cpf ? mascaraCpf(g.cpf) : '', qualificacao: g.qualificacao ?? '' })
-    }
-    return r
-  }
-
-  function abrir() {
-    const base = salvos.length ? salvos : preencher([])
-    setLista(base.length ? base.map((s) => ({ ...s, cpf: s.cpf ? mascaraCpf(s.cpf) : '' })) : [{ nome: '', cpf: '', qualificacao: '' }])
-    setErro(null)
-    setEditando(true)
-  }
-
-  const alterar = (i: number, campo: keyof SocioCadastro, v: string) => setLista((l) => l.map((s, j) => (j === i ? { ...s, [campo]: v } : s)))
-
   async function salvar() {
     const limpos = lista
-      .map((s) => ({ nome: s.nome.trim().toUpperCase(), cpf: digitos(s.cpf) ? mascaraCpf(s.cpf ?? '') : '', qualificacao: (s.qualificacao ?? '').trim() }))
-      .filter((s) => s.nome || s.cpf)
-    const semNome = limpos.find((s) => !s.nome)
+      .map((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])) as SocioCadastro)
+      .filter((x) => x.nome || x.cpf)
+    const semNome = limpos.find((x) => !x.nome)
     if (semNome) return setErro(`Informe o nome do sócio do CPF ${semNome.cpf}.`)
-    const invalido = limpos.find((s) => s.cpf && !cpfValido(s.cpf))
+    const invalido = limpos.find((x) => x.cpf && !cpfValido(x.cpf))
     if (invalido) return setErro(`CPF inválido para ${invalido.nome}: ${invalido.cpf}. Confira os números.`)
     setSalvando(true)
     setErro(null)
@@ -71,9 +40,16 @@ export function SociosCadastro({ cliente, sugestoes, onSalvo }: { cliente: Clien
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-xs font-bold tracking-wide text-slate-500 uppercase">Sócios no cadastro (Base de Clientes)</h4>
         {!editando && (
-          <button className="btn-secondary btn-sm" onClick={abrir}>
+          <button
+            className="btn-secondary btn-sm"
+            onClick={() => {
+              setLista(salvos.map((s) => ({ ...s })))
+              setErro(null)
+              setEditando(true)
+            }}
+          >
             {salvos.length ? <Pencil className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
-            {salvos.length ? 'Editar sócios' : 'Incluir sócios e CPF'}
+            {salvos.length ? 'Editar sócios' : 'Incluir sócios'}
           </button>
         )}
       </div>
@@ -86,78 +62,45 @@ export function SociosCadastro({ cliente, sugestoes, onSalvo }: { cliente: Clien
                 <tr>
                   <th className="py-1.5 pr-3">Nome</th>
                   <th className="px-3 py-1.5">CPF</th>
-                  <th className="py-1.5 pl-3">Qualificação</th>
+                  <th className="px-3 py-1.5">Documento</th>
+                  <th className="px-3 py-1.5">Endereço</th>
+                  <th className="py-1.5 pl-3">Cor/Raça</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 align-top">
                 {salvos.map((s, i) => (
                   <tr key={i}>
-                    <td className="py-2 pr-3 font-semibold text-slate-800">{s.nome}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-700">{s.cpf || <span className="text-slate-300">—</span>}</td>
-                    <td className="py-2 pl-3 text-slate-600">{s.qualificacao || '—'}</td>
+                    <td className="py-2 pr-3">
+                      <div className="font-semibold text-slate-800">{s.nome}</div>
+                      {s.qualificacao && <div className="text-xs text-slate-500">{s.qualificacao}</div>}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs whitespace-nowrap text-slate-700">{s.cpf || '—'}</td>
+                    <td className="px-3 py-2 text-xs text-slate-700">
+                      {s.doc_numero ? (
+                        <>
+                          {s.doc_tipo || 'Doc.'} <span className="font-mono">{s.doc_numero}</span>
+                          {s.doc_orgao ? ` · ${s.doc_orgao}` : ''}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-700">{enderecoLinha(s) || '—'}</td>
+                    <td className="py-2 pl-3 text-xs text-slate-700">{s.cor_raca || '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="text-sm text-slate-400">Nenhum sócio informado no cadastro. Clique em “Incluir sócios e CPF” para digitar.</p>
+          <p className="text-sm text-slate-400">Nenhum sócio informado no cadastro. Clique em “Incluir sócios”.</p>
         ))}
 
       {editando && (
-        <div className="rounded-xl bg-slate-50/70 p-3 ring-1 ring-slate-200/70">
-          {erro && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">{erro}</p>}
-          <div className="space-y-2">
-            {lista.map((s, i) => {
-              const cpfRuim = digitos(s.cpf).length === 11 && !cpfValido(s.cpf ?? '')
-              return (
-                <div key={i} className="grid gap-2 sm:grid-cols-[1fr_11rem_12rem_2rem]">
-                  <input
-                    className="input"
-                    placeholder="Nome do sócio"
-                    value={s.nome}
-                    onChange={(e) => alterar(i, 'nome', e.target.value.toUpperCase())}
-                    aria-label="Nome do sócio"
-                  />
-                  <input
-                    className={`input font-mono ${cpfRuim ? 'ring-2 ring-rose-300' : ''}`}
-                    placeholder="000.000.000-00"
-                    inputMode="numeric"
-                    value={s.cpf ?? ''}
-                    onChange={(e) => alterar(i, 'cpf', mascaraCpf(e.target.value))}
-                    aria-label="CPF do sócio"
-                    title={cpfRuim ? 'CPF inválido' : undefined}
-                  />
-                  <input
-                    className="input"
-                    placeholder="Qualificação"
-                    value={s.qualificacao ?? ''}
-                    onChange={(e) => alterar(i, 'qualificacao', e.target.value)}
-                    aria-label="Qualificação do sócio"
-                  />
-                  <button
-                    className="icon-btn h-9 w-8 hover:text-rose-600"
-                    onClick={() => setLista((l) => l.filter((_, j) => j !== i))}
-                    title="Remover sócio"
-                    aria-label="Remover sócio"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button className="btn-secondary btn-sm" onClick={() => setLista((l) => [...l, { nome: '', cpf: '', qualificacao: '' }])}>
-              <Plus className="h-3.5 w-3.5" />
-              Adicionar sócio
-            </button>
-            {sugestoes.length > 0 && (
-              <button className="btn-secondary btn-sm" onClick={() => setLista((l) => preencher(l.filter((s) => s.nome.trim() || digitos(s.cpf))))}>
-                Trazer nomes da Receita / contrato
-              </button>
-            )}
-            <span className="flex-1" />
+        <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200/70">
+          <SociosEditor socios={lista} onChange={setLista} cnpj={cliente.cnpj} razaoSocial={cliente.razao_social} />
+          {erro && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">{erro}</p>}
+          <div className="mt-3 flex justify-end gap-2">
             <button className="btn-secondary btn-sm" onClick={() => setEditando(false)} disabled={salvando}>
               Cancelar
             </button>
