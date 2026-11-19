@@ -3,6 +3,7 @@
 // cédula de identidade RG nº 12.345.678-9 SSP/SP, inscrito no CPF sob nº 123.456.789-00, residente e
 // domiciliado na Rua X, nº 10, Apto 2, Bairro Y, Cidade/UF, CEP 00000-000". Leitura de melhor esforço:
 // o que for encontrado é sugerido e o usuário confere antes de salvar.
+import { importarModulo } from '../lib/importar'
 import { strFromU8, unzipSync } from 'fflate'
 import type { SocioCadastro } from './tipos'
 import type { ItemPdf } from './documentos'
@@ -12,14 +13,16 @@ const RE_CPF = /\d{3}\.?\d{3}\.?\d{3}\s?[-–]?\s?\d{2}/g
 // Nome em MAIÚSCULAS (2 a 10 palavras) seguido de vírgula. Sem alternativas sobrepostas e sem /i, para não
 // travar em textos longos (contratos autenticados têm páginas de carimbos sem vírgula).
 const RE_NOME = /([A-ZÀ-Ý][A-ZÀ-Ý'´`.-]+(?: +[A-ZÀ-Ý][A-ZÀ-Ý'´`.-]*){1,9}) *,/g
+// Alguns contratos escrevem o nome só com as iniciais maiúsculas ("Adilson Romero, brasileiro, ...")
+const RE_NOME_TITULO = /([A-ZÀ-Ý][a-zà-ÿ'´`.-]+(?: +(?:d[aeo]s?|e|[A-ZÀ-Ý][a-zà-ÿ'´`.-]+)){1,8}) *,/g
 // Depois do nome vem a qualificação: nacionalidade, estado civil, profissão...
 const RE_QUALIFICACAO =
   /^[^,]{0,60}?(?:brasileir|nacionalidade|portugu|argentin|italian|estrangeir|solteir|casad|divorciad|vi[uú]v|separad|convivente|uni[aã]o est[aá]vel|natural|nascid|maior|empres[aá]ri|comerciante)/i
 
 /** Itens de texto do PDF com a posição na página (para ler o Cartão CNPJ). */
 export async function itensDoPdf(buf: ArrayBuffer, paginas = 1): Promise<ItemPdf[]> {
-  const pdfjs = await import('pdfjs-dist')
-  const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+  const pdfjs = await importarModulo(() => import('pdfjs-dist'))
+  const worker = await importarModulo(() => import('pdfjs-dist/build/pdf.worker.min.mjs?url'))
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise
   const r: ItemPdf[] = []
@@ -51,13 +54,13 @@ export async function textoDoArquivo(arquivo: File): Promise<string> {
       .replace(/&apos;/g, "'")
   }
   if (nome.endsWith('.pdf') || arquivo.type === 'application/pdf') {
-    const pdfjs = await import('pdfjs-dist')
-    const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+    const pdfjs = await importarModulo(() => import('pdfjs-dist'))
+    const worker = await importarModulo(() => import('pdfjs-dist/build/pdf.worker.min.mjs?url'))
     pdfjs.GlobalWorkerOptions.workerSrc = worker.default
     const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise
     const partes: string[] = []
-    // A qualificação fica no começo: as 4 primeiras páginas bastam
-    for (let p = 1; p <= Math.min(doc.numPages, 4); p++) {
+    // A qualificação fica no começo do contrato; na certidão autenticada (inteiro teor) vem depois das capas da Junta
+    for (let p = 1; p <= Math.min(doc.numPages, 20); p++) {
       const pag = await doc.getPage(p)
       const c = await pag.getTextContent()
       partes.push(c.items.map((i) => ('str' in i ? i.str + (i.hasEOL ? '\n' : ' ') : '')).join(''))
@@ -69,7 +72,7 @@ export async function textoDoArquivo(arquivo: File): Promise<string> {
 
 function documento(trecho: string): Pick<SocioCadastro, 'doc_tipo' | 'doc_numero' | 'doc_orgao'> {
   const m = trecho.match(
-    /(carteira nacional de habilita[cç][aã]o|\bCNH\b|c[ée]dula de identidade(?:\s+profissional)?|carteira de identidade|documento de identidade|\bidentidade\b|\bR\.?G\.?\b|\bRNE\b|\bRNM\b|\bCRNM\b|passaporte)\s*(?:\(?R\.?G\.?\)?\s*)?(?:civil\s*)?(?:sob\s+)?(?:o\s+)?(?:n[º°o]?\.?\s*º?|número)?\s*[:.]?\s*([0-9][0-9A-Za-z.\-/ ]{3,18}?[0-9Xx])(?=\s*[,;)]|\s+[–-]\s|\s+(?:expedid|emitid|SSP|DETRAN|SESP|SDS|PC|IFP|DIC|SEJUSP|SJS|IGP|PCII|DGPC|POLÍCIA|POLICIA|[A-Z]{2,6}\s*\/\s*[A-Z]{2}|e\s|inscrit)|\s*$)/i,
+    /(carteira nacional de habilita[cç][aã]o|\bCNH\b|c[ée]dula de identidade(?:\s+profissional)?|carteira de identidade|documento de identidade|\bidentidade\b|\bR\.?G\.?\b|\bRNE\b|\bRNM\b|\bCRNM\b|passaporte)\s*(?:\(?R\.?G\.?\)?\s*)?(?:civil\s*)?(?:sob\s+)?(?:o\s+)?(?:n[º°o]?\.?\s*º?|número)?\s*[:.]?\s*([0-9][0-9A-Za-z.\-/ ]{3,18}?[0-9Xx])(?=\s*[,;)]|\s+[–-]\s|\s+(?:[óÓoO]rg[ãaÃA]o|expedid|emitid|SSP|DETRAN|SESP|SDS|PC|IFP|DIC|SEJUSP|SJS|IGP|PCII|DGPC|POLÍCIA|POLICIA|[A-Z]{2,6}\s*\/\s*[A-Z]{2}|e\s|inscrit)|\s*$)/i,
   )
   if (!m) return {}
   const rotulo = m[1].toLowerCase()
@@ -84,14 +87,14 @@ function documento(trecho: string): Pick<SocioCadastro, 'doc_tipo' | 'doc_numero
           : 'RG'
   const depois = trecho.slice((m.index ?? 0) + m[0].length)
   const org = depois.match(
-    /^\s*[,–-]?\s*(?:(?:expedid[ao]|emitid[ao])\s+(?:em\s+\d{2}\/\d{2}\/\d{4}\s+)?(?:pel[ao]\s+)?)?(?:órgão\s+(?:emissor|expedidor)\s*:?\s*)?((?:SSP|DETRAN|SESP|SDS|PC|IFP|DIC|SEJUSP|SJS|IGP|PCII|DGPC|SSPDS|SESDC|SEDS|DPF|MRE|PF|CREA|OAB|CRC|CRM)[A-Z]*(?:\s*[/\-–]\s*[A-Z]{2})?|[A-Z]{2,6}\s*\/\s*[A-Z]{2})\b/,
+    /^\s*[,–-]?\s*(?:(?:expedid[ao]|emitid[ao])\s+(?:em\s+\d{2}\/\d{2}\/\d{4}\s+)?(?:pel[ao]\s+)?)?(?:[óÓoO]rg[ãaÃA]o\s+(?:[eE]missor|[eE]xpedidor|EMISSOR|EXPEDIDOR)\s*:?\s*)?((?:SSP|DETRAN|SESP|SDS|PC|IFP|DIC|SEJUSP|SJS|IGP|PCII|DGPC|SSPDS|SESDC|SEDS|DPF|MRE|PF|CREA|OAB|CRC|CRM)[A-Z]*(?:\s*[/\-–]\s*[A-Z]{2})?|[A-Z]{2,6}\s*\/\s*[A-Z]{2})\b/,
   )
   return { doc_tipo: tipo, doc_numero: m[2].trim(), doc_orgao: org ? org[1].replace(/\s+/g, '').replace(/[-–]/, '/') : '' }
 }
 
 function endereco(trecho: string): Partial<SocioCadastro> {
   const m = trecho.match(
-    /(?:residentes?|domiciliad[oa]s?)\s+(?:e\s+domiciliad[oa]s?\s+)?(?:na|no|à|a|em|ao)\s+(.+?(?:CEP[:\s]*n?[º°.]?\s*\d{2}\.?\d{3}\s?-?\s?\d{3}|(?=;|\.\s|\s+e\s+[A-ZÀ-Ý]{3,}\s|$)))/i,
+    /(?:residentes?|domiciliad[oa]s?)(?:\([oa]s?\))?\s+(?:e\s+domiciliad[oa]s?(?:\([oa]s?\))?\s+)?(?:na|no|à|a|em|ao)(?:\([oa]\))?\s+(.+?(?:CEP[:\s]*n?[º°.]?\s*\d{2}\.?\d{3}\s?-?\s?\d{3}|(?=;|\.\s|\s+e\s+[A-ZÀ-Ý]{3,}\s|$)))/i,
   )
   if (!m) return {}
   return separarEnderecoSocio(m[1].replace(/^(?:rua|avenida|av\.|alameda|travessa|estrada|rodovia|praça)/i, (x) => x))
@@ -117,7 +120,8 @@ export function extrairSocios(textoBruto: string): SocioCadastro[] {
     cpfs.push({ cpf: d, pos: m.index ?? 0 })
   }
   // Nomes (MAIÚSCULAS seguidas de nacionalidade/estado civil etc.)
-  const nomes = [...area.matchAll(RE_NOME)]
+  const nomes = [...area.matchAll(RE_NOME), ...area.matchAll(RE_NOME_TITULO)]
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
     .filter((m) => RE_QUALIFICACAO.test(area.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 80)))
     .map((m) => {
       // Título colado no nome (ex.: "MINUSCOLI & FREITAS LTDA GUILHERME MINUSCOLI"): fica o que vem depois do LTDA/ME/EIRELI...
@@ -126,16 +130,29 @@ export function extrairSocios(textoBruto: string): SocioCadastro[] {
       const limpo = corteTitulo ? nome.slice((corteTitulo.index ?? 0) + corteTitulo[0].length) : nome
       return { nome: limpo.trim(), pos: (m.index ?? 0) + (nome.length - limpo.length) }
     })
-    .filter((n) => n.nome === n.nome.toUpperCase() && !/^(CONTRATO|SOCIEDADE|LTDA|ALTERA|INSTRUMENTO|EMPRESA)/.test(n.nome))
+    .map((n) => ({ ...n, nome: n.nome.toUpperCase() }))
+    .filter((n) => !/^(CONTRATO|SOCIEDADE|LTDA|ALTERA|INSTRUMENTO|EMPRESA)/.test(n.nome))
 
   const r: SocioCadastro[] = []
   cpfs.forEach((c, i) => {
-    const nome = [...nomes].reverse().find((n) => n.pos < c.pos && (i === 0 || n.pos > cpfs[i - 1].pos))
-    const ini = nome ? nome.pos : Math.max(0, c.pos - 400)
+    const nome = [...nomes].reverse().find((n) => n.pos < c.pos && c.pos - n.pos < 900 && (i === 0 || n.pos > cpfs[i - 1].pos))
+    // CPF sem a qualificação de um sócio antes (ex.: funcionário da Junta, contador que assina): não é sócio
+    if (!nome) return
+    const ini = nome.pos
     const proximo = nomes.find((n) => n.pos > c.pos)
     const fim = Math.min(cpfs[i + 1]?.pos ?? area.length, proximo?.pos ?? area.length, c.pos + 700)
     const trecho = area.slice(ini, fim)
-    r.push({ ...socioVazio(), nome: nome?.nome ?? '', cpf: mascaraCpfTexto(c.cpf), ...documento(trecho), ...endereco(trecho) })
+    // Qualificação escrita antes do nome ("Sócio-Administrador ADILSON ROMERO, ...")
+    const antes = area.slice(Math.max(0, nome.pos - 40), nome.pos)
+    const qualif = antes.match(/(S[óo]ci[oa][\s-]+Administrador[a]?|Administrador[a]?|Titular|S[óo]ci[oa])\s*:?\s*$/i)?.[1]
+    r.push({
+      ...socioVazio(),
+      qualificacao: qualif ? qualif.replace(/\s+/g, ' ').replace(/^./, (x) => x.toUpperCase()) : '',
+      nome: nome.nome,
+      cpf: mascaraCpfTexto(c.cpf),
+      ...documento(trecho),
+      ...endereco(trecho),
+    })
   })
   return r
 }

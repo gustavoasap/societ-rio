@@ -1,5 +1,6 @@
 // Leitura de extrato bancário em PDF (melhor esforço: cada banco tem um layout).
 // O texto é agrupado em linhas pela posição na página; cada linha com data + valor vira um lançamento.
+import { importarModulo } from '../../lib/importar'
 import type { Lancamento } from './extrato'
 
 const RE_VALOR = /(-?\s?R?\$?\s?\d{1,3}(?:\.\d{3})*,\d{2})\s?([CD])?(?![\d])/gi
@@ -49,8 +50,8 @@ export function lancamentosDeLinhas(linhas: string[], anoPadrao: number): Lancam
 
 /** Lê o PDF no navegador (pdf.js) e devolve os lançamentos. */
 export async function lerPdf(buf: ArrayBuffer): Promise<Lancamento[]> {
-  const pdfjs = await import('pdfjs-dist')
-  const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+  const pdfjs = await importarModulo(() => import('pdfjs-dist'))
+  const worker = await importarModulo(() => import('pdfjs-dist/build/pdf.worker.min.mjs?url'))
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise
   const linhas: string[] = []

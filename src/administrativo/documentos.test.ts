@@ -130,3 +130,29 @@ describe('ordem de leitura dos contratos do Drive', () => {
     ])
   })
 })
+
+describe('identificação pelo nome curto do arquivo e pela certidão', () => {
+  const CLI = [
+    { id: 'n', codigo: 177, razao_social: 'NOVA ERA ECOMMERCE LTDA', cnpj: null },
+    { id: 'a', codigo: 137, razao_social: 'ADIJU REPRESENTACOES LTDA', cnpj: null },
+    { id: 'b', codigo: 138, razao_social: 'ATLAS VENDAS ONLINE LTDA', cnpj: null },
+    { id: 'c', codigo: 139, razao_social: 'ATLAS GLOBAL LTDA', cnpj: null },
+  ]
+  it('nome curto vale quando é o começo da razão social de um único cliente', () => {
+    expect(identificarCliente('', 'Contrato - NOva Era.pdf', CLI).clienteId).toBe('n')
+    expect(identificarCliente('', 'Contrato Social - Adiju.pdf', CLI).clienteId).toBe('a')
+    expect(identificarCliente('', 'Contrato Social - Atlas Vendas.pdf', CLI).clienteId).toBe('b')
+    // "Atlas" sozinho é ambíguo (dois clientes): não identifica
+    expect(identificarCliente('', 'Contrato Social - Atlas.pdf', CLI).clienteId).toBeNull()
+  })
+  it('razão social pelo campo NOME EMPRESARIAL da certidão', () => {
+    expect(
+      lerEmpresaDoContrato(
+        'DOCUMENTO EMITIDO PELA INTERNET DADOS DA EMPRESA NOME EMPRESARIAL NOVA ERA ECOMMERCE LTDA TITULO DE ESTABELECIMENTO NOVA ERA SHOP CNPJ 69.036.546/0001-07',
+      ),
+    ).toEqual({
+      cnpj: '69036546000107',
+      razao_social: 'NOVA ERA ECOMMERCE LTDA',
+    })
+  })
+})

@@ -61,7 +61,8 @@ export function identificarCliente(texto: string, nomeArquivo: string, clientes:
     return melhor
   }
 
-  const inicio = texto.slice(0, 4000)
+  // Certidão autenticada: a razão social pode vir depois das capas da Junta
+  const inicio = texto.slice(0, 15000)
   const porNome = acharNome(inicio)
   if (porNome) return { clienteId: porNome.id, como: 'Razão social' }
 
@@ -73,6 +74,25 @@ export function identificarCliente(texto: string, nomeArquivo: string, clientes:
   }
   const porArquivo = acharNome(base)
   if (porArquivo) return { clienteId: porArquivo.id, como: 'Nome do arquivo' }
+
+  // Nome curto no arquivo ("Contrato - Nova Era", "Contrato Social - Adiju"): vale se for o começo da razão
+  // social de um único cliente
+  const resto = plano(base)
+    .replace(
+      /\b(CONTRATO|SOCIAL|AUTENTICADO|AUTENTICADA|CERTIDAO|INTEIRO|TEOR|ALTERACAO|CONTRATUAL|CONSOLIDACAO|CONSTITUICAO|CARTAO|CNPJ|CADASTRO|COMPROVANTE|DE|DA|DO|E|\d+[AO]?)\b/g,
+      ' ',
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (resto.length >= 3) {
+    const candidatos = clientes.filter(
+      (c) =>
+        plano(c.razao_social.replace(GENERICAS, ' '))
+          .trim()
+          .startsWith(resto + ' ') || plano(c.razao_social.replace(GENERICAS, ' ')).trim() === resto,
+    )
+    if (candidatos.length === 1) return { clienteId: candidatos[0].id, como: 'Nome do arquivo' }
+  }
   return { clienteId: null, como: null }
 }
 
@@ -183,7 +203,10 @@ export function lerEmpresaDoContrato(texto: string): DadosEmpresaDoc {
   const t = texto.replace(/\s+/g, ' ').slice(0, 3000)
   const cnpjRotulado = t.match(/CNPJ(?:\/MF)?\s*(?:sob\s+)?(?:o\s+)?(?:n[º°o.]*\s*)?[:\s]*(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})/i)
   const cnpj = digitos(cnpjRotulado?.[1]) || cnpjsDoTexto(t)[0] || null
-  // Primeiro nome em MAIÚSCULAS terminado em LTDA/EIRELI/S.A./SLU
+  // Certidão de inteiro teor / requerimento da Junta: campo "NOME EMPRESARIAL"; senão, o primeiro nome em
+  // MAIÚSCULAS terminado em LTDA/EIRELI/S.A./SLU
+  const rotulado = t.match(/NOME\s+EMPRESARIAL\s*:?\s*([A-ZÀ-Ý0-9][A-ZÀ-Ý0-9&.,'\- ]{1,150}?\s(?:LTDA|EIRELI|S\/A|S\.A\.?|SLU)\.?)(?![A-Za-zÀ-ÿ])/)
+  if (rotulado) return { cnpj: cnpj && cnpj.length === 14 ? cnpj : null, razao_social: rotulado[1].trim() }
   const m = t.match(/([A-ZÀ-Ý0-9][A-ZÀ-Ý0-9&.,'\- ]{1,150}?\s(?:LTDA|EIRELI|S\/A|S\.A\.?|SLU)\.?)(?![A-Za-zÀ-ÿ])/)
   let razao = m ? m[1] : null
   if (razao) {

@@ -2,6 +2,8 @@
 // Só o arquivo: a senha nunca é guardada nem enviada. Sem a senha, a validade só pode ser lida quando o
 // certificado vem aberto dentro do .pfx (muitos vêm); se vier protegido, a senha pode ser digitada na hora
 // apenas para leitura, ou a data informada à mão.
+import { importarModulo } from '../lib/importar'
+
 export interface InfoCertificado {
   /** AAAA-MM-DD */
   validade: string | null
@@ -18,7 +20,7 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 /** Lê validade, titular e CNPJ do arquivo (a biblioteca de criptografia só é carregada quando usada). */
 export async function lerCertificado(buf: ArrayBuffer, nome: string, senha?: string): Promise<InfoCertificado> {
-  const m = await import('./certificadoLeitura')
+  const m = await importarModulo(() => import('./certificadoLeitura'))
   return m.lerCertificadoSincrono(buf, nome, senha)
 }
 

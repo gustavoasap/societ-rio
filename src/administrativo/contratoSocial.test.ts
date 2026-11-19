@@ -154,3 +154,30 @@ resolvem constituir a sociedade. CLÁUSULA PRIMEIRA - ...`
     }
   })
 })
+
+describe('contrato padrão da Junta (Redesim)', () => {
+  it('lê "RESIDENTE E DOMICILIADO(A) no(a)", "Órgão Emissor:" e a qualificação antes do nome', () => {
+    const t = `NOVA ERA ECOMMERCE LTDA CONTRATO SOCIAL DE SOCIEDADE LIMITADA
+Sócio-Administrador   FULANO DE TAL, nacionalidade: brasileira, casado (a), natural da cidade de São Paulo/SP, nascido(a) em: 04/03/1972, n° do documento de identidade: RG
+12345678 Órgão Emissor: IIRGD/SP, Empresário, n° do CPF: 957.568.170-34, RESIDENTE E DOMICILIADO(A)
+no(a) RUA NINA RODRIGUES, 432 - Bairro: AYROSA, Osasco - SP CEP 06283030.
+Resolvem constituir uma sociedade limitada. Cláusula Primeira - ...
+Marina Centurion Dardani, CPF: 529.982.247-25`
+    expect(extrairSocios(t)).toEqual([
+      expect.objectContaining({
+        nome: 'FULANO DE TAL',
+        qualificacao: 'Sócio-Administrador',
+        cpf: '957.568.170-34',
+        doc_tipo: 'RG',
+        doc_numero: '12345678',
+        doc_orgao: 'IIRGD/SP',
+        rua: 'RUA NINA RODRIGUES',
+        numero: '432',
+        bairro: 'AYROSA',
+        cidade: 'Osasco',
+        uf: 'SP',
+        cep: '06283-030',
+      }),
+    ])
+  })
+})
