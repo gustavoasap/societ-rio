@@ -192,3 +192,19 @@ MARIA SOUZA LIMA, brasileira, casada, empresária, CNH nº 0123456789, DENATRAN 
     ])
   })
 })
+
+describe('camada de texto quebrada', () => {
+  it('reconhece texto com letras soltas (vai para o OCR)', async () => {
+    const { textoEspacado } = await import('./ocr')
+    expect(
+      textoEspacado(
+        'F A BI O P O R T E L A C A R V A L H O, n a ci o n ali d a d e: br asil eir a, di v or ci a d o ( a), n at ur al d a ci d a d e d e S ã o P a ul o',
+      ),
+    ).toBe(true)
+    expect(
+      textoEspacado(
+        'FABIO PORTELA CARVALHO, nacionalidade: brasileira, divorciado (a), natural da cidade de São Paulo/SP, nascido em 08/10/1976, documento de identidade CNH, Órgão Emissor DETRAN/SP, Empresário',
+      ),
+    ).toBe(false)
+  })
+})

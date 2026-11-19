@@ -5,6 +5,17 @@ import { importarModulo } from '../lib/importar'
 
 let leitor: Promise<Worker> | null = null
 
+/**
+ * Camada de texto quebrada: alguns PDFs escaneados trazem o texto com as letras separadas por espaço
+ * ("F P V E N D A S O N LI N E"), sem dar para saber onde começa cada palavra. Nesse caso a página é lida
+ * pela imagem (OCR). Exportada para teste.
+ */
+export function textoEspacado(t: string) {
+  const tokens = t.split(/\s+/).filter(Boolean)
+  if (tokens.length < 30) return false
+  return tokens.filter((x) => x.length <= 2).length / tokens.length > 0.6
+}
+
 function obterLeitor() {
   if (!leitor) {
     leitor = (async () => {
@@ -47,7 +58,8 @@ export async function textoComOcr(
     // Página escaneada: quase nenhum texto (só o carimbo da Junta) e com imagem
     const ops = await pag.getOperatorList()
     const temImagem = ops.fnArray.some((f) => f === pdfjs.OPS.paintImageXObject || f === pdfjs.OPS.paintInlineImageXObject)
-    if (temImagem && daPagina.replace(/\s/g, '').length < 900) {
+    const espacado = textoEspacado(daPagina)
+    if (temImagem && (daPagina.replace(/\s/g, '').length < 900 || espacado)) {
       opcoes.progresso?.(`lendo a imagem da página ${p} de ${total} (OCR)`)
       const viewport = pag.getViewport({ scale: 2 })
       const canvas = document.createElement('canvas')
@@ -56,7 +68,8 @@ export async function textoComOcr(
       await pag.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
       const l = await obterLeitor()
       const { data } = await l.recognize(canvas)
-      texto += `${data.text}\n${daPagina}\n`
+      // Texto quebrado não ajuda: fica só o que o OCR leu
+      texto += espacado ? `${data.text}\n` : `${data.text}\n${daPagina}\n`
       canvas.width = canvas.height = 0
     } else texto += `${daPagina}\n`
     if (opcoes.bastou?.(texto)) break

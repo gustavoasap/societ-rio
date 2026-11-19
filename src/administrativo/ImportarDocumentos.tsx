@@ -333,7 +333,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
       title="Enviar Contratos Sociais e Cartões CNPJ"
       subtitulo="Vários arquivos de uma vez (PDF, Word ou .zip): o portal identifica a empresa pelo CNPJ, pela razão social ou pelo nome do arquivo"
       onClose={onClose}
-      largura="max-w-[min(96vw,1600px)]"
+      largura="max-w-[98vw]"
       footer={
         <>
           <label className="mr-auto flex flex-wrap items-center gap-4 text-sm text-slate-600">
@@ -408,28 +408,28 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
               {semCliente} arquivo(s) sem empresa: escolha a empresa na coluna “Empresa” (ou deixe em branco para ignorar).
             </p>
           )}
-          <div className="overflow-x-auto rounded-2xl bg-white ring-1 ring-slate-200/70">
-            <table className="w-full text-sm">
+          <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/70">
+            <table className="w-full table-fixed text-sm">
               <thead className="text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">
                 <tr className="border-b border-slate-100">
-                  <th className="py-2.5 pr-2 pl-4">Arquivo</th>
-                  <th className="px-2 py-2.5">Tipo</th>
-                  <th className="min-w-96 px-2 py-2.5">Empresa</th>
-                  <th className="min-w-80 px-2 py-2.5">Sócios encontrados</th>
-                  <th className="py-2.5 pr-4 pl-2">Resultado</th>
+                  <th className="w-[17%] py-2.5 pr-2 pl-4">Arquivo</th>
+                  <th className="w-[8%] px-2 py-2.5">Tipo</th>
+                  <th className="w-[36%] px-2 py-2.5">Empresa</th>
+                  <th className="w-[25%] px-2 py-2.5">Sócios encontrados</th>
+                  <th className="w-[14%] py-2.5 pr-4 pl-2">Resultado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 align-top">
                 {linhas.map((l, i) => (
                   <tr key={i}>
-                    <td className="w-72 max-w-80 py-2.5 pr-2 pl-4">
+                    <td className="py-2.5 pr-2 pl-4">
                       <div className="font-medium break-words text-slate-800" title={l.arquivo.name}>
                         {l.arquivo.name}
                       </div>
                       {l.zip && <div className="truncate text-[0.6875rem] text-slate-400">de {l.zip}</div>}
                       {l.erroLeitura && <div className="text-xs text-amber-700">{l.erroLeitura}</div>}
                     </td>
-                    <td className="px-2 py-2.5 whitespace-nowrap text-slate-600">{l.tipo ? ROTULO_TIPO[l.tipo] : '—'}</td>
+                    <td className="px-2 py-2.5 text-slate-600">{l.tipo ? ROTULO_TIPO[l.tipo] : '—'}</td>
                     <td className="px-2 py-2.5">
                       {(l.clienteId || !l.novo?.ativo) && (
                         <>
