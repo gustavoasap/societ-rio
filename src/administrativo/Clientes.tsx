@@ -167,6 +167,8 @@ export function Clientes({ session }: { session: Session }) {
       if (fDocumento === 'sem_contrato' && docs.get(c.id)?.contrato) return false
       if (fDocumento === 'com_contrato' && !docs.get(c.id)?.contrato) return false
       if (fDocumento === 'sem_cartao' && docs.get(c.id)?.cartao) return false
+      if (fDocumento === 'sem_socios' && (c.socios ?? []).length) return false
+      if (fDocumento === 'sem_socios_com_contrato' && ((c.socios ?? []).length || !docs.get(c.id)?.contrato)) return false
       if (fPendencia) {
         const etapa = fPendencia === 'qualquer' ? null : c[fPendencia as (typeof ETAPAS)[number]['campo']]
         if (fPendencia === 'qualquer' ? !temPendencia(c) : etapa !== 'pendente' && etapa !== 'pdf_enviado') return false
@@ -193,6 +195,8 @@ export function Clientes({ session }: { session: Session }) {
 
   const ativosSemHonorario = useMemo(() => ativos.filter((c) => !vigentes.has(c.id) && !c.sem_honorario), [ativos, vigentes])
   const ativosSemContrato = useMemo(() => ativos.filter((c) => !docs.get(c.id)?.contrato), [ativos, docs])
+  const ativosSemSocios = useMemo(() => ativos.filter((c) => !(c.socios ?? []).length), [ativos])
+  const semSociosComContrato = useMemo(() => ativosSemSocios.filter((c) => docs.get(c.id)?.contrato).length, [ativosSemSocios, docs])
 
   /** Procura os contratos/cartões nas pastas do Drive e lê os sócios dos contratos de quem ainda não tem sócios. */
   async function procurarNoDrive() {
@@ -309,6 +313,7 @@ export function Clientes({ session }: { session: Session }) {
       { titulo: 'Número da inscrição', largura: 18, valor: (c) => c.inscricao },
       { titulo: 'Contrato Social', largura: 14, valor: (c) => (docs.get(c.id)?.contrato ? 'Sim' : 'Não') },
       { titulo: 'Cartão CNPJ', largura: 12, valor: (c) => (docs.get(c.id)?.cartao ? 'Sim' : 'Não') },
+      { titulo: 'Sócios preenchidos', largura: 12, valor: (c) => ((c.socios ?? []).length ? 'Sim' : 'Não') },
       { titulo: 'Sócios (CPF)', largura: 50, valor: (c) => (c.socios ?? []).map((x) => (x.cpf ? `${x.nome} (${x.cpf})` : x.nome)).join('; ') },
       ...ETAPAS.map((e) => ({ titulo: e.label, largura: 14, valor: (c: Cliente) => (c[e.campo] ? labelDe(OPCOES_ETAPA, c[e.campo]) : '') })),
       { titulo: 'Honorário mensal', tipo: 'moeda', largura: 15, valor: (c) => vigentes.get(c.id)?.valor ?? null },
@@ -492,6 +497,25 @@ export function Clientes({ session }: { session: Session }) {
                 </span>
               </div>
             )}
+            {aba === 'ativos' && ativosSemSocios.length > 0 && !fDocumento.startsWith('sem_socios') && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-violet-50 px-4 py-3 text-sm text-violet-900 ring-1 ring-violet-200">
+                <span>
+                  <b>{ativosSemSocios.length} cliente(s) ativo(s) sem os dados dos sócios.</b>
+                  {semSociosComContrato > 0 &&
+                    ` ${semSociosComContrato} deles têm contrato no Drive que não deu para ler (escaneado ou fora do modelo usual): preencha pelo lápis ou em Detalhes da Empresa.`}
+                </span>
+                <span className="flex flex-wrap gap-2">
+                  <button className="btn-secondary btn-sm" onClick={() => setFDocumento('sem_socios')}>
+                    Ver quais são
+                  </button>
+                  {semSociosComContrato > 0 && (
+                    <button className="btn-secondary btn-sm" onClick={() => setFDocumento('sem_socios_com_contrato')}>
+                      Só os que têm contrato
+                    </button>
+                  )}
+                </span>
+              </div>
+            )}
             {procurandoDocs && (
               <p className="flex items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-2 text-sm text-sky-800 ring-1 ring-sky-200">
                 {procurandoDocs}
@@ -556,9 +580,11 @@ export function Clientes({ session }: { session: Session }) {
                   { value: 'sem_contrato', label: 'Sem Contrato Social' },
                   { value: 'com_contrato', label: 'Com Contrato Social' },
                   { value: 'sem_cartao', label: 'Sem Cartão CNPJ' },
+                  { value: 'sem_socios', label: 'Sem sócios preenchidos' },
+                  { value: 'sem_socios_com_contrato', label: 'Sem sócios, mas com contrato' },
                 ]}
                 vazio="Documentos: todos"
-                className={`input w-auto ${fDocumento.startsWith('sem') ? 'border-amber-300 bg-amber-50 text-amber-800' : ''}`}
+                className={`input w-auto ${fDocumento.startsWith('sem_socios') ? 'border-violet-300 bg-violet-50 text-violet-800' : fDocumento.startsWith('sem') ? 'border-amber-300 bg-amber-50 text-amber-800' : ''}`}
               />
               {aba === 'ativos' && (
                 <Select

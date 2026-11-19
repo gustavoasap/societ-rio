@@ -45,7 +45,12 @@ export async function lerContratosDoDrive(clientes: Cliente[], progresso: (msg: 
     let algumTexto = false
     for (const a of arquivos) {
       try {
-        const f = await baixarArquivoDrive(a.drive_id)
+        // Uma nova tentativa se o Google falhar de forma passageira
+        const f = await baixarArquivoDrive(a.drive_id).catch(async (e) => {
+          if (/script do Drive|Sessão expirada|não configurado|fora das pastas|maior que/.test(String(e?.message))) throw e
+          await new Promise((ok) => setTimeout(ok, 2000))
+          return baixarArquivoDrive(a.drive_id)
+        })
         const texto = await textoDoArquivo(f)
         if (texto.replace(/\s/g, '').length < 50) continue
         algumTexto = true

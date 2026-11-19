@@ -577,16 +577,33 @@ function dentroDaRaiz(arquivo) {
 }
 
 // Confere no Supabase se o token é de um usuário logado no portal.
+// O login conferido fica guardado por 10 minutos (evita uma consulta por arquivo) e, se o
+// Google falhar na consulta (erro passageiro do UrlFetchApp), tenta de novo até 3 vezes.
 function usuarioDoPortal(token) {
   if (!token) return false;
 
-  const r = UrlFetchApp.fetch(CONFIG.SUPABASE_URL + '/auth/v1/user', {
-    method: 'get',
-    headers: { apikey: CONFIG.SUPABASE_CHAVE, Authorization: 'Bearer ' + token },
-    muteHttpExceptions: true
-  });
+  const cache = CacheService.getScriptCache();
+  const chave = 'login_' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token)
+  ).slice(0, 40);
+  if (cache.get(chave) === 'ok') return true;
 
-  return r.getResponseCode() === 200;
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      const r = UrlFetchApp.fetch(CONFIG.SUPABASE_URL + '/auth/v1/user', {
+        method: 'get',
+        headers: { apikey: CONFIG.SUPABASE_CHAVE, Authorization: 'Bearer ' + token },
+        muteHttpExceptions: true
+      });
+      const ok = r.getResponseCode() === 200;
+      if (ok) cache.put(chave, 'ok', 600);
+      return ok;
+    } catch (e) {
+      if (tentativa === 3) throw new Error('O Google não conseguiu conferir o login agora (' + e.message + '). Tente de novo.');
+      Utilities.sleep(1500 * tentativa);
+    }
+  }
+  return false;
 }
 
 // Pasta principal do cliente (ex.: "007 - RAZÃO SOCIAL") pelo código.
