@@ -15,6 +15,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  FileStack,
   ListPlus,
   FolderCog,
   Search,
@@ -28,6 +29,7 @@ import { Select } from '../components/ui'
 import { ClienteForm } from './ClienteForm'
 import { AtualizarTodas } from './AtualizarTodas'
 import { CadastroLote } from './CadastroLote'
+import { ImportarDocumentos } from './ImportarDocumentos'
 import { ConfigDrive } from './CriarPastaDrive'
 import { obterUrlDrive } from './drive'
 import { baixarArquivo, gerarXlsx, TIPO_XLSX } from '../lib/planilha'
@@ -102,6 +104,7 @@ export function Clientes({ session }: { session: Session }) {
   const [fPendencia, setFPendencia] = useState('')
   const [fHonorario, setFHonorario] = useState('')
   const [lote, setLote] = useState(false)
+  const [documentos, setDocumentos] = useState(false)
   const [configDrive, setConfigDrive] = useState<{ atual: string | null } | null>(null)
   const [ordem, setOrdem] = useState<{ campo: Ordem; asc: boolean }>({ campo: 'codigo', asc: true })
   const [editando, setEditando] = useState<Cliente | 'novo' | null>(null)
@@ -372,6 +375,14 @@ export function Clientes({ session }: { session: Session }) {
             >
               <ListPlus className="h-4 w-4" />
               Cadastrar em lote
+            </button>
+            <button
+              className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
+              onClick={() => setDocumentos(true)}
+              title="Vários Contratos Sociais / Cartões CNPJ: preenche os sócios e salva no Drive"
+            >
+              <FileStack className="h-4 w-4" />
+              Enviar contratos
             </button>
             <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando('novo')}>
               <Plus className="h-4 w-4" />
@@ -701,6 +712,7 @@ export function Clientes({ session }: { session: Session }) {
       )}
 
       {configDrive && <ConfigDrive atual={configDrive.atual} onClose={() => setConfigDrive(null)} onSalvo={() => setConfigDrive(null)} />}
+      {documentos && <ImportarDocumentos clientes={clientes} onClose={() => setDocumentos(false)} onFeito={carregar} />}
       {lote && <CadastroLote clientes={clientes} onClose={() => setLote(false)} onFeito={carregar} />}
       {atualizandoTodas && <AtualizarTodas clientes={clientes} onClose={() => setAtualizandoTodas(false)} onFeito={carregar} />}
       {editando && (

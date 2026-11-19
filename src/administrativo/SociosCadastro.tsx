@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Pencil, UserPlus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SociosEditor } from './SociosEditor'
+import { enviarArquivoDrive } from './drive'
 import { cpfValido } from './socios'
 import type { Cliente, SocioCadastro } from './tipos'
 
@@ -17,6 +18,13 @@ export function SociosCadastro({ cliente, onSalvo }: { cliente: Cliente; onSalvo
   const [lista, setLista] = useState<SocioCadastro[]>([])
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [avisoDrive, setAvisoDrive] = useState<string | null>(null)
+
+  async function salvarNoDrive(f: File) {
+    setAvisoDrive(`Salvando “${f.name}” no Drive...`)
+    const r = await enviarArquivoDrive(cliente.codigo, f)
+    setAvisoDrive(r.ok ? `“${f.name}” ${r.duplicado ? 'já estava' : 'salvo'} no Drive: ${r.pasta}.` : `Drive: ${r.erro}`)
+  }
 
   async function salvar() {
     const limpos = lista
@@ -98,7 +106,14 @@ export function SociosCadastro({ cliente, onSalvo }: { cliente: Cliente; onSalvo
 
       {editando && (
         <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200/70">
-          <SociosEditor socios={lista} onChange={setLista} cnpj={cliente.cnpj} razaoSocial={cliente.razao_social} />
+          <SociosEditor
+            socios={lista}
+            onChange={setLista}
+            cnpj={cliente.cnpj}
+            razaoSocial={cliente.razao_social}
+            onContrato={salvarNoDrive}
+            avisoDrive={avisoDrive}
+          />
           {erro && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">{erro}</p>}
           <div className="mt-3 flex justify-end gap-2">
             <button className="btn-secondary btn-sm" onClick={() => setEditando(false)} disabled={salvando}>

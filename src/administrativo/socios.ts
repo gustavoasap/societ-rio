@@ -1,3 +1,4 @@
+import { buscarCepPartes } from '../lib/format'
 import type { Socio } from '../types'
 import type { SocioCadastro } from './tipos'
 
@@ -160,4 +161,15 @@ export function deProcesso(s: Partial<Socio>): SocioCadastro {
     doc_numero: temRg ? (s.rg ?? '') : (s.cnh ?? ''),
     doc_orgao: temRg ? (s.rg_orgao_emissor ?? '') : (s.cnh_orgao_emissor ?? ''),
   }
+}
+
+/** Completa rua, bairro, cidade e UF pelo CEP (só o que estiver vazio). */
+export async function completarPeloCep(lista: SocioCadastro[]) {
+  return Promise.all(
+    lista.map(async (s) => {
+      if (digitos(s.cep).length !== 8 || (s.rua && s.bairro && s.cidade && s.uf)) return s
+      const e = await buscarCepPartes(s.cep ?? '')
+      return e ? { ...s, rua: s.rua || e.rua, bairro: s.bairro || e.bairro, cidade: s.cidade || e.cidade, uf: s.uf || e.uf } : s
+    }),
+  )
 }

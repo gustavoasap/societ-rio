@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react'
 import { Building2, FileText, FolderSearch, Plus, Trash2, UserRound } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { buscarCepPartes, mascaraCep, mascaraCpf } from '../lib/format'
+import { mascaraCep, mascaraCpf } from '../lib/format'
 import { consultarCnpj } from '../lib/cnpj'
 import { consultarSerpro } from '../lib/cnpjSerpro'
 import { Field, Modal, Select } from '../components/ui'
 import { CORES_RACA, QUALIFICACOES, type Socio } from '../types'
 import { textoDoArquivo, extrairSocios } from './contratoSocial'
-import { TIPOS_DOCUMENTO, cpfValido, deProcesso, mesclarSocios, socioVazio } from './socios'
+import { TIPOS_DOCUMENTO, completarPeloCep, cpfValido, deProcesso, mesclarSocios, socioVazio } from './socios'
 import type { SocioCadastro } from './tipos'
 
 const digitos = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '')
@@ -24,17 +24,6 @@ interface ProcessoAchado {
   socios: Partial<Socio>[] | null
 }
 
-/** Completa rua, bairro, cidade e UF pelo CEP (só o que estiver vazio). */
-async function completarPeloCep(lista: SocioCadastro[]) {
-  return Promise.all(
-    lista.map(async (s) => {
-      if (digitos(s.cep).length !== 8 || (s.rua && s.bairro && s.cidade && s.uf)) return s
-      const e = await buscarCepPartes(s.cep ?? '')
-      return e ? { ...s, rua: s.rua || e.rua, bairro: s.bairro || e.bairro, cidade: s.cidade || e.cidade, uf: s.uf || e.uf } : s
-    }),
-  )
-}
-
 /**
  * Sócios da empresa (nome, CPF, endereço, cor/raça e documento). Pode trazer os dados da Receita Federal,
  * do Contrato Social (PDF/Word) ou de um processo em Processos Societários — sempre completando só o que está vazio.
@@ -44,11 +33,17 @@ export function SociosEditor({
   onChange,
   cnpj,
   razaoSocial,
+  onContrato,
+  avisoDrive,
 }: {
   socios: SocioCadastro[]
   onChange: (s: SocioCadastro[]) => void
   cnpj?: string | null
   razaoSocial?: string | null
+  /** Arquivo do Contrato Social enviado (para salvar no Drive) */
+  onContrato?: (f: File) => void
+  /** Situação do envio ao Drive (mostrada abaixo dos botões) */
+  avisoDrive?: string | null
 }) {
   const [aviso, setAviso] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -99,6 +94,7 @@ export function SociosEditor({
     setErro(null)
     setAviso(null)
     setOcupado('contrato')
+    onContrato?.(f)
     try {
       const texto = await textoDoArquivo(f)
       if (texto.replace(/\s/g, '').length < 50)
@@ -154,6 +150,7 @@ export function SociosEditor({
       </div>
       {aviso && <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">{aviso}</p>}
       {erro && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{erro}</p>}
+      {avisoDrive && <p className="mt-2 rounded-lg bg-sky-50 px-3 py-2 text-xs font-medium text-sky-800">{avisoDrive}</p>}
 
       <div className="mt-3 space-y-3">
         {socios.map((s, i) => {

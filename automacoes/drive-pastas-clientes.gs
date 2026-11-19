@@ -26,7 +26,12 @@
  * BOTÃO DO PORTAL: Implantar > Nova implantação > tipo "App da Web" >
  * Executar como: Eu > Quem pode acessar: Qualquer pessoa > Implantar.
  * Copie a URL (termina em /exec) e cole no portal (Base de Clientes > Drive).
- * O endereço só dispara a verificação de clientes sem pasta; não recebe dados.
+ * O mesmo endereço também recebe documentos enviados pelo portal (Contrato Social,
+ * Cartão CNPJ) e salva na pasta do cliente, em DEPARTAMENTO - SOCIETÁRIO.
+ * Só aceita envios de usuários logados no portal (o login é conferido no Supabase).
+ *
+ * ATUALIZAR O CÓDIGO SEM TROCAR A URL: Implantar > Gerenciar implantações >
+ * lápis (Editar) > Versão: "Nova versão" > Implantar.
  */
 
 // =====================================================
@@ -408,6 +413,87 @@ function doGet() {
   return ContentService
     .createTextOutput(JSON.stringify(resposta))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Envio de documentos pelo portal (Contrato Social, Cartão CNPJ...).
+// Corpo (texto JSON): { token, codigo, nome, mime, base64, subpasta }
+function doPost(e) {
+  let resposta;
+
+  try {
+    const dados = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+
+    if (!usuarioDoPortal(dados.token)) {
+      throw new Error('Acesso negado: faça login no portal novamente.');
+    }
+
+    const codigo = normalizarID(dados.codigo);
+    if (!codigo) throw new Error('Código do cliente inválido.');
+    if (!dados.base64 || !dados.nome) throw new Error('Arquivo não recebido.');
+
+    let pasta = pastaDoCliente(codigo);
+
+    // Cliente novo ainda sem pasta: cria agora e procura de novo
+    if (!pasta) {
+      processarClientes(false);
+      pasta = pastaDoCliente(codigo);
+    }
+    if (!pasta) throw new Error('Pasta do cliente ' + codigo + ' não encontrada no Drive.');
+
+    const log = { subpastasCriadas: 0, acoes: [], avisos: [] };
+    const nomeSub = dados.subpasta || 'DEPARTAMENTO - SOCIETÁRIO';
+    const destino = obterOuCriarSubpasta(pasta, nomeSub, log);
+
+    const bytes = Utilities.base64Decode(dados.base64);
+    const nome = String(dados.nome).replace(/[\\/:*?"<>|]/g, '-').slice(0, 200);
+
+    // Mesmo nome e mesmo tamanho: já foi enviado, não duplica
+    const iguais = destino.getFilesByName(nome);
+    while (iguais.hasNext()) {
+      const existente = iguais.next();
+      if (existente.getSize() === bytes.length) {
+        resposta = { ok: true, duplicado: true, url: existente.getUrl(), pasta: pasta.getName() + ' / ' + nomeSub, erro: null };
+        break;
+      }
+    }
+
+    if (!resposta) {
+      const blob = Utilities.newBlob(bytes, dados.mime || 'application/octet-stream', nome);
+      const arquivo = destino.createFile(blob);
+      resposta = { ok: true, duplicado: false, url: arquivo.getUrl(), pasta: pasta.getName() + ' / ' + nomeSub, erro: null };
+    }
+  } catch (err) {
+    resposta = { ok: false, erro: err.message };
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify(resposta))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Confere no Supabase se o token é de um usuário logado no portal.
+function usuarioDoPortal(token) {
+  if (!token) return false;
+
+  const r = UrlFetchApp.fetch(CONFIG.SUPABASE_URL + '/auth/v1/user', {
+    method: 'get',
+    headers: { apikey: CONFIG.SUPABASE_CHAVE, Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  });
+
+  return r.getResponseCode() === 200;
+}
+
+// Pasta principal do cliente (ex.: "007 - RAZÃO SOCIAL") pelo código.
+function pastaDoCliente(codigo) {
+  const iterator = DriveApp.getFolderById(CONFIG.ID_PASTA_RAIZ).getFolders();
+
+  while (iterator.hasNext()) {
+    const pasta = iterator.next();
+    if (obterIDPasta(pasta.getName()) === codigo) return pasta;
+  }
+
+  return null;
 }
 
 // Execução manual completa.
