@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { mascaraCnpj } from '../lib/format'
 import { Modal } from '../components/ui'
 import { BuscaCliente } from '../components/BuscaCliente'
-import { extrairSocios, itensDoPdf, textoDoArquivo } from './contratoSocial'
+import { extrairSocios, itensDoPdf, lerContratoComSocios, textoDoArquivo } from './contratoSocial'
 import {
   identificarCliente,
   lerCartaoCnpj,
@@ -102,10 +102,30 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
           60000,
           'O arquivo demorou demais para abrir (mais de 1 minuto): escolha a empresa; ele ainda pode ser salvo no Drive.',
         )
-        if (texto.replace(/\s/g, '').length < 50) erroLeitura = 'Sem texto (PDF escaneado): escolha a empresa; o arquivo pode ser salvo no Drive.'
       } catch (e) {
         erroLeitura = e instanceof Error ? e.message : String(e)
       }
+      // Contrato escaneado (sem texto, ou sem a qualificação dos sócios em texto): lê as páginas de imagem com OCR
+      const ehPdf = /\.pdf$/i.test(arquivo.name)
+      const precisaOcr =
+        ehPdf &&
+        !/portal foi atualizado/.test(erroLeitura ?? '') &&
+        (texto.replace(/\s/g, '').length < 50 || (tipoDocumento(texto) === 'contrato' && !extrairSocios(texto).length))
+      if (precisaOcr) {
+        try {
+          const r = await comLimite(
+            lerContratoComSocios(arquivo, (m) => setLendo(`Lendo ${n + 1} de ${lista.length}: ${arquivo.name} — ${m}`)),
+            150000,
+            'tempo',
+          )
+          texto = r.texto
+          erroLeitura = null
+        } catch {
+          // segue com o que já tinha
+        }
+      }
+      if (!erroLeitura && texto.replace(/\s/g, '').length < 50)
+        erroLeitura = 'Sem texto legível (nem com OCR): escolha a empresa; o arquivo pode ser salvo no Drive.'
       const tipo = texto && !erroLeitura ? tipoDocumento(texto) : null
       let empresa: DadosEmpresaDoc | null = null
       if (tipo === 'cartao') {
@@ -142,6 +162,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
         l.novo.cnpj = cartao.novo.cnpj || l.novo.cnpj
       }
     })
+    import('./ocr').then((m) => m.encerrarOcr())
     setLinhas((l) => [...l, ...novas])
     setLendo(null)
     if (entrada.current) entrada.current.value = ''
@@ -373,7 +394,8 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
               <b>{novasEmpresas} empresa(s) não estão na Base</b> e serão cadastradas com os dados do documento.{' '}
               {novasSemNumero > 0 ? (
                 <b className="text-rose-700">
-                  Falta informar o número (ou o número já é de outro cliente) em {novasSemNumero} delas: campo “Nº” em vermelho. Sem um número livre, a empresa não é cadastrada.
+                  Falta informar o número (ou o número já é de outro cliente) em {novasSemNumero} delas: campo “Nº” em vermelho. Sem um número livre, a empresa
+                  não é cadastrada.
                 </b>
               ) : (
                 'Todas com número informado.'

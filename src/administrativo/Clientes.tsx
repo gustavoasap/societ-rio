@@ -18,6 +18,7 @@ import {
   FileStack,
   FolderSearch,
   ShieldCheck,
+  UsersRound,
   ListPlus,
   FolderCog,
   Search,
@@ -35,6 +36,7 @@ import { ImportarDocumentos } from './ImportarDocumentos'
 import { ConfigDrive } from './CriarPastaDrive'
 import { obterUrlDrive, procurarDocumentosDrive } from './drive'
 import { lerContratosDoDrive } from './lerContratosDrive'
+import { AtualizarSocios } from './AtualizarSocios'
 import { lerValidadesDoDrive } from './lerCertificadosDrive'
 import { ImportarCertificados, PainelCertificados } from './Certificados'
 import { situacaoDoCliente, type DocCertificado } from './certificado'
@@ -116,6 +118,7 @@ export function Clientes({ session }: { session: Session }) {
   const [certs, setCerts] = useState<Map<string, DocCertificado[]>>(new Map())
   const [painelCert, setPainelCert] = useState<null | 'pendentes' | 'vencendo' | 'vencidos'>(null)
   const [enviarCert, setEnviarCert] = useState(false)
+  const [atualizarSocios, setAtualizarSocios] = useState(false)
   const [lote, setLote] = useState(false)
   const [documentos, setDocumentos] = useState(false)
   const [configDrive, setConfigDrive] = useState<{ atual: string | null } | null>(null)
@@ -464,6 +467,14 @@ export function Clientes({ session }: { session: Session }) {
             </button>
             <button
               className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
+              onClick={() => setAtualizarSocios(true)}
+              title="Lê o Contrato Social salvo no Drive e completa os sócios de quem está sem sócios ou com dados faltando"
+            >
+              <UsersRound className="h-4 w-4" />
+              Atualizar sócios pelo contrato
+            </button>
+            <button
+              className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
               onClick={() => setDocumentos(true)}
               title="Vários Contratos Sociais e Cartões CNPJ (PDF, Word ou .zip): cadastra, preenche os sócios e salva no Drive"
             >
@@ -585,6 +596,10 @@ export function Clientes({ session }: { session: Session }) {
                 <span className="flex flex-wrap gap-2">
                   <button className="btn-secondary btn-sm" onClick={() => setFDocumento('sem_socios')}>
                     Ver quais são
+                  </button>
+                  <button className="btn-secondary btn-sm" onClick={() => setAtualizarSocios(true)}>
+                    <UsersRound className="h-3.5 w-3.5" />
+                    Atualizar sócios pelo contrato
                   </button>
                   {semSociosComContrato > 0 && (
                     <button className="btn-secondary btn-sm" onClick={() => setFDocumento('sem_socios_com_contrato')}>
@@ -917,6 +932,7 @@ export function Clientes({ session }: { session: Session }) {
           }}
         />
       )}
+      {atualizarSocios && <AtualizarSocios clientes={clientes} onClose={() => setAtualizarSocios(false)} onFeito={carregar} />}
       {enviarCert && <ImportarCertificados clientes={clientes} onClose={() => setEnviarCert(false)} onFeito={carregar} />}
       {documentos && <ImportarDocumentos clientes={clientes} onClose={() => setDocumentos(false)} onFeito={carregar} />}
       {lote && <CadastroLote clientes={clientes} onClose={() => setLote(false)} onFeito={carregar} />}

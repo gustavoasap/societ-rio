@@ -168,3 +168,26 @@ export function extrairSocios(textoBruto: string): SocioCadastro[] {
   })
   return r
 }
+
+/**
+ * Texto do contrato pronto para achar os sócios: lê o texto do arquivo e, se não achar sócios (contrato
+ * escaneado, comum na certidão autenticada), lê as páginas de imagem com OCR até encontrar a qualificação.
+ */
+export async function lerContratoComSocios(arquivo: File, progresso?: (m: string) => void): Promise<{ texto: string; socios: SocioCadastro[]; ocr: boolean }> {
+  let texto = ''
+  try {
+    texto = await textoDoArquivo(arquivo)
+  } catch (e) {
+    if (!/\.pdf$/i.test(arquivo.name)) throw e
+  }
+  const socios = extrairSocios(texto)
+  if (socios.length || !/\.pdf$/i.test(arquivo.name)) return { texto, socios, ocr: false }
+  const { textoComOcr } = await import('./ocr')
+  const comOcr = await textoComOcr(await arquivo.arrayBuffer(), {
+    progresso,
+    // Para quando já achou sócio e chegou nas cláusulas (a qualificação acabou)
+    bastou: (t) => extrairSocios(t).length > 0 && /resolvem|CL[ÁA]USULA\s+PRIMEIRA/i.test(t),
+  })
+  const tudo = `${texto}\n${comOcr}`
+  return { texto: tudo, socios: extrairSocios(tudo), ocr: true }
+}

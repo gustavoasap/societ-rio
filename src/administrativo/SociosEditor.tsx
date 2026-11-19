@@ -6,7 +6,7 @@ import { consultarCnpj } from '../lib/cnpj'
 import { consultarSerpro } from '../lib/cnpjSerpro'
 import { Field, Modal, Select } from '../components/ui'
 import { CORES_RACA, QUALIFICACOES, type Socio } from '../types'
-import { textoDoArquivo, extrairSocios } from './contratoSocial'
+import { lerContratoComSocios } from './contratoSocial'
 import { TIPOS_DOCUMENTO, completarPeloCep, cpfValido, deProcesso, mesclarSocios, socioVazio } from './socios'
 import type { SocioCadastro } from './tipos'
 
@@ -96,10 +96,10 @@ export function SociosEditor({
     setOcupado('contrato')
     onContrato?.(f)
     try {
-      const texto = await textoDoArquivo(f)
-      if (texto.replace(/\s/g, '').length < 50)
-        throw new Error('Não encontrei texto no arquivo. Ele parece ser uma imagem escaneada; envie o PDF original (com texto) ou o Word.')
-      await juntar(extrairSocios(texto), 'Contrato Social')
+      // Lê o texto; se o contrato for escaneado, lê as páginas de imagem com OCR
+      const { socios: lidos, ocr } = await lerContratoComSocios(f, (m) => setAviso(`Lendo o contrato: ${m}`))
+      setAviso(null)
+      await juntar(lidos, ocr ? 'Contrato Social (lido por OCR — confira)' : 'Contrato Social')
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e))
     } finally {
