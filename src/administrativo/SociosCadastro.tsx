@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Pencil, UserPlus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SociosEditor } from './SociosEditor'
-import { enviarArquivoDrive } from './drive'
+import { documentoJaExiste, enviarArquivoDrive, hashArquivo } from './drive'
 import { cpfValido } from './socios'
 import type { Cliente, SocioCadastro } from './tipos'
 
@@ -21,8 +21,10 @@ export function SociosCadastro({ cliente, onSalvo }: { cliente: Cliente; onSalvo
   const [avisoDrive, setAvisoDrive] = useState<string | null>(null)
 
   async function salvarNoDrive(f: File) {
+    const hash = await hashArquivo(f)
+    if (await documentoJaExiste(cliente.id, 'contrato', f.name, hash)) return setAvisoDrive(`“${f.name}” já estava salvo para este cliente: ignorado.`)
     setAvisoDrive(`Salvando “${f.name}” no Drive...`)
-    const r = await enviarArquivoDrive(cliente.codigo, f, { clienteId: cliente.id, tipo: 'contrato' })
+    const r = await enviarArquivoDrive(cliente.codigo, f, { clienteId: cliente.id, tipo: 'contrato', hash })
     setAvisoDrive(r.ok ? `“${f.name}” ${r.duplicado ? 'já estava' : 'salvo'} no Drive: ${r.pasta}.` : `Drive: ${r.erro}`)
   }
 

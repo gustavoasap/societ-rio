@@ -17,6 +17,7 @@ import {
   RefreshCw,
   FileStack,
   FolderSearch,
+  ShieldCheck,
   ListPlus,
   FolderCog,
   Search,
@@ -34,6 +35,9 @@ import { ImportarDocumentos } from './ImportarDocumentos'
 import { ConfigDrive } from './CriarPastaDrive'
 import { obterUrlDrive, procurarDocumentosDrive } from './drive'
 import { lerContratosDoDrive } from './lerContratosDrive'
+import { lerValidadesDoDrive } from './lerCertificadosDrive'
+import { ImportarCertificados, PainelCertificados } from './Certificados'
+import { situacaoDoCliente, type DocCertificado } from './certificado'
 import { baixarArquivo, gerarXlsx, TIPO_XLSX } from '../lib/planilha'
 import { ClienteExpandido } from './ClienteExpandido'
 import { encerrarCliente } from './acoes'
@@ -109,6 +113,9 @@ export function Clientes({ session }: { session: Session }) {
   // Documentos de cada cliente (Contrato Social / Cartão CNPJ), enviados pelo portal ou achados no Drive
   const [docs, setDocs] = useState<Map<string, { contrato: number; cartao: number }>>(new Map())
   const [procurandoDocs, setProcurandoDocs] = useState<string | null>(null)
+  const [certs, setCerts] = useState<Map<string, DocCertificado[]>>(new Map())
+  const [painelCert, setPainelCert] = useState<null | 'pendentes' | 'vencendo' | 'vencidos'>(null)
+  const [enviarCert, setEnviarCert] = useState(false)
   const [lote, setLote] = useState(false)
   const [documentos, setDocumentos] = useState(false)
   const [configDrive, setConfigDrive] = useState<{ atual: string | null } | null>(null)
@@ -127,7 +134,7 @@ export function Clientes({ session }: { session: Session }) {
         supabase.from('adm_clientes').select('*').order('codigo'),
         supabase.from('adm_clientes_honorario_atual').select('cliente_id, valor, dia_vencimento'),
         supabase.from('soc_parceiros').select('id, nome').order('nome'),
-        supabase.from('adm_documentos').select('cliente_id, tipo').range(0, 9999),
+        supabase.from('adm_documentos').select('id, cliente_id, tipo, nome, url, drive_id, validade, titular, situacao, criado_em').range(0, 9999),
       ]),
     )
     const falha = c.error ?? h.error ?? p.error
@@ -136,12 +143,18 @@ export function Clientes({ session }: { session: Session }) {
     setVigentes(new Map(((h.data as Vigente[]) ?? []).map((v) => [v.cliente_id, { ...v, valor: Number(v.valor) }])))
     setParceiros((p.data as ParceiroResumo[]) ?? [])
     const mapa = new Map<string, { contrato: number; cartao: number }>()
-    for (const x of (dd.data as { cliente_id: string; tipo: 'contrato' | 'cartao' }[]) ?? []) {
+    const mapaCert = new Map<string, DocCertificado[]>()
+    for (const x of (dd.data as (DocCertificado & { tipo: 'contrato' | 'cartao' | 'certificado' })[]) ?? []) {
+      if (x.tipo === 'certificado') {
+        mapaCert.set(x.cliente_id, [...(mapaCert.get(x.cliente_id) ?? []), x])
+        continue
+      }
       const m = mapa.get(x.cliente_id) ?? { contrato: 0, cartao: 0 }
       m[x.tipo]++
       mapa.set(x.cliente_id, m)
     }
     setDocs(mapa)
+    setCerts(mapaCert)
     setCarregando(false)
   }, [])
 
@@ -195,6 +208,15 @@ export function Clientes({ session }: { session: Session }) {
 
   const ativosSemHonorario = useMemo(() => ativos.filter((c) => !vigentes.has(c.id) && !c.sem_honorario), [ativos, vigentes])
   const ativosSemContrato = useMemo(() => ativos.filter((c) => !docs.get(c.id)?.contrato), [ativos, docs])
+  const resumoCert = useMemo(() => {
+    const r = { sem: 0, vencendo: 0, vencido: 0 }
+    for (const c of ativos) {
+      const s = situacaoDoCliente(c.certificado_digital, certs.get(c.id) ?? [])
+      if (s === 'sem' || s === 'invalido') r.sem++
+      else if (s === 'vencendo' || s === 'vencido') r[s]++
+    }
+    return r
+  }, [ativos, certs])
   const ativosSemSocios = useMemo(() => ativos.filter((c) => !(c.socios ?? []).length), [ativos])
   const semSociosComContrato = useMemo(() => ativosSemSocios.filter((c) => docs.get(c.id)?.contrato).length, [ativosSemSocios, docs])
 
@@ -212,6 +234,14 @@ export function Clientes({ session }: { session: Session }) {
           (l.semTexto ? `; ${l.semTexto} com contrato só escaneado (sem texto para ler)` : '') +
           (l.semSocios ? `; ${l.semSocios} em que não achei a qualificação dos sócios` : '') +
           (l.falhas.length ? `; ${l.falhas.length} falha(s): ${l.falhas.slice(0, 3).join(' | ')}` : '') +
+          '.',
+      )
+      const v = await lerValidadesDoDrive((m) => setProcurandoDocs(`Procurando... ${m}`))
+      setProcurandoDocs(
+        (x) =>
+          `${x} Certificados: vencimento lido em ${v.lidos}` +
+          (v.protegidos ? `; ${v.protegidos} protegido(s) por senha (informe o vencimento no painel Certificados)` : '') +
+          (v.invalidos ? `; ${v.invalidos} arquivo(s) inválido(s)` : '') +
           '.',
       )
     } catch (e) {
@@ -426,6 +456,14 @@ export function Clientes({ session }: { session: Session }) {
             </button>
             <button
               className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
+              onClick={() => setPainelCert('pendentes')}
+              title="Certificados digitais: enviar, vencimentos, N/A e download"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Certificados
+            </button>
+            <button
+              className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
               onClick={() => setDocumentos(true)}
               title="Vários Contratos Sociais e Cartões CNPJ (PDF, Word ou .zip): cadastra, preenche os sócios e salva no Drive"
             >
@@ -493,6 +531,37 @@ export function Clientes({ session }: { session: Session }) {
                   <button className="btn-secondary btn-sm" onClick={() => setDocumentos(true)}>
                     <FileStack className="h-3.5 w-3.5" />
                     Enviar Contratos e Cartão CNPJ
+                  </button>
+                </span>
+              </div>
+            )}
+            {aba === 'ativos' && resumoCert.sem + resumoCert.vencendo + resumoCert.vencido > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-900 ring-1 ring-sky-200">
+                <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <ShieldCheck className="h-4 w-4" />
+                  {resumoCert.sem > 0 && (
+                    <button className="font-semibold underline-offset-2 hover:underline" onClick={() => setPainelCert('pendentes')}>
+                      {resumoCert.sem} cliente(s) sem certificado digital
+                    </button>
+                  )}
+                  {resumoCert.vencendo > 0 && (
+                    <button className="font-bold text-amber-700 underline-offset-2 hover:underline" onClick={() => setPainelCert('vencendo')}>
+                      {resumoCert.vencendo} certificado(s) vencem em até 10 dias
+                    </button>
+                  )}
+                  {resumoCert.vencido > 0 && (
+                    <button className="font-bold text-rose-700 underline-offset-2 hover:underline" onClick={() => setPainelCert('vencidos')}>
+                      {resumoCert.vencido} certificado(s) vencido(s)
+                    </button>
+                  )}
+                </span>
+                <span className="flex flex-wrap gap-2">
+                  <button className="btn-secondary btn-sm" onClick={() => setPainelCert('pendentes')}>
+                    Ver certificados
+                  </button>
+                  <button className="btn-secondary btn-sm" onClick={() => setEnviarCert(true)}>
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Enviar certificados
                   </button>
                 </span>
               </div>
@@ -823,6 +892,19 @@ export function Clientes({ session }: { session: Session }) {
       )}
 
       {configDrive && <ConfigDrive atual={configDrive.atual} onClose={() => setConfigDrive(null)} onSalvo={() => setConfigDrive(null)} />}
+      {painelCert && (
+        <PainelCertificados
+          clientes={clientes}
+          abaInicial={painelCert}
+          onClose={() => setPainelCert(null)}
+          onAlterado={carregar}
+          onEnviar={() => {
+            setPainelCert(null)
+            setEnviarCert(true)
+          }}
+        />
+      )}
+      {enviarCert && <ImportarCertificados clientes={clientes} onClose={() => setEnviarCert(false)} onFeito={carregar} />}
       {documentos && <ImportarDocumentos clientes={clientes} onClose={() => setDocumentos(false)} onFeito={carregar} />}
       {lote && <CadastroLote clientes={clientes} onClose={() => setLote(false)} onFeito={carregar} />}
       {atualizandoTodas && <AtualizarTodas clientes={clientes} onClose={() => setAtualizandoTodas(false)} onFeito={carregar} />}

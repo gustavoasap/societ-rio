@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Building2, Check, RefreshCw, Users } from 'lucide-react'
+import { Building2, Check, Download, Loader2, RefreshCw, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { consultarSerpro } from '../lib/cnpjSerpro'
 import { camposDoCartao, consultarCnpj, enderecoTexto, type DadosCnpj } from '../lib/cnpj'
@@ -9,6 +9,16 @@ import type { Socio } from '../types'
 import { INSCRICOES, formatarCnpj, type Cliente, type SocioCadastro } from './tipos'
 import { SociosCadastro } from './SociosCadastro'
 import { socioPorNome } from './socios'
+import { baixarParaComputador } from './drive'
+
+interface Doc {
+  tipo: string
+  nome: string
+  url: string | null
+  drive_id: string | null
+  situacao: string
+  validade: string | null
+}
 
 interface ProcessoSocios {
   id: string
@@ -42,15 +52,27 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
   const [gravando, setGravando] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
   const [sociosCad, setSociosCad] = useState<SocioCadastro[]>(cliente.socios ?? [])
-  const [documentos, setDocumentos] = useState<{ tipo: string; nome: string; url: string | null }[]>([])
+  const [documentos, setDocumentos] = useState<Doc[]>([])
+  const [baixando, setBaixando] = useState<string | null>(null)
+
+  async function baixar(d: Doc) {
+    if (!d.drive_id) return
+    setBaixando(d.nome)
+    try {
+      await baixarParaComputador(d.drive_id)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e))
+    }
+    setBaixando(null)
+  }
 
   useEffect(() => {
     supabase
       .from('adm_documentos')
-      .select('tipo, nome, url')
+      .select('tipo, nome, url, drive_id, situacao, validade')
       .eq('cliente_id', cliente.id)
       .order('nome')
-      .then(({ data }) => setDocumentos((data as { tipo: string; nome: string; url: string | null }[]) ?? []))
+      .then(({ data }) => setDocumentos((data as Doc[]) ?? []))
   }, [cliente.id])
 
   const consultar = useCallback(
@@ -139,28 +161,46 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
           />
           <Info label="Número da inscrição" value={cliente.inscricao ? <span className="font-mono">{cliente.inscricao}</span> : 'Não informado'} />
           <p className="self-center text-[0.6875rem] text-slate-400">Dados do cadastro do cliente. Para alterar, use o lápis na Base de Clientes.</p>
-          {(['contrato', 'cartao'] as const).map((t) => {
-            const ds = documentos.filter((d) => d.tipo === t)
+          {(['contrato', 'cartao', 'certificado'] as const).map((t) => {
+            const ds = documentos.filter((d) => d.tipo === t && (t !== 'certificado' || d.situacao === 'ativo'))
             return (
               <Info
                 key={t}
-                label={t === 'contrato' ? 'Contrato Social / Inteiro Teor' : 'Cartão CNPJ'}
+                label={t === 'contrato' ? 'Contrato Social / Inteiro Teor' : t === 'cartao' ? 'Cartão CNPJ' : 'Certificado digital (ativo)'}
                 className="sm:col-span-3"
                 value={
                   ds.length ? (
                     <span className="flex flex-wrap gap-x-3 gap-y-1">
-                      {ds.map((d) =>
-                        d.url ? (
-                          <a key={d.nome} href={d.url} target="_blank" rel="noreferrer" className="text-brand-700 underline hover:text-brand-900">
-                            {d.nome}
-                          </a>
-                        ) : (
-                          <span key={d.nome}>{d.nome}</span>
-                        ),
-                      )}
+                      {ds.map((d) => (
+                        <span key={d.nome} className="inline-flex items-center gap-1">
+                          {d.url ? (
+                            <a href={d.url} target="_blank" rel="noreferrer" className="text-brand-700 underline hover:text-brand-900">
+                              {d.nome}
+                            </a>
+                          ) : (
+                            <span>{d.nome}</span>
+                          )}
+                          {t === 'certificado' && d.validade && <span className="text-xs text-slate-500">(vence {formatarData(d.validade)})</span>}
+                          {d.drive_id && (
+                            <button
+                              className="icon-btn h-6 w-6"
+                              onClick={() => baixar(d)}
+                              disabled={baixando === d.nome}
+                              title="Baixar o arquivo"
+                              aria-label={`Baixar ${d.nome}`}
+                            >
+                              {baixando === d.nome ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
+                        </span>
+                      ))}
                     </span>
                   ) : (
-                    <span className="font-semibold text-amber-700">Pendente: não encontrado no Drive nem enviado pelo portal</span>
+                    <span className="font-semibold text-amber-700">
+                      {t === 'certificado' && cliente.certificado_digital === 'na'
+                        ? 'Não se aplica'
+                        : 'Pendente: não encontrado no Drive nem enviado pelo portal'}
+                    </span>
                   )
                 }
               />

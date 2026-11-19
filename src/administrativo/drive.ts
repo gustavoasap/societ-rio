@@ -47,6 +47,7 @@ export interface RespostaEnvio {
   ok: boolean
   duplicado?: boolean
   url?: string
+  drive_id?: string
   pasta?: string
   erro: string | null
 }
@@ -65,7 +66,7 @@ function paraBase64(buf: ArrayBuffer) {
 export async function enviarArquivoDrive(
   codigo: number,
   arquivo: File,
-  registro?: { clienteId: string; tipo: 'contrato' | 'cartao' },
+  registro?: RegistroDoc,
   subpasta = 'DEPARTAMENTO - SOCIETÁRIO',
 ): Promise<RespostaEnvio> {
   const url = await obterUrlDrive()
@@ -96,12 +97,83 @@ export async function enviarArquivoDrive(
     return { ok: false, erro: 'O script do Drive ainda não recebe arquivos: cole a versão nova do código e atualize a implantação (Nova versão).' }
   }
   // Registra o documento do cliente (a Base mostra quem está sem Contrato Social)
-  if (resp.ok && registro) await registrarDocumento(registro.clienteId, registro.tipo, arquivo.name, resp.url ?? null)
+  if (resp.ok && registro) await registrarDocumento(registro, arquivo.name, resp.url ?? null, resp.drive_id ?? null)
   return resp
 }
 
-export async function registrarDocumento(clienteId: string, tipo: 'contrato' | 'cartao', nome: string, url: string | null) {
-  return supabase.from('adm_documentos').upsert({ cliente_id: clienteId, tipo, nome, url, origem: 'portal' }, { onConflict: 'cliente_id,tipo,nome' })
+export type TipoDoc = 'contrato' | 'cartao' | 'certificado'
+
+export interface RegistroDoc {
+  clienteId: string
+  tipo: TipoDoc
+  hash?: string | null
+  validade?: string | null
+  titular?: string | null
+  situacao?: 'ativo' | 'expirado' | 'invalido'
+}
+
+export async function registrarDocumento(r: RegistroDoc, nome: string, url: string | null, driveId: string | null = null) {
+  return supabase.from('adm_documentos').upsert(
+    {
+      cliente_id: r.clienteId,
+      tipo: r.tipo,
+      nome,
+      url,
+      drive_id: driveId,
+      origem: 'portal',
+      hash: r.hash ?? null,
+      validade: r.validade ?? null,
+      titular: r.titular ?? null,
+      situacao: r.situacao ?? 'ativo',
+    },
+    { onConflict: 'cliente_id,tipo,nome' },
+  )
+}
+
+/** Impressão digital do arquivo (SHA-256): o mesmo arquivo enviado de novo é reconhecido e ignorado. */
+export async function hashArquivo(arquivo: File) {
+  const d = await crypto.subtle.digest('SHA-256', await arquivo.arrayBuffer())
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** O cliente já tem este documento (mesmo arquivo ou mesmo nome)? Nesse caso o envio é ignorado. */
+export async function documentoJaExiste(clienteId: string, tipo: TipoDoc, nome: string, hash: string) {
+  const { data } = await supabase.from('adm_documentos').select('nome, hash').eq('cliente_id', clienteId).eq('tipo', tipo)
+  return ((data as { nome: string; hash: string | null }[]) ?? []).some((d) => d.hash === hash || d.nome === nome)
+}
+
+/** Move o certificado vencido para CERTIFICADO DIGITAL / EXPIRADO no Drive. */
+export async function expirarArquivoDrive(driveId: string): Promise<{ ok: boolean; erro: string | null }> {
+  const url = await obterUrlDrive()
+  if (!url) return { ok: false, erro: 'Endereço do script do Drive não configurado.' }
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) return { ok: false, erro: 'Sessão expirada: entre no portal novamente.' }
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token, acao: 'expirar', drive_id: driveId }),
+    })
+    return JSON.parse(await r.text())
+  } catch {
+    return { ok: false, erro: 'O script do Drive ainda não move certificados: atualize o código e a implantação (Nova versão).' }
+  }
+}
+
+/** Baixa o documento do Drive direto para o computador (sem abrir o Drive). */
+export async function baixarParaComputador(driveId: string) {
+  const f = await baixarArquivoDrive(driveId)
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(f)
+  a.download = f.name
+  document.body.appendChild(a)
+  a.click()
+  setTimeout(() => {
+    URL.revokeObjectURL(a.href)
+    a.remove()
+  }, 1000)
 }
 
 /** Pede ao script para procurar Contratos Sociais e Cartões CNPJ que já estão nas pastas dos clientes. */

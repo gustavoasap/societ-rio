@@ -26,8 +26,10 @@
  * BOTÃO DO PORTAL: Implantar > Nova implantação > tipo "App da Web" >
  * Executar como: Eu > Quem pode acessar: Qualquer pessoa > Implantar.
  * Copie a URL (termina em /exec) e cole no portal (Base de Clientes > Drive).
- * O mesmo endereço também recebe documentos enviados pelo portal (Contrato Social,
- * Cartão CNPJ) e salva na pasta do cliente, em DEPARTAMENTO - SOCIETÁRIO.
+ * O mesmo endereço também recebe documentos enviados pelo portal: Contrato Social e
+ * Cartão CNPJ (em DEPARTAMENTO - SOCIETÁRIO) e Certificado Digital (em CERTIFICADO
+ * DIGITAL; os vencidos vão para CERTIFICADO DIGITAL/EXPIRADO). Senha de certificado
+ * nunca passa por aqui: só o arquivo.
  * Só aceita envios de usuários logados no portal (o login é conferido no Supabase).
  *
  * ATUALIZAR O CÓDIGO SEM TROCAR A URL: Implantar > Gerenciar implantações >
@@ -448,9 +450,45 @@ function varrerDocumentos() {
     }
   });
 
+  // Certificados digitais: arquivos .pfx/.p12/.cer/.crt na pasta CERTIFICADO DIGITAL de cada cliente
+  // (os que estão na subpasta EXPIRADO entram como expirados)
+  const pastas = DriveApp.getFolderById(raizId).getFolders();
+  while (pastas.hasNext()) {
+    const pastaCliente = pastas.next();
+    const codigo = obterIDPasta(pastaCliente.getName());
+    if (!codigo) continue;
+    const certs = pastaCliente.getFoldersByName('CERTIFICADO DIGITAL');
+    if (!certs.hasNext()) continue;
+    const pastaCert = certs.next();
+    coletarCertificados(pastaCert, codigo, 'ativo', itens);
+    const expirados = pastaCert.getFoldersByName('EXPIRADO');
+    if (expirados.hasNext()) coletarCertificados(expirados.next(), codigo, 'expirado', itens);
+  }
+
   if (itens.length) chamarPortal('drive_registrar_documentos', { p_itens: itens });
   console.log('Documentos registrados: ' + itens.length);
   return itens.length;
+}
+
+function coletarCertificados(pasta, codigo, situacao, itens) {
+  const arquivos = pasta.getFiles();
+  while (arquivos.hasNext()) {
+    const arq = arquivos.next();
+    if (!/\.(pfx|p12|cer|crt)$/i.test(arq.getName())) continue;
+    itens.push({ codigo: Number(codigo), tipo: 'certificado', nome: arq.getName(), url: arq.getUrl(), drive_id: arq.getId(), situacao: situacao });
+  }
+}
+
+// Move um certificado vencido para CERTIFICADO DIGITAL / EXPIRADO do mesmo cliente.
+function moverParaExpirado(driveId) {
+  const arq = DriveApp.getFileById(String(driveId || ''));
+  if (!dentroDaRaiz(arq)) throw new Error('Arquivo fora das pastas de clientes.');
+  const pai = arq.getParents().next();
+  if (pai.getName() === 'EXPIRADO') return { ok: true, erro: null };
+  const log = { subpastasCriadas: 0, acoes: [], avisos: [] };
+  const destino = obterOuCriarSubpasta(pai, 'EXPIRADO', log);
+  arq.moveTo(destino);
+  return { ok: true, url: arq.getUrl(), erro: null };
 }
 
 // Botão "Criar pasta no Drive" do portal (App da Web).
@@ -502,6 +540,17 @@ function doPost(e) {
       throw new Error('Acesso negado: faça login no portal novamente.');
     }
 
+    // Certificado vencido: vai para a subpasta EXPIRADO
+    if (dados.acao === 'expirar') {
+      let resp;
+      try {
+        resp = moverParaExpirado(dados.drive_id);
+      } catch (err) {
+        resp = { ok: false, erro: err.message };
+      }
+      return ContentService.createTextOutput(JSON.stringify(resp)).setMimeType(ContentService.MimeType.JSON);
+    }
+
     // Portal pedindo um documento já salvo na pasta do cliente (para ler os sócios do contrato)
     if (dados.acao === 'baixar') {
       return ContentService
@@ -524,7 +573,11 @@ function doPost(e) {
 
     const log = { subpastasCriadas: 0, acoes: [], avisos: [] };
     const nomeSub = dados.subpasta || 'DEPARTAMENTO - SOCIETÁRIO';
-    const destino = obterOuCriarSubpasta(pasta, nomeSub, log);
+    // Aceita caminho com subpastas (ex.: CERTIFICADO DIGITAL/EXPIRADO)
+    let destino = pasta;
+    String(nomeSub).split('/').forEach(function (parte) {
+      if (parte.trim()) destino = obterOuCriarSubpasta(destino, parte.trim(), log);
+    });
 
     const bytes = Utilities.base64Decode(dados.base64);
     const nome = String(dados.nome).replace(/[\\/:*?"<>|]/g, '-').slice(0, 200);
@@ -534,7 +587,7 @@ function doPost(e) {
     while (iguais.hasNext()) {
       const existente = iguais.next();
       if (existente.getSize() === bytes.length) {
-        resposta = { ok: true, duplicado: true, url: existente.getUrl(), pasta: pasta.getName() + ' / ' + nomeSub, erro: null };
+        resposta = { ok: true, duplicado: true, url: existente.getUrl(), drive_id: existente.getId(), pasta: pasta.getName() + ' / ' + nomeSub, erro: null };
         break;
       }
     }
@@ -542,7 +595,7 @@ function doPost(e) {
     if (!resposta) {
       const blob = Utilities.newBlob(bytes, dados.mime || 'application/octet-stream', nome);
       const arquivo = destino.createFile(blob);
-      resposta = { ok: true, duplicado: false, url: arquivo.getUrl(), pasta: pasta.getName() + ' / ' + nomeSub, erro: null };
+      resposta = { ok: true, duplicado: false, url: arquivo.getUrl(), drive_id: arquivo.getId(), pasta: pasta.getName() + ' / ' + nomeSub, erro: null };
     }
   } catch (err) {
     resposta = { ok: false, erro: err.message };

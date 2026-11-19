@@ -52,7 +52,7 @@ const VAZIO: Dados = {
   tipo_inscricao: null,
   inscricao: null,
   procuracao: 'pendente',
-  certificado_digital: null,
+  certificado_digital: 'pendente',
   onboarding: 'pendente',
   link_drive: null,
   observacoes: null,

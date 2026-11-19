@@ -63,6 +63,7 @@ export function CadastroLote({ clientes, onClose, onFeito }: { clientes: Cliente
           status: 'pendente',
           empresa: 'ASAP',
           procuracao: 'pendente',
+          certificado_digital: 'pendente',
           onboarding: 'pendente',
         })
         r = error

@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react'
-import { unzipSync } from 'fflate'
 import { Building, CheckCircle2, FileStack, FileUp, Loader2, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { mascaraCnpj } from '../lib/format'
@@ -15,7 +14,8 @@ import {
   type DadosEmpresaDoc,
   type TipoDocumento,
 } from './documentos'
-import { enviarArquivoDrive } from './drive'
+import { expandirZips } from './arquivosZip'
+import { documentoJaExiste, enviarArquivoDrive, hashArquivo } from './drive'
 import { completarPeloCep, mesclarSocios, semAcento } from './socios'
 import type { Cliente, SocioCadastro } from './tipos'
 
@@ -43,7 +43,6 @@ interface Linha {
 
 const ROTULO_TIPO: Record<TipoDocumento, string> = { contrato: 'Contrato Social', cartao: 'Cartão CNPJ' }
 const digitos = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '')
-const ehDoc = (n: string) => /\.(pdf|docx)$/i.test(n) && !/(^|\/)(__MACOSX|\.)/.test(n)
 const nomeChave = (s: string) => semAcento(s).replace(/[^A-Z0-9]/g, '')
 
 /**
@@ -65,33 +64,6 @@ function gruposNovos(ls: Linha[]) {
     }
   return ls.map((_, i) => (ativos.includes(i) ? `g${raiz(i)}` : ''))
 }
-const MIME: Record<string, string> = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }
-
-/** Abre os .zip (inclusive subpastas) e devolve os PDFs/Word de dentro, junto com os arquivos soltos. */
-async function expandir(arquivos: File[]) {
-  const r: { arquivo: File; zip: string | null }[] = []
-  const erros: string[] = []
-  for (const f of arquivos) {
-    if (/\.zip$/i.test(f.name)) {
-      try {
-        const conteudo = unzipSync(new Uint8Array(await f.arrayBuffer()))
-        let n = 0
-        for (const [caminho, dados] of Object.entries(conteudo)) {
-          if (!ehDoc(caminho) || !dados.length) continue
-          const nome = caminho.split('/').pop()!
-          const ext = nome.split('.').pop()!.toLowerCase()
-          r.push({ arquivo: new File([dados as Uint8Array<ArrayBuffer>], nome, { type: MIME[ext] ?? '' }), zip: f.name })
-          n++
-        }
-        if (!n) erros.push(`${f.name}: nenhum PDF ou Word dentro do arquivo.`)
-      } catch {
-        erros.push(`${f.name}: não consegui abrir o arquivo .zip.`)
-      }
-    } else if (ehDoc(f.name)) r.push({ arquivo: f, zip: null })
-  }
-  return { r, erros }
-}
-
 /**
  * Envio de vários Contratos Sociais / Cartões CNPJ de uma vez (soltos ou em .zip): identifica o cliente
  * (CNPJ, razão social ou nome do arquivo), cadastra quem ainda não está na Base, preenche os sócios e salva
@@ -111,7 +83,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
 
   async function ler(arquivos: File[]) {
     setLendo('Abrindo arquivos...')
-    const { r: lista, erros } = await expandir(arquivos)
+    const { r: lista, erros } = await expandirZips(arquivos, (n) => /\.(pdf|docx)$/i.test(n))
     setAvisos(erros)
     const novas: Linha[] = []
     for (let n = 0; n < lista.length; n++) {
@@ -216,6 +188,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
         telefone: cartao?.telefone ?? null,
         status: 'pendente',
         procuracao: 'pendente',
+        certificado_digital: 'pendente',
         onboarding: 'pendente',
         empresa: 'ASAP',
         observacoes: 'Cadastrado automaticamente pelo envio de documentos.',
@@ -267,6 +240,12 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
       alterar(i, { status: 'enviando', resultado: null, ...(idNovo ? { clienteId: idNovo, como: 'Cadastrado agora' } : {}) })
       const partes: string[] = idNovo ? [`cliente ${String(cli.codigo).padStart(3, '0')} cadastrado`] : []
       let falhou = false
+      // Documento que o cliente já tem (mesmo arquivo ou mesmo nome): ignora, sem alterar nada
+      const hash = await hashArquivo(l.arquivo)
+      if (!idNovo && l.tipo && (await documentoJaExiste(cli.id, l.tipo, l.arquivo.name, hash))) {
+        alterar(i, { status: 'ok', resultado: 'Já existia no cadastro: ignorado (nada alterado)' })
+        continue
+      }
       if (preencher && l.socios.length) {
         // Lê o cadastro atual para não perder sócios digitados por outra pessoa
         const { data, error } = await supabase.from('adm_clientes').select('socios').eq('id', cli.id).single()
@@ -283,7 +262,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
         } else partes.push(`${l.socios.length} sócio(s) preenchido(s)`)
       }
       if (salvarDrive) {
-        const r = await enviarArquivoDrive(cli.codigo, l.arquivo, l.tipo ? { clienteId: cli.id, tipo: l.tipo } : undefined)
+        const r = await enviarArquivoDrive(cli.codigo, l.arquivo, l.tipo ? { clienteId: cli.id, tipo: l.tipo, hash } : undefined)
         if (r.ok) partes.push(r.duplicado ? 'já estava no Drive' : 'salvo no Drive')
         else {
           falhou = true
