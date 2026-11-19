@@ -286,7 +286,22 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
   }
 
   const chavesNovos = gruposNovos(linhas)
-  const gruposComNumero = new Set(chavesNovos.filter((k, i) => k && linhas[i].novo!.codigo.trim()))
+  // Número do cliente: obrigatório, e não pode ser de outro cliente da Base nem repetido entre as empresas novas
+  const porCodigo = new Map(todos.map((c) => [c.codigo, c]))
+  const codigoPorGrupo = new Map<string, string>()
+  chavesNovos.forEach((k, i) => {
+    if (k && linhas[i].novo!.codigo.trim()) codigoPorGrupo.set(k, linhas[i].novo!.codigo.trim())
+  })
+  const problemaCodigo = (k: string): string | null => {
+    const cod = codigoPorGrupo.get(k)
+    if (!cod) return null
+    const existente = porCodigo.get(Number(cod))
+    if (existente) return `O nº ${cod.padStart(3, '0')} já é de ${existente.razao_social}${existente.status === 'encerrado' ? ' (inativo)' : ''}.`
+    if ([...codigoPorGrupo.entries()].some(([g, c]) => g !== k && Number(c) === Number(cod)))
+      return `O nº ${cod.padStart(3, '0')} foi usado em duas empresas novas.`
+    return null
+  }
+  const gruposComNumero = new Set(chavesNovos.filter((k) => k && codigoPorGrupo.has(k) && !problemaCodigo(k)))
   const prontas = linhas.filter((l, i) => (l.clienteId || (chavesNovos[i] && gruposComNumero.has(chavesNovos[i]))) && l.status !== 'ok').length
   const novasEmpresas = new Set(chavesNovos.filter(Boolean)).size
   const novasSemNumero = new Set(chavesNovos.filter((k) => k && !gruposComNumero.has(k))).size
@@ -297,7 +312,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
       title="Enviar Contratos Sociais e Cartões CNPJ"
       subtitulo="Vários arquivos de uma vez (PDF, Word ou .zip): o portal identifica a empresa pelo CNPJ, pela razão social ou pelo nome do arquivo"
       onClose={onClose}
-      largura="max-w-6xl"
+      largura="max-w-[min(96vw,1600px)]"
       footer={
         <>
           <label className="mr-auto flex flex-wrap items-center gap-4 text-sm text-slate-600">
@@ -358,7 +373,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
               <b>{novasEmpresas} empresa(s) não estão na Base</b> e serão cadastradas com os dados do documento.{' '}
               {novasSemNumero > 0 ? (
                 <b className="text-rose-700">
-                  Falta informar o número de {novasSemNumero} delas (campo “Nº” em vermelho): sem número, a empresa não é cadastrada.
+                  Falta informar o número (ou o número já é de outro cliente) em {novasSemNumero} delas: campo “Nº” em vermelho. Sem um número livre, a empresa não é cadastrada.
                 </b>
               ) : (
                 'Todas com número informado.'
@@ -377,16 +392,16 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
                 <tr className="border-b border-slate-100">
                   <th className="py-2.5 pr-2 pl-4">Arquivo</th>
                   <th className="px-2 py-2.5">Tipo</th>
-                  <th className="min-w-80 px-2 py-2.5">Empresa</th>
-                  <th className="px-2 py-2.5">Sócios encontrados</th>
+                  <th className="min-w-96 px-2 py-2.5">Empresa</th>
+                  <th className="min-w-80 px-2 py-2.5">Sócios encontrados</th>
                   <th className="py-2.5 pr-4 pl-2">Resultado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 align-top">
                 {linhas.map((l, i) => (
                   <tr key={i}>
-                    <td className="max-w-56 py-2.5 pr-2 pl-4">
-                      <div className="truncate font-medium text-slate-800" title={l.arquivo.name}>
+                    <td className="w-72 max-w-80 py-2.5 pr-2 pl-4">
+                      <div className="font-medium break-words text-slate-800" title={l.arquivo.name}>
                         {l.arquivo.name}
                       </div>
                       {l.zip && <div className="truncate text-[0.6875rem] text-slate-400">de {l.zip}</div>}
@@ -425,7 +440,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
                           {l.novo.ativo && (
                             <div className="mt-2 grid grid-cols-[5rem_1fr] gap-2">
                               <input
-                                className={`input py-1.5 font-mono text-xs ${l.novo.codigo.trim() ? '' : 'border-rose-300 bg-rose-50 ring-2 ring-rose-200'}`}
+                                className={`input py-1.5 font-mono text-xs ${l.novo.codigo.trim() && !problemaCodigo(chavesNovos[i]) ? '' : 'border-rose-300 bg-rose-50 ring-2 ring-rose-200'}`}
                                 placeholder="Nº *"
                                 inputMode="numeric"
                                 value={l.novo.codigo}
@@ -447,6 +462,9 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
                                 onChange={(e) => alterarNovo(i, { razao_social: e.target.value.toUpperCase() })}
                                 aria-label="Razão social"
                               />
+                              {problemaCodigo(chavesNovos[i]) && (
+                                <p className="col-span-2 text-xs font-semibold text-rose-600">{problemaCodigo(chavesNovos[i])}</p>
+                              )}
                             </div>
                           )}
                         </div>
@@ -481,8 +499,22 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
                         </span>
                       )}
                       {l.status === 'lido' && (
-                        <span className={l.novo?.ativo && !l.clienteId && !l.novo.codigo.trim() ? 'font-semibold text-rose-600' : 'text-slate-400'}>
-                          {l.clienteId ? 'Pronto' : l.novo?.ativo ? (l.novo.codigo.trim() ? 'Será cadastrado' : 'Falta o número do cliente') : 'Ignorado'}
+                        <span
+                          className={
+                            l.novo?.ativo && !l.clienteId && (!l.novo.codigo.trim() || problemaCodigo(chavesNovos[i]))
+                              ? 'font-semibold text-rose-600'
+                              : 'text-slate-400'
+                          }
+                        >
+                          {l.clienteId
+                            ? 'Pronto'
+                            : l.novo?.ativo
+                              ? !l.novo.codigo.trim()
+                                ? 'Falta o número do cliente'
+                                : problemaCodigo(chavesNovos[i])
+                                  ? 'Número já usado: troque'
+                                  : 'Será cadastrado'
+                              : 'Ignorado'}
                         </span>
                       )}
                     </td>

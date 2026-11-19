@@ -15,6 +15,13 @@ const RE_CPF = /\d{3}\.?\d{3}\.?\d{3}\s?[-–]?\s?\d{2}/g
 const RE_NOME = /([A-ZÀ-Ý][A-ZÀ-Ý'´`.-]+(?: +[A-ZÀ-Ý][A-ZÀ-Ý'´`.-]*){1,9}) *,/g
 // Alguns contratos escrevem o nome só com as iniciais maiúsculas ("Adilson Romero, brasileiro, ...")
 const RE_NOME_TITULO = /([A-ZÀ-Ý][a-zà-ÿ'´`.-]+(?: +(?:d[aeo]s?|e|[A-ZÀ-Ý][a-zà-ÿ'´`.-]+)){1,8}) *,/g
+// Palavras que não fazem parte do nome da pessoa
+const PREFIXO_NAO_NOME =
+  /^(?:(?:COM|E|DA|DE|DO|PELA|PELO|CONSOLIDA[ÇC][ÃA]O|ALTERA[ÇC][ÃA]O|CONSTITUI[ÇC][ÃA]O|CONTRATUAL|CONTRATO|SOCIAL|S[ÓO]CI[OA]S?|ADMINISTRADOR(?:A|ES)?|TITULAR|SENHOR(?:A)?|SR\.?|SRA\.?|N[º°O]\.?|\d+[ªº°]?)\s+)+/
+// Órgãos emissores, siglas e documentos não são nomes ("DENATRAN RJ", "SSP SP")
+const NAO_E_NOME =
+  /\b(?:DETRAN|DENATRAN|SSP|SESP|SSPDS|SDS|IIRGD|IFP|IGP|DGPC|PCII|SEJUSP|POL[ÍI]CIA|CNH|RG|CPF|CNPJ|OAB|CRC|CREA|JUCESP|JUNTA|COMERCIAL|CART[ÓO]RIO|TABELI[ÃA]O|LTDA|EIRELI|ME|EPP)\b|\s(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)$/
+
 // Depois do nome vem a qualificação: nacionalidade, estado civil, profissão...
 const RE_QUALIFICACAO =
   /^[^,]{0,60}?(?:brasileir|nacionalidade|portugu|argentin|italian|estrangeir|solteir|casad|divorciad|vi[uú]v|separad|convivente|uni[aã]o est[aá]vel|natural|nascid|maior|empres[aá]ri|comerciante)/i
@@ -130,8 +137,13 @@ export function extrairSocios(textoBruto: string): SocioCadastro[] {
       const limpo = corteTitulo ? nome.slice((corteTitulo.index ?? 0) + corteTitulo[0].length) : nome
       return { nome: limpo.trim(), pos: (m.index ?? 0) + (nome.length - limpo.length) }
     })
-    .map((n) => ({ ...n, nome: n.nome.toUpperCase() }))
-    .filter((n) => !/^(CONTRATO|SOCIEDADE|LTDA|ALTERA|INSTRUMENTO|EMPRESA)/.test(n.nome))
+    .map((n) => {
+      // Tira palavras do título que vêm grudadas antes do nome ("COM CONSOLIDAÇÃO THIAGO ...", "SÓCIO ADMINISTRADOR ANA ...")
+      const nome = n.nome.toUpperCase()
+      const limpo = nome.replace(PREFIXO_NAO_NOME, '')
+      return { nome: limpo, pos: n.pos + (nome.length - limpo.length) }
+    })
+    .filter((n) => n.nome.split(' ').length >= 2 && !/^(CONTRATO|SOCIEDADE|LTDA|ALTERA|INSTRUMENTO|EMPRESA)/.test(n.nome) && !NAO_E_NOME.test(n.nome))
 
   const r: SocioCadastro[] = []
   cpfs.forEach((c, i) => {

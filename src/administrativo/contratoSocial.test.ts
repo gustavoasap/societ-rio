@@ -181,3 +181,14 @@ Marina Centurion Dardani, CPF: 529.982.247-25`
     ])
   })
 })
+
+describe('nomes de sócios', () => {
+  it('tira palavras do título grudadas e ignora órgão emissor (DENATRAN RJ)', () => {
+    const t = `ALTERAÇÃO CONTRATUAL COM CONSOLIDAÇÃO THIAGO DE OLIVEIRA TITONELLI, brasileiro, solteiro, empresário, CPF nº 957.568.170-34, residente na Rua A, 1, Centro, Rio de Janeiro/RJ, CEP 20000-000; e
+MARIA SOUZA LIMA, brasileira, casada, empresária, CNH nº 0123456789, DENATRAN RJ, brasileira, CPF nº 529.982.247-25, residente na Rua B, 2, Centro, Rio de Janeiro/RJ, CEP 20000-001;`
+    expect(extrairSocios(t).map((s) => [s.nome, s.cpf])).toEqual([
+      ['THIAGO DE OLIVEIRA TITONELLI', '957.568.170-34'],
+      ['MARIA SOUZA LIMA', '529.982.247-25'],
+    ])
+  })
+})
