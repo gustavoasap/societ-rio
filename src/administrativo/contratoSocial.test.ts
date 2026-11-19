@@ -124,3 +124,33 @@ describe('sócios', () => {
     expect(r[0]).toMatchObject({ cpf: '957.568.170-34', qualificacao: 'Sócio-Administrador', cor_raca: 'Parda' })
   })
 })
+
+describe('contrato social — robustez', () => {
+  it('lê três sócios (inclusive sócia casada e sócio com CNH)', () => {
+    const t = `CONTRATO SOCIAL DA SOCIEDADE TRIO COMERCIO LTDA
+ANA PAULA DE SOUZA, brasileira, casada, empresária, RG nº 12.345.678-9 SSP/SP, CPF nº 529.982.247-25, residente na Rua A, 10, Centro, São Paulo/SP, CEP 01001-000;
+BRUNO DOS SANTOS, brasileiro, solteiro, comerciante, CNH nº 01234567890 DETRAN/SP, CPF nº 390.533.447-05, residente na Rua B, 20, Centro, São Paulo/SP, CEP 01002-000; e
+CARLOS EDUARDO LIMA, brasileiro, divorciado, empresário, RG nº 22.333.444-5 SSP/SP, CPF nº 957.568.170-34, residente na Rua C, 30, Centro, São Paulo/SP, CEP 01003-000;
+resolvem constituir a sociedade. CLÁUSULA PRIMEIRA - ...`
+    const s = extrairSocios(t)
+    expect(s.map((x) => [x.nome, x.cpf])).toEqual([
+      ['ANA PAULA DE SOUZA', '529.982.247-25'],
+      ['BRUNO DOS SANTOS', '390.533.447-05'],
+      ['CARLOS EDUARDO LIMA', '957.568.170-34'],
+    ])
+    expect(s[1]).toMatchObject({ doc_tipo: 'CNH', rua: 'Rua B', numero: '20', cep: '01002-000' })
+  })
+
+  it('não trava em textos longos sem vírgula (carimbos de contrato autenticado)', () => {
+    const palavras = 'de da do sociedade junta comercial certifico registro autenticacao cartorio selo firma residente rua cpf'.split(' ')
+    const longo = (up: boolean) =>
+      Array.from({ length: 8000 }, (_, i) => palavras[(i * 7919) % palavras.length])
+        .map((w) => (up ? w.toUpperCase() : w))
+        .join(' ')
+    for (const t of [longo(false), longo(true), `FULANO DE TAL, brasileiro, CPF 957.568.170-34, residente e domiciliado na ${longo(true)}`]) {
+      const ini = Date.now()
+      extrairSocios(t)
+      expect(Date.now() - ini).toBeLessThan(1000)
+    }
+  })
+})

@@ -9,8 +9,12 @@ import type { ItemPdf } from './documentos'
 import { cpfValido, mascaraCpfTexto, separarEnderecoSocio, socioVazio } from './socios'
 
 const RE_CPF = /\d{3}\.?\d{3}\.?\d{3}\s?[-–]?\s?\d{2}/g
-const RE_NOME =
-  /([A-ZÀ-Ý][A-ZÀ-Ý'´`.-]+(?:\s+(?:D[AEO]S?|E|DI|DU|VAN|VON|DEL|[A-ZÀ-Ý][A-ZÀ-Ý'´`.-]*))+)\s*,(?=\s*[^,]{0,60}?(?:brasileir|nacionalidade|portugu|argentin|italian|estrangeir|solteir|casad|divorciad|vi[uú]v|separad|convivente|uni[aã]o est[aá]vel|natural|nascid|maior|empres[aá]ri|comerciante))/gi
+// Nome em MAIÚSCULAS (2 a 10 palavras) seguido de vírgula. Sem alternativas sobrepostas e sem /i, para não
+// travar em textos longos (contratos autenticados têm páginas de carimbos sem vírgula).
+const RE_NOME = /([A-ZÀ-Ý][A-ZÀ-Ý'´`.-]+(?: +[A-ZÀ-Ý][A-ZÀ-Ý'´`.-]*){1,9}) *,/g
+// Depois do nome vem a qualificação: nacionalidade, estado civil, profissão...
+const RE_QUALIFICACAO =
+  /^[^,]{0,60}?(?:brasileir|nacionalidade|portugu|argentin|italian|estrangeir|solteir|casad|divorciad|vi[uú]v|separad|convivente|uni[aã]o est[aá]vel|natural|nascid|maior|empres[aá]ri|comerciante)/i
 
 /** Itens de texto do PDF com a posição na página (para ler o Cartão CNPJ). */
 export async function itensDoPdf(buf: ArrayBuffer, paginas = 1): Promise<ItemPdf[]> {
@@ -114,6 +118,7 @@ export function extrairSocios(textoBruto: string): SocioCadastro[] {
   }
   // Nomes (MAIÚSCULAS seguidas de nacionalidade/estado civil etc.)
   const nomes = [...area.matchAll(RE_NOME)]
+    .filter((m) => RE_QUALIFICACAO.test(area.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 80)))
     .map((m) => {
       // Título colado no nome (ex.: "MINUSCOLI & FREITAS LTDA GUILHERME MINUSCOLI"): fica o que vem depois do LTDA/ME/EIRELI...
       const nome = m[1].trim()

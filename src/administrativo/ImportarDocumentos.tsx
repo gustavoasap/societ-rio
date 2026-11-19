@@ -64,6 +64,11 @@ function gruposNovos(ls: Linha[]) {
     }
   return ls.map((_, i) => (ativos.includes(i) ? `g${raiz(i)}` : ''))
 }
+/** Limite de tempo para cada etapa da leitura: um arquivo problemático não trava o lote inteiro. */
+function comLimite<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
+  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(msg)), ms))])
+}
+
 /**
  * Envio de vários Contratos Sociais / Cartões CNPJ de uma vez (soltos ou em .zip): identifica o cliente
  * (CNPJ, razão social ou nome do arquivo), cadastra quem ainda não está na Base, preenche os sócios e salva
@@ -92,7 +97,11 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
       let texto = ''
       let erroLeitura: string | null = null
       try {
-        texto = await textoDoArquivo(arquivo)
+        texto = await comLimite(
+          textoDoArquivo(arquivo),
+          60000,
+          'O arquivo demorou demais para abrir (mais de 1 minuto): escolha a empresa; ele ainda pode ser salvo no Drive.',
+        )
         if (texto.replace(/\s/g, '').length < 50) erroLeitura = 'Sem texto (PDF escaneado): escolha a empresa; o arquivo pode ser salvo no Drive.'
       } catch (e) {
         erroLeitura = e instanceof Error ? e.message : String(e)
@@ -101,12 +110,13 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
       let empresa: DadosEmpresaDoc | null = null
       if (tipo === 'cartao') {
         // Pela posição na página (caixas lado a lado); se não der, pelo texto corrido
-        const itens = /\.pdf$/i.test(arquivo.name) ? await itensDoPdf(await arquivo.arrayBuffer()).catch(() => []) : []
+        const itens = /\.pdf$/i.test(arquivo.name) ? await comLimite(itensDoPdf(await arquivo.arrayBuffer()), 30000, 'tempo').catch(() => []) : []
         const pos = itens.length ? lerCartaoPorPosicao(itens) : null
         empresa = pos?.cnpj && pos.razao_social ? pos : lerCartaoCnpj(texto)
       } else if (tipo === 'contrato') empresa = lerEmpresaDoContrato(texto)
       const ident = identificarCliente(texto, arquivo.name, todos)
-      const socios = tipo === 'contrato' ? await completarPeloCep(extrairSocios(texto)) : []
+      const lidos = tipo === 'contrato' ? extrairSocios(texto) : []
+      const socios = lidos.length ? await comLimite(completarPeloCep(lidos), 20000, 'tempo').catch(() => lidos) : []
       const podeCriar = !ident.clienteId && !!(empresa?.razao_social || empresa?.cnpj)
       novas.push({
         arquivo,
