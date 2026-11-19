@@ -107,6 +107,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
   const [criados, setCriados] = useState<Cliente[]>([])
   const entrada = useRef<HTMLInputElement>(null)
   const todos = [...clientes, ...criados]
+  const porIdTodos = new Map(todos.map((c) => [c.id, c]))
 
   async function ler(arquivos: File[]) {
     setLendo('Abrindo arquivos...')
@@ -165,7 +166,17 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
   }
 
   const alterar = (i: number, p: Partial<Linha>) => setLinhas((l) => l.map((x, j) => (j === i ? { ...x, ...p } : x)))
-  const alterarNovo = (i: number, p: Partial<Novo>) => setLinhas((l) => l.map((x, j) => (j === i && x.novo ? { ...x, novo: { ...x.novo, ...p } } : x)))
+  const alterarNovo = (i: number, p: Partial<Novo>) =>
+    setLinhas((l) => {
+      // O número vale para todos os arquivos da mesma empresa nova (ex.: contrato + cartão)
+      const ch = gruposNovos(l)
+      return l.map((x, j) => {
+        if (!x.novo) return x
+        if (j === i) return { ...x, novo: { ...x.novo, ...p } }
+        if (p.codigo !== undefined && ch[i] && ch[j] === ch[i]) return { ...x, novo: { ...x.novo, codigo: p.codigo } }
+        return x
+      })
+    })
 
   /** Cadastra as empresas novas (uma vez por CNPJ/razão social) e devolve o id do cliente de cada linha. */
   async function cadastrarNovos(ls: Linha[], chaves: string[]) {
@@ -178,6 +189,10 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
     })
     for (const [k, grupo] of grupos) {
       const base = grupo.find((g) => g.novo!.codigo.trim()) ?? grupo[0]
+      if (!base.novo!.codigo.trim()) {
+        erros.set(k, 'Informe o número do cliente para cadastrar.')
+        continue
+      }
       const cartao = grupo.find((g) => g.tipo === 'cartao')?.empresa
       const cnpj = digitos(base.novo!.cnpj) || digitos(grupo.find((g) => digitos(g.novo!.cnpj).length === 14)?.novo!.cnpj)
       const cod = base.novo!.codigo.trim() ? Number(base.novo!.codigo) : null
@@ -281,8 +296,11 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
     onFeito()
   }
 
-  const prontas = linhas.filter((l) => (l.clienteId || (l.novo?.ativo && l.novo.razao_social.trim())) && l.status !== 'ok').length
-  const novasEmpresas = new Set(gruposNovos(linhas).filter(Boolean)).size
+  const chavesNovos = gruposNovos(linhas)
+  const gruposComNumero = new Set(chavesNovos.filter((k, i) => k && linhas[i].novo!.codigo.trim()))
+  const prontas = linhas.filter((l, i) => (l.clienteId || (chavesNovos[i] && gruposComNumero.has(chavesNovos[i]))) && l.status !== 'ok').length
+  const novasEmpresas = new Set(chavesNovos.filter(Boolean)).size
+  const novasSemNumero = new Set(chavesNovos.filter((k) => k && !gruposComNumero.has(k))).size
   const semCliente = linhas.filter((l) => !l.clienteId && !l.novo?.ativo).length
 
   return (
@@ -348,8 +366,15 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
         <>
           {novasEmpresas > 0 && (
             <p className="rounded-xl bg-sky-50 px-4 py-2.5 text-sm text-sky-800 ring-1 ring-sky-200">
-              <b>{novasEmpresas} empresa(s) não estão na Base</b> e serão cadastradas com os dados do documento. Informe o número do cliente (ou deixe em branco
-              para usar o próximo livre). Depois, se precisar, use “Atualizar cadastro” nos Detalhes da Empresa para completar pela Receita.
+              <b>{novasEmpresas} empresa(s) não estão na Base</b> e serão cadastradas com os dados do documento.{' '}
+              {novasSemNumero > 0 ? (
+                <b className="text-rose-700">
+                  Falta informar o número de {novasSemNumero} delas (campo “Nº” em vermelho): sem número, a empresa não é cadastrada.
+                </b>
+              ) : (
+                'Todas com número informado.'
+              )}{' '}
+              Depois, se precisar, use “Atualizar cadastro” nos Detalhes da Empresa para completar pela Receita.
             </p>
           )}
           {semCliente > 0 && (
@@ -389,6 +414,11 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
                             vazio="Ignorar este arquivo"
                           />
                           {l.como && <div className="mt-0.5 text-[0.6875rem] text-slate-400">identificado por: {l.como}</div>}
+                          {porIdTodos.get(l.clienteId)?.status === 'encerrado' && (
+                            <div className="mt-1 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[0.6875rem] font-semibold text-slate-600 ring-1 ring-slate-200">
+                              Cliente inativo: os dados vão para o cadastro existente (não cria cliente novo)
+                            </div>
+                          )}
                         </>
                       )}
                       {!l.clienteId && l.novo && (
@@ -406,12 +436,12 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
                           {l.novo.ativo && (
                             <div className="mt-2 grid grid-cols-[5rem_1fr] gap-2">
                               <input
-                                className="input py-1.5 font-mono text-xs"
-                                placeholder="Nº"
+                                className={`input py-1.5 font-mono text-xs ${l.novo.codigo.trim() ? '' : 'border-rose-300 bg-rose-50 ring-2 ring-rose-200'}`}
+                                placeholder="Nº *"
                                 inputMode="numeric"
                                 value={l.novo.codigo}
                                 onChange={(e) => alterarNovo(i, { codigo: e.target.value.replace(/\D/g, '') })}
-                                title="Número do cliente (em branco: o próximo livre)"
+                                title="Número do cliente (obrigatório)"
                                 aria-label="Número do cliente"
                               />
                               <input
@@ -461,7 +491,11 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
                           {l.resultado}
                         </span>
                       )}
-                      {l.status === 'lido' && <span className="text-slate-400">{l.clienteId ? 'Pronto' : l.novo?.ativo ? 'Será cadastrado' : 'Ignorado'}</span>}
+                      {l.status === 'lido' && (
+                        <span className={l.novo?.ativo && !l.clienteId && !l.novo.codigo.trim() ? 'font-semibold text-rose-600' : 'text-slate-400'}>
+                          {l.clienteId ? 'Pronto' : l.novo?.ativo ? (l.novo.codigo.trim() ? 'Será cadastrado' : 'Falta o número do cliente') : 'Ignorado'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
