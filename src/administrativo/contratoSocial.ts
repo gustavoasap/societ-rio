@@ -5,11 +5,29 @@
 // o que for encontrado é sugerido e o usuário confere antes de salvar.
 import { strFromU8, unzipSync } from 'fflate'
 import type { SocioCadastro } from './tipos'
+import type { ItemPdf } from './documentos'
 import { cpfValido, mascaraCpfTexto, separarEnderecoSocio, socioVazio } from './socios'
 
 const RE_CPF = /\d{3}\.?\d{3}\.?\d{3}\s?[-–]?\s?\d{2}/g
 const RE_NOME =
   /([A-ZÀ-Ý][A-ZÀ-Ý'´`.-]+(?:\s+(?:D[AEO]S?|E|DI|DU|VAN|VON|DEL|[A-ZÀ-Ý][A-ZÀ-Ý'´`.-]*))+)\s*,(?=\s*[^,]{0,60}?(?:brasileir|nacionalidade|portugu|argentin|italian|estrangeir|solteir|casad|divorciad|vi[uú]v|separad|convivente|uni[aã]o est[aá]vel|natural|nascid|maior|empres[aá]ri|comerciante))/gi
+
+/** Itens de texto do PDF com a posição na página (para ler o Cartão CNPJ). */
+export async function itensDoPdf(buf: ArrayBuffer, paginas = 1): Promise<ItemPdf[]> {
+  const pdfjs = await import('pdfjs-dist')
+  const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+  pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise
+  const r: ItemPdf[] = []
+  for (let p = 1; p <= Math.min(doc.numPages, paginas); p++) {
+    const c = await (await doc.getPage(p)).getTextContent()
+    for (const i of c.items) {
+      if (!('str' in i) || !i.str.trim()) continue
+      r.push({ str: i.str, x: i.transform[4], y: i.transform[5], h: Math.abs(i.transform[3]) || i.height || 8, pagina: p })
+    }
+  }
+  return r
+}
 
 /** Texto de um PDF (com texto, não escaneado) ou de um .docx. */
 export async function textoDoArquivo(arquivo: File): Promise<string> {

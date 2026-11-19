@@ -379,10 +379,10 @@ export function Clientes({ session }: { session: Session }) {
             <button
               className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
               onClick={() => setDocumentos(true)}
-              title="Vários Contratos Sociais / Cartões CNPJ: preenche os sócios e salva no Drive"
+              title="Vários Contratos Sociais e Cartões CNPJ (PDF, Word ou .zip): cadastra, preenche os sócios e salva no Drive"
             >
               <FileStack className="h-4 w-4" />
-              Enviar contratos
+              Enviar Contratos e Cartão CNPJ
             </button>
             <button className="btn-primary from-brand-500 to-cyan-500 shadow-cyan-500/30" onClick={() => setEditando('novo')}>
               <Plus className="h-4 w-4" />
