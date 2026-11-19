@@ -559,6 +559,15 @@ export function Clientes({ session }: { session: Session }) {
                   <button className="btn-secondary btn-sm" onClick={() => setPainelCert('pendentes')}>
                     Ver certificados
                   </button>
+                  <button
+                    className="btn-secondary btn-sm"
+                    onClick={procurarNoDrive}
+                    disabled={!!procurandoDocs && procurandoDocs.startsWith('Procurando')}
+                    title="Procura os certificados na pasta CERTIFICADO DIGITAL de cada cliente e lê o vencimento"
+                  >
+                    <FolderSearch className="h-3.5 w-3.5" />
+                    Procurar no Drive
+                  </button>
                   <button className="btn-secondary btn-sm" onClick={() => setEnviarCert(true)}>
                     <ShieldCheck className="h-3.5 w-3.5" />
                     Enviar certificados
@@ -901,6 +910,10 @@ export function Clientes({ session }: { session: Session }) {
           onEnviar={() => {
             setPainelCert(null)
             setEnviarCert(true)
+          }}
+          onProcurarDrive={() => {
+            setPainelCert(null)
+            procurarNoDrive()
           }}
         />
       )}

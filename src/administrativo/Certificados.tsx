@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Ban, CheckCircle2, Download, FileUp, KeyRound, Loader2, RotateCcw, ShieldCheck, XCircle } from 'lucide-react'
+import { Ban, CheckCircle2, Download, FileUp, FolderSearch, KeyRound, Loader2, RotateCcw, ShieldCheck, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatarData } from '../lib/format'
 import { Modal } from '../components/ui'
@@ -316,12 +316,15 @@ export function PainelCertificados({
   onClose,
   onAlterado,
   onEnviar,
+  onProcurarDrive,
   abaInicial = 'pendentes',
 }: {
   clientes: Cliente[]
   onClose: () => void
   onAlterado: () => void
   onEnviar: () => void
+  /** Procura os certificados nas pastas CERTIFICADO DIGITAL do Drive (fecha o painel e mostra o progresso na Base) */
+  onProcurarDrive: () => void
   abaInicial?: Aba
 }) {
   const [docs, setDocs] = useState<DocCertificado[]>([])
@@ -457,6 +460,15 @@ export function PainelCertificados({
           </button>
         ))}
         <span className="flex-1" />
+        <button
+          className="btn-secondary btn-sm"
+          onClick={onProcurarDrive}
+          disabled={!!ocupado}
+          title="Procura os certificados na pasta CERTIFICADO DIGITAL de cada cliente (e os contratos/cartões) e lê o vencimento"
+        >
+          <FolderSearch className="h-3.5 w-3.5" />
+          Procurar no Drive
+        </button>
         <button
           className="btn-secondary btn-sm"
           onClick={lerVencimentos}
