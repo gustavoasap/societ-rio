@@ -62,7 +62,12 @@ function paraBase64(buf: ArrayBuffer) {
  * Salva um documento (Contrato Social, Cartão CNPJ...) na pasta do cliente no Drive, dentro de
  * DEPARTAMENTO - SOCIETÁRIO. O script confere o login do usuário no portal antes de aceitar.
  */
-export async function enviarArquivoDrive(codigo: number, arquivo: File, subpasta = 'DEPARTAMENTO - SOCIETÁRIO'): Promise<RespostaEnvio> {
+export async function enviarArquivoDrive(
+  codigo: number,
+  arquivo: File,
+  registro?: { clienteId: string; tipo: 'contrato' | 'cartao' },
+  subpasta = 'DEPARTAMENTO - SOCIETÁRIO',
+): Promise<RespostaEnvio> {
   const url = await obterUrlDrive()
   if (!url) return { ok: false, erro: 'Endereço do script do Drive não configurado (Base de Clientes > Drive).' }
   const { data } = await supabase.auth.getSession()
@@ -84,9 +89,61 @@ export async function enviarArquivoDrive(codigo: number, arquivo: File, subpasta
     return { ok: false, erro: 'Não consegui falar com o script do Google (confira a implantação do App da Web).' }
   }
   const texto = await r.text()
+  let resp: RespostaEnvio
   try {
-    return JSON.parse(texto) as RespostaEnvio
+    resp = JSON.parse(texto) as RespostaEnvio
   } catch {
     return { ok: false, erro: 'O script do Drive ainda não recebe arquivos: cole a versão nova do código e atualize a implantação (Nova versão).' }
   }
+  // Registra o documento do cliente (a Base mostra quem está sem Contrato Social)
+  if (resp.ok && registro) await registrarDocumento(registro.clienteId, registro.tipo, arquivo.name, resp.url ?? null)
+  return resp
+}
+
+export async function registrarDocumento(clienteId: string, tipo: 'contrato' | 'cartao', nome: string, url: string | null) {
+  return supabase.from('adm_documentos').upsert({ cliente_id: clienteId, tipo, nome, url, origem: 'portal' }, { onConflict: 'cliente_id,tipo,nome' })
+}
+
+/** Pede ao script para procurar Contratos Sociais e Cartões CNPJ que já estão nas pastas dos clientes. */
+export async function procurarDocumentosDrive(): Promise<{ ok: boolean; documentos: number; erro: string | null }> {
+  const url = await obterUrlDrive()
+  if (!url) return { ok: false, documentos: 0, erro: 'Endereço do script do Drive não configurado (Base de Clientes > Drive).' }
+  try {
+    const r = await fetch(`${url}?acao=documentos`, { method: 'GET', redirect: 'follow' })
+    const j = JSON.parse(await r.text())
+    if (typeof j.documentos !== 'number') throw new Error()
+    return j
+  } catch {
+    return {
+      ok: false,
+      documentos: 0,
+      erro: 'O script do Drive ainda não procura documentos: cole a versão nova do código e atualize a implantação (Nova versão).',
+    }
+  }
+}
+
+/** Baixa (pelo script) um documento salvo na pasta do cliente no Drive. */
+export async function baixarArquivoDrive(driveId: string): Promise<File> {
+  const url = await obterUrlDrive()
+  if (!url) throw new Error('Endereço do script do Drive não configurado.')
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Sessão expirada: entre no portal novamente.')
+  const r = await fetch(url, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ token, acao: 'baixar', drive_id: driveId }),
+  })
+  let j: { ok: boolean; nome?: string; mime?: string; base64?: string; erro: string | null }
+  try {
+    j = JSON.parse(await r.text())
+  } catch {
+    throw new Error('O script do Drive ainda não envia arquivos: cole a versão nova do código e atualize a implantação (Nova versão).')
+  }
+  if (!j.ok || !j.base64) throw new Error(j.erro ?? 'Arquivo não recebido.')
+  const bin = atob(j.base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new File([bytes], j.nome ?? 'documento.pdf', { type: j.mime ?? '' })
 }

@@ -16,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   FileStack,
+  FolderSearch,
   ListPlus,
   FolderCog,
   Search,
@@ -31,7 +32,8 @@ import { AtualizarTodas } from './AtualizarTodas'
 import { CadastroLote } from './CadastroLote'
 import { ImportarDocumentos } from './ImportarDocumentos'
 import { ConfigDrive } from './CriarPastaDrive'
-import { obterUrlDrive } from './drive'
+import { obterUrlDrive, procurarDocumentosDrive } from './drive'
+import { lerContratosDoDrive } from './lerContratosDrive'
 import { baixarArquivo, gerarXlsx, TIPO_XLSX } from '../lib/planilha'
 import { ClienteExpandido } from './ClienteExpandido'
 import { encerrarCliente } from './acoes'
@@ -103,6 +105,10 @@ export function Clientes({ session }: { session: Session }) {
   const [fRegime, setFRegime] = useState('')
   const [fPendencia, setFPendencia] = useState('')
   const [fHonorario, setFHonorario] = useState('')
+  const [fDocumento, setFDocumento] = useState('')
+  // Documentos de cada cliente (Contrato Social / Cartão CNPJ), enviados pelo portal ou achados no Drive
+  const [docs, setDocs] = useState<Map<string, { contrato: number; cartao: number }>>(new Map())
+  const [procurandoDocs, setProcurandoDocs] = useState<string | null>(null)
   const [lote, setLote] = useState(false)
   const [documentos, setDocumentos] = useState(false)
   const [configDrive, setConfigDrive] = useState<{ atual: string | null } | null>(null)
@@ -116,11 +122,12 @@ export function Clientes({ session }: { session: Session }) {
   const [motivoEnc, setMotivoEnc] = useState<MotivoEncerramento | null>(null)
 
   const carregar = useCallback(async () => {
-    const [c, h, p] = await comRetentativa(() =>
+    const [c, h, p, dd] = await comRetentativa(() =>
       Promise.all([
         supabase.from('adm_clientes').select('*').order('codigo'),
         supabase.from('adm_clientes_honorario_atual').select('cliente_id, valor, dia_vencimento'),
         supabase.from('soc_parceiros').select('id, nome').order('nome'),
+        supabase.from('adm_documentos').select('cliente_id, tipo').range(0, 9999),
       ]),
     )
     const falha = c.error ?? h.error ?? p.error
@@ -128,6 +135,13 @@ export function Clientes({ session }: { session: Session }) {
     setClientes((c.data as Cliente[]) ?? [])
     setVigentes(new Map(((h.data as Vigente[]) ?? []).map((v) => [v.cliente_id, { ...v, valor: Number(v.valor) }])))
     setParceiros((p.data as ParceiroResumo[]) ?? [])
+    const mapa = new Map<string, { contrato: number; cartao: number }>()
+    for (const x of (dd.data as { cliente_id: string; tipo: 'contrato' | 'cartao' }[]) ?? []) {
+      const m = mapa.get(x.cliente_id) ?? { contrato: 0, cartao: 0 }
+      m[x.tipo]++
+      mapa.set(x.cliente_id, m)
+    }
+    setDocs(mapa)
     setCarregando(false)
   }, [])
 
@@ -150,6 +164,9 @@ export function Clientes({ session }: { session: Session }) {
       if (fHonorario === 'sem' && (vigentes.has(c.id) || c.sem_honorario)) return false
       if (fHonorario === 'confirmado' && !c.sem_honorario) return false
       if (fHonorario === 'com' && !vigentes.has(c.id)) return false
+      if (fDocumento === 'sem_contrato' && docs.get(c.id)?.contrato) return false
+      if (fDocumento === 'com_contrato' && !docs.get(c.id)?.contrato) return false
+      if (fDocumento === 'sem_cartao' && docs.get(c.id)?.cartao) return false
       if (fPendencia) {
         const etapa = fPendencia === 'qualquer' ? null : c[fPendencia as (typeof ETAPAS)[number]['campo']]
         if (fPendencia === 'qualquer' ? !temPendencia(c) : etapa !== 'pendente' && etapa !== 'pdf_enviado') return false
@@ -172,9 +189,32 @@ export function Clientes({ session }: { session: Session }) {
       const r = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR')
       return ordem.asc ? r : -r
     })
-  }, [aba, ativos, inativos, busca, fStatus, fParceiro, fRegime, fPendencia, fHonorario, ordem, vigentes])
+  }, [aba, ativos, inativos, busca, fStatus, fParceiro, fRegime, fPendencia, fHonorario, fDocumento, docs, ordem, vigentes])
 
   const ativosSemHonorario = useMemo(() => ativos.filter((c) => !vigentes.has(c.id) && !c.sem_honorario), [ativos, vigentes])
+  const ativosSemContrato = useMemo(() => ativos.filter((c) => !docs.get(c.id)?.contrato), [ativos, docs])
+
+  /** Procura os contratos/cartões nas pastas do Drive e lê os sócios dos contratos de quem ainda não tem sócios. */
+  async function procurarNoDrive() {
+    setProcurandoDocs('Procurando Contratos Sociais, Certidões de Inteiro Teor e Cartões CNPJ nas pastas do Drive... (pode levar alguns minutos)')
+    const r = await procurarDocumentosDrive()
+    if (!r.ok) return setProcurandoDocs(r.erro)
+    const { data } = await supabase.from('adm_clientes').select('*').order('codigo')
+    await carregar()
+    try {
+      const l = await lerContratosDoDrive((data as Cliente[]) ?? clientes, (m) => setProcurandoDocs(`Procurando... ${m}`))
+      setProcurandoDocs(
+        `Drive verificado: ${r.documentos} documento(s) encontrados. Sócios preenchidos em ${l.preenchidos} empresa(s)` +
+          (l.semTexto ? `; ${l.semTexto} com contrato só escaneado (sem texto para ler)` : '') +
+          (l.semSocios ? `; ${l.semSocios} em que não achei a qualificação dos sócios` : '') +
+          (l.falhas.length ? `; ${l.falhas.length} falha(s): ${l.falhas.slice(0, 3).join(' | ')}` : '') +
+          '.',
+      )
+    } catch (e) {
+      setProcurandoDocs(`Drive verificado: ${r.documentos} documento(s) encontrados. Leitura dos sócios: ${e instanceof Error ? e.message : e}`)
+    }
+    carregar()
+  }
 
   const totalLista = lista.reduce((s, c) => s + (vigentes.get(c.id)?.valor ?? 0), 0)
 
@@ -226,6 +266,7 @@ export function Clientes({ session }: { session: Session }) {
   function irPara(a: Aba, filtros: { status?: string; pendencia?: string; parceiro?: string; honorario?: string } = {}) {
     setAba(a)
     setFHonorario(filtros.honorario ?? '')
+    setFDocumento('')
     setFStatus(filtros.status ?? '')
     setFPendencia(filtros.pendencia ?? '')
     setFParceiro(filtros.parceiro ?? '')
@@ -266,6 +307,8 @@ export function Clientes({ session }: { session: Session }) {
       { titulo: 'Segmento', largura: 12, valor: (c) => labelDe(SEGMENTOS, c.segmento) },
       { titulo: 'Tipo de inscrição', largura: 14, valor: (c) => labelDe(INSCRICOES, c.tipo_inscricao) },
       { titulo: 'Número da inscrição', largura: 18, valor: (c) => c.inscricao },
+      { titulo: 'Contrato Social', largura: 14, valor: (c) => (docs.get(c.id)?.contrato ? 'Sim' : 'Não') },
+      { titulo: 'Cartão CNPJ', largura: 12, valor: (c) => (docs.get(c.id)?.cartao ? 'Sim' : 'Não') },
       { titulo: 'Sócios (CPF)', largura: 50, valor: (c) => (c.socios ?? []).map((x) => (x.cpf ? `${x.nome} (${x.cpf})` : x.nome)).join('; ') },
       ...ETAPAS.map((e) => ({ titulo: e.label, largura: 14, valor: (c: Cliente) => (c[e.campo] ? labelDe(OPCOES_ETAPA, c[e.campo]) : '') })),
       { titulo: 'Honorário mensal', tipo: 'moeda', largura: 15, valor: (c) => vigentes.get(c.id)?.valor ?? null },
@@ -428,6 +471,37 @@ export function Clientes({ session }: { session: Session }) {
                 </button>
               </div>
             )}
+            {aba === 'ativos' && ativosSemContrato.length > 0 && fDocumento !== 'sem_contrato' && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+                <span>
+                  <b>{ativosSemContrato.length} cliente(s) ativo(s) sem Contrato Social</b> (nem enviado pelo portal, nem encontrado na pasta do cliente no
+                  Drive como Contrato Social, Alteração, Consolidação ou Certidão de Inteiro Teor).
+                </span>
+                <span className="flex flex-wrap gap-2">
+                  <button className="btn-secondary btn-sm" onClick={() => setFDocumento('sem_contrato')}>
+                    Ver quais são
+                  </button>
+                  <button className="btn-secondary btn-sm" onClick={procurarNoDrive} disabled={!!procurandoDocs && procurandoDocs.startsWith('Procurando')}>
+                    <FolderSearch className="h-3.5 w-3.5" />
+                    Procurar no Drive
+                  </button>
+                  <button className="btn-secondary btn-sm" onClick={() => setDocumentos(true)}>
+                    <FileStack className="h-3.5 w-3.5" />
+                    Enviar Contratos e Cartão CNPJ
+                  </button>
+                </span>
+              </div>
+            )}
+            {procurandoDocs && (
+              <p className="flex items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-2 text-sm text-sky-800 ring-1 ring-sky-200">
+                {procurandoDocs}
+                {!procurandoDocs.startsWith('Procurando') && (
+                  <button className="text-xs font-semibold underline" onClick={() => setProcurandoDocs(null)}>
+                    Fechar
+                  </button>
+                )}
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
               <div className="relative min-w-60 flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -475,6 +549,17 @@ export function Clientes({ session }: { session: Session }) {
                   className={`input w-auto ${fHonorario === 'sem' ? 'border-rose-300 bg-rose-50 text-rose-700' : ''}`}
                 />
               )}
+              <Select
+                value={fDocumento}
+                onChange={setFDocumento}
+                opcoes={[
+                  { value: 'sem_contrato', label: 'Sem Contrato Social' },
+                  { value: 'com_contrato', label: 'Com Contrato Social' },
+                  { value: 'sem_cartao', label: 'Sem Cartão CNPJ' },
+                ]}
+                vazio="Documentos: todos"
+                className={`input w-auto ${fDocumento.startsWith('sem') ? 'border-amber-300 bg-amber-50 text-amber-800' : ''}`}
+              />
               {aba === 'ativos' && (
                 <Select
                   value={fPendencia}

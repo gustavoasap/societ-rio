@@ -387,10 +387,85 @@ function verificarNovosClientes() {
 // Diária: todos os clientes e todas as pastas.
 function verificacaoDiaria() {
   processarClientes(true);
+  try {
+    varrerDocumentos();
+  } catch (e) {
+    console.error('Varredura de documentos: ' + e.message);
+  }
+}
+
+// =====================================================
+// DOCUMENTOS (CONTRATO SOCIAL / CARTÃO CNPJ) NAS PASTAS DOS CLIENTES
+// =====================================================
+
+// Nome do arquivo → tipo do documento (ou null).
+function tipoPeloNome(nome) {
+  const n = String(nome).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  if (/CARTAO\s*(DO\s*)?CNPJ|CADASTRO\s*CNPJ|COMPROVANTE\s*DE\s*INSCRICAO/.test(n)) return 'cartao';
+  if (/CONTRATO\s*SOCIAL|ALTERACAO\s*CONTRATUAL|CONSTITUICAO|CONSOLIDACAO|ATO\s*CONSTITUTIVO|INTEIRO\s*TEOR/.test(n)) return 'contrato';
+  return null;
+}
+
+// Procura Contratos Sociais e Cartões CNPJ nas pastas dos clientes e registra no portal
+// (o portal mostra quem está sem Contrato Social). Usa a busca do Drive, que é rápida.
+function varrerDocumentos() {
+  const raizId = CONFIG.ID_PASTA_RAIZ;
+  const termos = ['Contrato', 'Alteração', 'Alteracao', 'Constituição', 'Constituicao', 'Consolidação', 'Consolidacao', 'Inteiro', 'Teor', 'CNPJ', 'Comprovante'];
+  const vistos = {};
+  const itens = [];
+  const cacheCliente = {};
+
+  // Sobe pelas pastas até a pasta do cliente (filha direta da pasta raiz) e devolve o código.
+  function codigoDoArquivo(arquivo) {
+    let pais = arquivo.getParents();
+    for (let nivel = 0; nivel < 8 && pais.hasNext(); nivel++) {
+      const pasta = pais.next();
+      const id = pasta.getId();
+      if (cacheCliente[id] !== undefined) return cacheCliente[id];
+      const avos = pasta.getParents();
+      if (!avos.hasNext()) return null;
+      const avo = avos.next();
+      if (avo.getId() === raizId) {
+        cacheCliente[id] = obterIDPasta(pasta.getName()) || null;
+        return cacheCliente[id];
+      }
+      pais = pasta.getParents();
+    }
+    return null;
+  }
+
+  termos.forEach(function (termo) {
+    const busca = DriveApp.searchFiles("title contains '" + termo + "' and trashed = false");
+    while (busca.hasNext()) {
+      const arq = busca.next();
+      if (vistos[arq.getId()]) continue;
+      vistos[arq.getId()] = true;
+      const tipo = tipoPeloNome(arq.getName());
+      if (!tipo) continue;
+      const codigo = codigoDoArquivo(arq);
+      if (!codigo) continue;
+      itens.push({ codigo: Number(codigo), tipo: tipo, nome: arq.getName(), url: arq.getUrl(), drive_id: arq.getId() });
+    }
+  });
+
+  if (itens.length) chamarPortal('drive_registrar_documentos', { p_itens: itens });
+  console.log('Documentos registrados: ' + itens.length);
+  return itens.length;
 }
 
 // Botão "Criar pasta no Drive" do portal (App da Web).
-function doGet() {
+function doGet(e) {
+  // Botão "Procurar no Drive" (Contratos Sociais / Cartões CNPJ já existentes)
+  if (e && e.parameter && e.parameter.acao === 'documentos') {
+    let resp;
+    try {
+      resp = { ok: true, documentos: varrerDocumentos(), erro: null };
+    } catch (err) {
+      resp = { ok: false, documentos: 0, erro: err.message };
+    }
+    return ContentService.createTextOutput(JSON.stringify(resp)).setMimeType(ContentService.MimeType.JSON);
+  }
+
   let log = null;
   let erro = null;
 
@@ -425,6 +500,13 @@ function doPost(e) {
 
     if (!usuarioDoPortal(dados.token)) {
       throw new Error('Acesso negado: faça login no portal novamente.');
+    }
+
+    // Portal pedindo um documento já salvo na pasta do cliente (para ler os sócios do contrato)
+    if (dados.acao === 'baixar') {
+      return ContentService
+        .createTextOutput(JSON.stringify(baixarDocumento(dados.drive_id)))
+        .setMimeType(ContentService.MimeType.JSON);
     }
 
     const codigo = normalizarID(dados.codigo);
@@ -469,6 +551,29 @@ function doPost(e) {
   return ContentService
     .createTextOutput(JSON.stringify(resposta))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Devolve um arquivo das pastas de clientes (só dentro da pasta raiz e até 15 MB).
+function baixarDocumento(driveId) {
+  try {
+    const arq = DriveApp.getFileById(String(driveId || ''));
+    if (!dentroDaRaiz(arq)) throw new Error('Arquivo fora das pastas de clientes.');
+    if (arq.getSize() > 15 * 1024 * 1024) throw new Error('Arquivo maior que 15 MB.');
+    const blob = arq.getBlob();
+    return { ok: true, nome: arq.getName(), mime: blob.getContentType(), base64: Utilities.base64Encode(blob.getBytes()), erro: null };
+  } catch (err) {
+    return { ok: false, erro: err.message };
+  }
+}
+
+function dentroDaRaiz(arquivo) {
+  let pais = arquivo.getParents();
+  for (let nivel = 0; nivel < 10 && pais.hasNext(); nivel++) {
+    const pasta = pais.next();
+    if (pasta.getId() === CONFIG.ID_PASTA_RAIZ) return true;
+    pais = pasta.getParents();
+  }
+  return false;
 }
 
 // Confere no Supabase se o token é de um usuário logado no portal.

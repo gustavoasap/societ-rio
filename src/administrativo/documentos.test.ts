@@ -116,3 +116,17 @@ describe('Cartão CNPJ pela posição', () => {
     })
   })
 })
+
+describe('ordem de leitura dos contratos do Drive', () => {
+  it('prefere consolidação e a alteração mais recente', async () => {
+    const { prioridadeContrato } = await import('./lerContratosDrive')
+    const nomes = ['Certidão de Inteiro Teor.pdf', 'Contrato Social.pdf', '1ª Alteração Contratual.pdf', '3ª Alteração Contratual.pdf', 'Consolidação.pdf']
+    expect([...nomes].sort((a, b) => prioridadeContrato(b) - prioridadeContrato(a))).toEqual([
+      'Consolidação.pdf',
+      '3ª Alteração Contratual.pdf',
+      '1ª Alteração Contratual.pdf',
+      'Contrato Social.pdf',
+      'Certidão de Inteiro Teor.pdf',
+    ])
+  })
+})

@@ -268,7 +268,7 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
         } else partes.push(`${l.socios.length} sócio(s) preenchido(s)`)
       }
       if (salvarDrive) {
-        const r = await enviarArquivoDrive(cli.codigo, l.arquivo)
+        const r = await enviarArquivoDrive(cli.codigo, l.arquivo, l.tipo ? { clienteId: cli.id, tipo: l.tipo } : undefined)
         if (r.ok) partes.push(r.duplicado ? 'já estava no Drive' : 'salvo no Drive')
         else {
           falhou = true

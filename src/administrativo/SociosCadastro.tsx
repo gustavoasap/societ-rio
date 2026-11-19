@@ -22,7 +22,7 @@ export function SociosCadastro({ cliente, onSalvo }: { cliente: Cliente; onSalvo
 
   async function salvarNoDrive(f: File) {
     setAvisoDrive(`Salvando “${f.name}” no Drive...`)
-    const r = await enviarArquivoDrive(cliente.codigo, f)
+    const r = await enviarArquivoDrive(cliente.codigo, f, { clienteId: cliente.id, tipo: 'contrato' })
     setAvisoDrive(r.ok ? `“${f.name}” ${r.duplicado ? 'já estava' : 'salvo'} no Drive: ${r.pasta}.` : `Drive: ${r.erro}`)
   }
 

@@ -165,7 +165,8 @@ export function ClienteForm({
     // Contratos Sociais lidos no formulário: salva na pasta do cliente (DEPARTAMENTO - SOCIETÁRIO)
     const falhas: string[] = []
     for (const f of contratos) {
-      const env = await enviarArquivoDrive((r.data as { codigo: number }).codigo, f)
+      const salvo = r.data as { id: string; codigo: number }
+      const env = await enviarArquivoDrive(salvo.codigo, f, { clienteId: salvo.id, tipo: 'contrato' })
       if (!env.ok) falhas.push(`${f.name}: ${env.erro}`)
     }
     if (falhas.length) alert(`Cliente salvo, mas o Contrato Social não foi salvo no Drive:\n${falhas.join('\n')}`)

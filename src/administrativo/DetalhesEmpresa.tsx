@@ -42,6 +42,16 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
   const [gravando, setGravando] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
   const [sociosCad, setSociosCad] = useState<SocioCadastro[]>(cliente.socios ?? [])
+  const [documentos, setDocumentos] = useState<{ tipo: string; nome: string; url: string | null }[]>([])
+
+  useEffect(() => {
+    supabase
+      .from('adm_documentos')
+      .select('tipo, nome, url')
+      .eq('cliente_id', cliente.id)
+      .order('nome')
+      .then(({ data }) => setDocumentos((data as { tipo: string; nome: string; url: string | null }[]) ?? []))
+  }, [cliente.id])
 
   const consultar = useCallback(
     async (sinal?: AbortSignal) => {
@@ -129,6 +139,33 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
           />
           <Info label="Número da inscrição" value={cliente.inscricao ? <span className="font-mono">{cliente.inscricao}</span> : 'Não informado'} />
           <p className="self-center text-[0.6875rem] text-slate-400">Dados do cadastro do cliente. Para alterar, use o lápis na Base de Clientes.</p>
+          {(['contrato', 'cartao'] as const).map((t) => {
+            const ds = documentos.filter((d) => d.tipo === t)
+            return (
+              <Info
+                key={t}
+                label={t === 'contrato' ? 'Contrato Social / Inteiro Teor' : 'Cartão CNPJ'}
+                className="sm:col-span-3"
+                value={
+                  ds.length ? (
+                    <span className="flex flex-wrap gap-x-3 gap-y-1">
+                      {ds.map((d) =>
+                        d.url ? (
+                          <a key={d.nome} href={d.url} target="_blank" rel="noreferrer" className="text-brand-700 underline hover:text-brand-900">
+                            {d.nome}
+                          </a>
+                        ) : (
+                          <span key={d.nome}>{d.nome}</span>
+                        ),
+                      )}
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-amber-700">Pendente: não encontrado no Drive nem enviado pelo portal</span>
+                  )
+                }
+              />
+            )
+          })}
         </div>
         {carregando && <p className="py-6 text-center text-sm text-slate-400">Consultando a Receita Federal...</p>}
         {erro && !carregando && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}
