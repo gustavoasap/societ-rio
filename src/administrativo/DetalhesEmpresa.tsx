@@ -6,7 +6,7 @@ import { camposDoCartao, consultarCnpj, enderecoTexto, type DadosCnpj } from '..
 import { formatarData, formatarMoeda } from '../lib/format'
 import { Info, Modal, Section } from '../components/ui'
 import type { Socio } from '../types'
-import { INSCRICOES, formatarCnpj, type Cliente, type SocioCadastro } from './tipos'
+import { INSCRICOES, REGIMES, SEGMENTOS, formatarCnpj, labelDe, type Cliente, type SocioCadastro } from './tipos'
 import { SociosCadastro } from './SociosCadastro'
 import { socioPorNome } from './socios'
 import { baixarParaComputador } from './drive'
@@ -44,9 +44,20 @@ const mascaraCpf = (v: string) => {
 }
 
 /** Detalhes do CNPJ consultados na Receita Federal + sócios do contrato social (processos do portal). */
-export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: Cliente; onClose: () => void; onAtualizado: () => void }) {
+/** Com `espelho` (Base do Societário): só leitura e sem consultar a Receita (os dados vêm do cadastro). */
+export function DetalhesEmpresa({
+  cliente,
+  onClose,
+  onAtualizado,
+  espelho = false,
+}: {
+  cliente: Cliente
+  onClose: () => void
+  onAtualizado: () => void
+  espelho?: boolean
+}) {
   const [dados, setDados] = useState<DadosCnpj | null>(null)
-  const [carregando, setCarregando] = useState(true)
+  const [carregando, setCarregando] = useState(!espelho)
   const [erro, setErro] = useState<string | null>(null)
   const [processos, setProcessos] = useState<ProcessoSocios[]>([])
   const [gravando, setGravando] = useState(false)
@@ -97,7 +108,8 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
 
   useEffect(() => {
     const ctrl = new AbortController()
-    consultar(ctrl.signal)
+    // Espelho do Societário: não consulta a Receita (evita custo da API)
+    if (!espelho) consultar(ctrl.signal)
     if (cliente.cnpj) {
       const c = cliente.cnpj
       const comMascara = formatarCnpj(c)
@@ -109,7 +121,7 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
         .then(({ data }) => setProcessos(((data as ProcessoSocios[]) ?? []).filter((p) => p.socios?.some((s) => s.nome?.trim()))))
     }
     return () => ctrl.abort()
-  }, [consultar, cliente.cnpj])
+  }, [consultar, cliente.cnpj, espelho])
 
   // Campos do cadastro que diferem do Cartão CNPJ (Receita)
   const mudancas: Record<string, string | null> = {}
@@ -144,15 +156,32 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
       {aviso && <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{aviso}</p>}
 
       <Section
-        title="Dados da Receita Federal"
+        title={espelho ? 'Dados do cadastro' : 'Dados da Receita Federal'}
         icone={Building2}
         actions={
-          <button className="btn-secondary btn-sm" onClick={() => consultar()} disabled={carregando}>
-            <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
-            Consultar de novo
-          </button>
+          espelho ? undefined : (
+            <button className="btn-secondary btn-sm" onClick={() => consultar()} disabled={carregando}>
+              <RefreshCw className={`h-3.5 w-3.5 ${carregando ? 'animate-spin' : ''}`} />
+              Consultar de novo
+            </button>
+          )
         }
       >
+        {espelho && (
+          <div className="mb-4 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Info label="CNPJ" value={<span className="font-mono">{formatarCnpj(cliente.cnpj)}</span>} />
+            <Info label="Razão social" value={cliente.razao_social} />
+            <Info label="Nome fantasia" value={cliente.nome_fantasia} />
+            <Info label="Situação cadastral" value={cliente.situacao_cadastral} />
+            <Info label="Abertura" value={cliente.data_abertura ? formatarData(cliente.data_abertura) : null} />
+            <Info label="Responsável legal" value={cliente.responsavel} />
+            <Info label="Endereço" value={cliente.endereco} className="sm:col-span-2" />
+            <Info label="E-mail" value={cliente.email} />
+            <Info label="Telefone" value={cliente.telefone} />
+            <Info label="Regime tributário" value={labelDe(REGIMES, cliente.regime_tributario)} />
+            <Info label="Segmento" value={labelDe(SEGMENTOS, cliente.segmento)} />
+          </div>
+        )}
         {/* Inscrição vem do cadastro do cliente (a Receita não informa) */}
         <div className="mb-4 grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl bg-slate-50/70 px-4 py-3 ring-1 ring-slate-100 sm:grid-cols-3">
           <Info
@@ -160,7 +189,11 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
             value={cliente.tipo_inscricao ? (INSCRICOES.find((i) => i.value === cliente.tipo_inscricao)?.label ?? cliente.tipo_inscricao) : 'Não informada'}
           />
           <Info label="Número da inscrição" value={cliente.inscricao ? <span className="font-mono">{cliente.inscricao}</span> : 'Não informado'} />
-          <p className="self-center text-[0.6875rem] text-slate-400">Dados do cadastro do cliente. Para alterar, use o lápis na Base de Clientes.</p>
+          <p className="self-center text-[0.6875rem] text-slate-400">
+            {espelho
+              ? 'Dados do cadastro do cliente (mantidos pelo Administrativo).'
+              : 'Dados do cadastro do cliente. Para alterar, use o lápis na Base de Clientes.'}
+          </p>
           {(['contrato', 'cartao', 'certificado'] as const).map((t) => {
             const ds = documentos.filter((d) => d.tipo === t && (t !== 'certificado' || d.situacao === 'ativo'))
             return (
@@ -280,6 +313,7 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
 
       <Section title="Sócios" icone={Users} cor="violet">
         <SociosCadastro
+          somenteLeitura={espelho}
           cliente={{ ...cliente, socios: sociosCad }}
           onSalvo={(s) => {
             setSociosCad(s)
@@ -287,8 +321,8 @@ export function DetalhesEmpresa({ cliente, onClose, onAtualizado }: { cliente: C
             onAtualizado()
           }}
         />
-        <h4 className="mb-2 text-xs font-bold tracking-wide text-slate-500 uppercase">Quadro societário na Receita Federal</h4>
-        {dados?.socios.length ? (
+        {!espelho && <h4 className="mb-2 text-xs font-bold tracking-wide text-slate-500 uppercase">Quadro societário na Receita Federal</h4>}
+        {espelho ? null : dados?.socios.length ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-[0.6875rem] font-bold tracking-wide text-slate-400 uppercase">

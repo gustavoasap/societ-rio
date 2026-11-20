@@ -28,6 +28,8 @@ const FERRAMENTAS_INTERNAS: Record<string, ComponentType<{ session: Session }>> 
   '/societario/anotacoes': Anotacoes,
   '/societario/caucao': Caucao,
   '/administrativo/clientes': Clientes,
+  // Espelho no Societário: só leitura, sem honorários e sem consulta à Receita
+  '/societario/clientes': (props: { session: Session }) => <Clientes {...props} espelho />,
   '/administrativo/crm': Crm,
   '/administrativo/honorarios': Honorarios,
   '/administrativo/cadastros': ControleCadastros,

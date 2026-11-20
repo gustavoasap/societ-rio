@@ -18,6 +18,7 @@ import {
   FileStack,
   FolderSearch,
   ShieldCheck,
+  Building2,
   UsersRound,
   ListPlus,
   FolderCog,
@@ -36,6 +37,7 @@ import { ImportarDocumentos } from './ImportarDocumentos'
 import { ConfigDrive } from './CriarPastaDrive'
 import { obterUrlDrive, procurarDocumentosDrive } from './drive'
 import { lerContratosDoDrive } from './lerContratosDrive'
+import { DetalhesEmpresa } from './DetalhesEmpresa'
 import { AtualizarSocios } from './AtualizarSocios'
 import { lerValidadesDoDrive } from './lerCertificadosDrive'
 import { ImportarCertificados, PainelCertificados } from './Certificados'
@@ -97,14 +99,19 @@ function csv(linhas: (string | number | null)[][]) {
   return linhas.map((l) => l.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n')
 }
 
-export function Clientes({ session }: { session: Session }) {
+/**
+ * Base de Clientes. Com `espelho` (Departamento Societário): mesma base, só leitura, sem honorários e sem
+ * consulta à Receita (Serpro), para não gerar custo; tudo continua vindo do cadastro do Administrativo.
+ */
+export function Clientes({ session, espelho = false }: { session: Session; espelho?: boolean }) {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [vigentes, setVigentes] = useState<Map<string, Vigente>>(new Map())
   const [parceiros, setParceiros] = useState<ParceiroResumo[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
-  const [aba, setAba] = useState<Aba>('painel')
+  const [aba, setAba] = useState<Aba>(espelho ? 'ativos' : 'painel')
+  const [detalhesDe, setDetalhesDe] = useState<Cliente | null>(null)
   const [busca, setBusca] = useState('')
   const [fStatus, setFStatus] = useState('')
   const [fParceiro, setFParceiro] = useState('')
@@ -135,7 +142,7 @@ export function Clientes({ session }: { session: Session }) {
     const [c, h, p, dd] = await comRetentativa(() =>
       Promise.all([
         supabase.from('adm_clientes').select('*').order('codigo'),
-        supabase.from('adm_clientes_honorario_atual').select('cliente_id, valor, dia_vencimento'),
+        espelho ? Promise.resolve({ data: [], error: null }) : supabase.from('adm_clientes_honorario_atual').select('cliente_id, valor, dia_vencimento'),
         supabase.from('soc_parceiros').select('id, nome').order('nome'),
         supabase.from('adm_documentos').select('id, cliente_id, tipo, nome, url, drive_id, validade, titular, situacao, criado_em').range(0, 9999),
       ]),
@@ -159,7 +166,7 @@ export function Clientes({ session }: { session: Session }) {
     setDocs(mapa)
     setCerts(mapaCert)
     setCarregando(false)
-  }, [])
+  }, [espelho])
 
   useEffect(() => {
     carregar()
@@ -184,6 +191,9 @@ export function Clientes({ session }: { session: Session }) {
       if (fDocumento === 'com_contrato' && !docs.get(c.id)?.contrato) return false
       if (fDocumento === 'sem_cartao' && docs.get(c.id)?.cartao) return false
       if (fDocumento === 'sem_socios' && (c.socios ?? []).length) return false
+      if (fDocumento === 'sem_certificado' && !['sem', 'invalido'].includes(situacaoDoCliente(c.certificado_digital, certs.get(c.id) ?? []))) return false
+      if (fDocumento === 'cert_vencendo' && situacaoDoCliente(c.certificado_digital, certs.get(c.id) ?? []) !== 'vencendo') return false
+      if (fDocumento === 'cert_vencido' && situacaoDoCliente(c.certificado_digital, certs.get(c.id) ?? []) !== 'vencido') return false
       if (fDocumento === 'sem_socios_com_contrato' && ((c.socios ?? []).length || !docs.get(c.id)?.contrato)) return false
       if (fPendencia) {
         const etapa = fPendencia === 'qualquer' ? null : c[fPendencia as (typeof ETAPAS)[number]['campo']]
@@ -207,7 +217,7 @@ export function Clientes({ session }: { session: Session }) {
       const r = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR')
       return ordem.asc ? r : -r
     })
-  }, [aba, ativos, inativos, busca, fStatus, fParceiro, fRegime, fPendencia, fHonorario, fDocumento, docs, ordem, vigentes])
+  }, [aba, ativos, inativos, busca, fStatus, fParceiro, fRegime, fPendencia, fHonorario, fDocumento, docs, certs, ordem, vigentes])
 
   const ativosSemHonorario = useMemo(() => ativos.filter((c) => !vigentes.has(c.id) && !c.sem_honorario), [ativos, vigentes])
   const ativosSemContrato = useMemo(() => ativos.filter((c) => !docs.get(c.id)?.contrato), [ativos, docs])
@@ -355,6 +365,10 @@ export function Clientes({ session }: { session: Session }) {
       { titulo: 'Observações', largura: 40, valor: (c) => c.observacoes },
       { titulo: 'Atualizado na Receita em', tipo: 'data', largura: 14, valor: (c) => c.receita_atualizada_em?.slice(0, 10) },
     ]
+    if (espelho) {
+      // Espelho do Societário: sem honorários
+      for (let i = colunas.length - 1; i >= 0; i--) if (/Honorário|vencimento|Carência|Atualizado na Receita/.test(colunas[i].titulo)) colunas.splice(i, 1)
+    }
     const todos = [...clientes].sort((a, b) => a.codigo - b.codigo)
     const nome = `base-de-clientes-${hojeISO()}`
     if (formato === 'xlsx') {
@@ -393,7 +407,7 @@ export function Clientes({ session }: { session: Session }) {
   )
 
   const ABAS: { id: Aba; label: string; icone: typeof Users; n?: number }[] = [
-    { id: 'painel', label: 'Painel', icone: LayoutDashboard },
+    ...(espelho ? [] : [{ id: 'painel' as const, label: 'Painel', icone: LayoutDashboard }]),
     { id: 'ativos', label: 'Clientes ativos', icone: Users, n: ativos.length },
     { id: 'inativos', label: 'Inativos', icone: Archive, n: inativos.length },
   ]
@@ -424,15 +438,19 @@ export function Clientes({ session }: { session: Session }) {
                 Página inicial
               </Link>{' '}
               ›{' '}
-              <Link para="/d/administrativo" className="hover:underline">
-                Administrativo
+              <Link para={espelho ? '/d/societario' : '/d/administrativo'} className="hover:underline">
+                {espelho ? 'Societário' : 'Administrativo'}
               </Link>{' '}
               · Base de Clientes
             </p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Base de Clientes</h1>
-            <p className="mt-1 text-sm text-white/60">Cadastro, honorários e implantação dos clientes do escritório.</p>
+            <p className="mt-1 text-sm text-white/60">
+              {espelho
+                ? 'Espelho da Base de Clientes do Administrativo (somente leitura): cadastro, sócios, documentos e implantação.'
+                : 'Cadastro, honorários e implantação dos clientes do escritório.'}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className={`flex flex-wrap gap-2 ${espelho ? 'hidden' : ''}`}>
             <button
               className="btn bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/20"
               onClick={() => setAtualizandoTodas(true)}
@@ -514,7 +532,7 @@ export function Clientes({ session }: { session: Session }) {
           <Painel clientes={clientes} vigentes={vigentes} parceiros={parceiros} irPara={irPara} />
         ) : (
           <>
-            {aba === 'ativos' && ativosSemHonorario.length > 0 && fHonorario !== 'sem' && (
+            {!espelho && aba === 'ativos' && ativosSemHonorario.length > 0 && fHonorario !== 'sem' && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200">
                 <span>
                   <b>{ativosSemHonorario.length} cliente(s) ativo(s) sem honorário cadastrado.</b> Eles ficam fora do Controle de Honorários até o honorário ser
@@ -535,14 +553,18 @@ export function Clientes({ session }: { session: Session }) {
                   <button className="btn-secondary btn-sm" onClick={() => setFDocumento('sem_contrato')}>
                     Ver quais são
                   </button>
-                  <button className="btn-secondary btn-sm" onClick={procurarNoDrive} disabled={!!procurandoDocs && procurandoDocs.startsWith('Procurando')}>
-                    <FolderSearch className="h-3.5 w-3.5" />
-                    Procurar no Drive
-                  </button>
-                  <button className="btn-secondary btn-sm" onClick={() => setDocumentos(true)}>
-                    <FileStack className="h-3.5 w-3.5" />
-                    Enviar Contratos e Cartão CNPJ
-                  </button>
+                  {!espelho && (
+                    <>
+                      <button className="btn-secondary btn-sm" onClick={procurarNoDrive} disabled={!!procurandoDocs && procurandoDocs.startsWith('Procurando')}>
+                        <FolderSearch className="h-3.5 w-3.5" />
+                        Procurar no Drive
+                      </button>
+                      <button className="btn-secondary btn-sm" onClick={() => setDocumentos(true)}>
+                        <FileStack className="h-3.5 w-3.5" />
+                        Enviar Contratos e Cartão CNPJ
+                      </button>
+                    </>
+                  )}
                 </span>
               </div>
             )}
@@ -551,22 +573,31 @@ export function Clientes({ session }: { session: Session }) {
                 <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
                   <ShieldCheck className="h-4 w-4" />
                   {resumoCert.sem > 0 && (
-                    <button className="font-semibold underline-offset-2 hover:underline" onClick={() => setPainelCert('pendentes')}>
+                    <button
+                      className="font-semibold underline-offset-2 hover:underline"
+                      onClick={() => (espelho ? setFDocumento('sem_certificado') : setPainelCert('pendentes'))}
+                    >
                       {resumoCert.sem} cliente(s) sem certificado digital
                     </button>
                   )}
                   {resumoCert.vencendo > 0 && (
-                    <button className="font-bold text-amber-700 underline-offset-2 hover:underline" onClick={() => setPainelCert('vencendo')}>
+                    <button
+                      className="font-bold text-amber-700 underline-offset-2 hover:underline"
+                      onClick={() => (espelho ? setFDocumento('cert_vencendo') : setPainelCert('vencendo'))}
+                    >
                       {resumoCert.vencendo} certificado(s) vencem em até 10 dias
                     </button>
                   )}
                   {resumoCert.vencido > 0 && (
-                    <button className="font-bold text-rose-700 underline-offset-2 hover:underline" onClick={() => setPainelCert('vencidos')}>
+                    <button
+                      className="font-bold text-rose-700 underline-offset-2 hover:underline"
+                      onClick={() => (espelho ? setFDocumento('cert_vencido') : setPainelCert('vencidos'))}
+                    >
                       {resumoCert.vencido} certificado(s) vencido(s)
                     </button>
                   )}
                 </span>
-                <span className="flex flex-wrap gap-2">
+                <span className={`flex flex-wrap gap-2 ${espelho ? 'hidden' : ''}`}>
                   <button className="btn-secondary btn-sm" onClick={() => setPainelCert('pendentes')}>
                     Ver certificados
                   </button>
@@ -591,16 +622,18 @@ export function Clientes({ session }: { session: Session }) {
                 <span>
                   <b>{ativosSemSocios.length} cliente(s) ativo(s) sem os dados dos sócios.</b>
                   {semSociosComContrato > 0 &&
-                    ` ${semSociosComContrato} deles têm contrato no Drive que não deu para ler (escaneado ou fora do modelo usual): preencha pelo lápis ou em Detalhes da Empresa.`}
+                    ` ${semSociosComContrato} deles têm contrato no Drive que não deu para ler (escaneado ou fora do modelo usual): ${espelho ? 'o Administrativo preenche na Base de Clientes.' : 'preencha pelo lápis ou em Detalhes da Empresa.'}`}
                 </span>
                 <span className="flex flex-wrap gap-2">
                   <button className="btn-secondary btn-sm" onClick={() => setFDocumento('sem_socios')}>
                     Ver quais são
                   </button>
-                  <button className="btn-secondary btn-sm" onClick={() => setAtualizarSocios(true)}>
-                    <UsersRound className="h-3.5 w-3.5" />
-                    Atualizar sócios pelo contrato
-                  </button>
+                  {!espelho && (
+                    <button className="btn-secondary btn-sm" onClick={() => setAtualizarSocios(true)}>
+                      <UsersRound className="h-3.5 w-3.5" />
+                      Atualizar sócios pelo contrato
+                    </button>
+                  )}
                   {semSociosComContrato > 0 && (
                     <button className="btn-secondary btn-sm" onClick={() => setFDocumento('sem_socios_com_contrato')}>
                       Só os que têm contrato
@@ -653,7 +686,7 @@ export function Clientes({ session }: { session: Session }) {
                 vazio="Todos os regimes"
                 className="input w-auto"
               />
-              {aba === 'ativos' && (
+              {!espelho && aba === 'ativos' && (
                 <Select
                   value={fHonorario}
                   onChange={setFHonorario}
@@ -675,6 +708,9 @@ export function Clientes({ session }: { session: Session }) {
                   { value: 'sem_cartao', label: 'Sem Cartão CNPJ' },
                   { value: 'sem_socios', label: 'Sem sócios preenchidos' },
                   { value: 'sem_socios_com_contrato', label: 'Sem sócios, mas com contrato' },
+                  { value: 'sem_certificado', label: 'Sem certificado digital' },
+                  { value: 'cert_vencendo', label: 'Certificado vence em até 10 dias' },
+                  { value: 'cert_vencido', label: 'Certificado vencido' },
                 ]}
                 vazio="Documentos: todos"
                 className={`input w-auto ${fDocumento.startsWith('sem_socios') ? 'border-violet-300 bg-violet-50 text-violet-800' : fDocumento.startsWith('sem') ? 'border-amber-300 bg-amber-50 text-amber-800' : ''}`}
@@ -730,7 +766,7 @@ export function Clientes({ session }: { session: Session }) {
                       <th className="px-3 py-3 tracking-wide uppercase">Parceiro</th>
                       <th className="px-3 py-3 tracking-wide uppercase">Situação</th>
                       {cabecalho('data_assinatura', 'Assinatura')}
-                      {cabecalho('honorario', 'Honorário', 'text-right')}
+                      {!espelho && cabecalho('honorario', 'Honorário', 'text-right')}
                       <th className="px-3 py-3 tracking-wide uppercase">Implantação</th>
                       <th className="py-3 pr-5 pl-3" />
                     </tr>
@@ -743,7 +779,10 @@ export function Clientes({ session }: { session: Session }) {
                           <tr className={`transition ${expandidos.has(c.id) ? 'bg-brand-50/40' : 'hover:bg-slate-50/70'}`}>
                             <td className="py-3 pr-3 pl-5 font-mono text-xs text-slate-400 tabular-nums">{String(c.codigo).padStart(3, '0')}</td>
                             <td className="min-w-56 px-3 py-3">
-                              <button className="cursor-pointer text-left font-semibold text-slate-900 hover:text-brand-600" onClick={() => setEditando(c)}>
+                              <button
+                                className="cursor-pointer text-left font-semibold text-slate-900 hover:text-brand-600"
+                                onClick={() => (espelho ? setDetalhesDe(c) : setEditando(c))}
+                              >
                                 {c.razao_social}
                               </button>
                               <div className="font-mono text-xs text-slate-400">{formatarCnpj(c.cnpj) || 'CNPJ não informado'}</div>
@@ -765,7 +804,7 @@ export function Clientes({ session }: { session: Session }) {
                               {c.situacao_encerramento && <div className="mt-1 pl-1 text-xs font-semibold text-rose-600">{c.situacao_encerramento}</div>}
                             </td>
                             <td className="px-3 py-3 whitespace-nowrap text-slate-600 tabular-nums">{formatarData(c.data_assinatura)}</td>
-                            <td className="px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-900 tabular-nums">
+                            <td className={`px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-900 tabular-nums ${espelho ? 'hidden' : ''}`}>
                               {v ? (
                                 moeda(v.valor)
                               ) : c.sem_honorario ? (
@@ -802,14 +841,21 @@ export function Clientes({ session }: { session: Session }) {
                             </td>
                             <td className="py-3 pr-5 pl-3">
                               <div className="flex items-center justify-end gap-1">
-                                <button
-                                  className={`btn-sm btn ${expandidos.has(c.id) ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`}
-                                  onClick={() => alternar(c.id)}
-                                  aria-expanded={expandidos.has(c.id)}
-                                >
-                                  {expandidos.has(c.id) ? 'Recolher' : 'Expandir'}
-                                  <ChevronDown className={`h-3.5 w-3.5 transition ${expandidos.has(c.id) ? 'rotate-180' : ''}`} />
-                                </button>
+                                {espelho ? (
+                                  <button className="btn-sm btn bg-brand-50 text-brand-700 hover:bg-brand-100" onClick={() => setDetalhesDe(c)}>
+                                    <Building2 className="h-3.5 w-3.5" />
+                                    Detalhes
+                                  </button>
+                                ) : (
+                                  <button
+                                    className={`btn-sm btn ${expandidos.has(c.id) ? 'bg-brand-600 text-white' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`}
+                                    onClick={() => alternar(c.id)}
+                                    aria-expanded={expandidos.has(c.id)}
+                                  >
+                                    {expandidos.has(c.id) ? 'Recolher' : 'Expandir'}
+                                    <ChevronDown className={`h-3.5 w-3.5 transition ${expandidos.has(c.id) ? 'rotate-180' : ''}`} />
+                                  </button>
+                                )}
                                 {c.link_drive && (
                                   <a
                                     className="icon-btn"
@@ -822,13 +868,15 @@ export function Clientes({ session }: { session: Session }) {
                                     <ExternalLink className="h-4 w-4" />
                                   </a>
                                 )}
-                                <button className="icon-btn" onClick={() => setEditando(c)} title="Editar" aria-label="Editar cliente">
-                                  <Pencil className="h-4 w-4" />
-                                </button>
+                                {!espelho && (
+                                  <button className="icon-btn" onClick={() => setEditando(c)} title="Editar" aria-label="Editar cliente">
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
-                          {expandidos.has(c.id) && (
+                          {!espelho && expandidos.has(c.id) && (
                             <tr className="bg-brand-50/40">
                               <td colSpan={8} className="px-5 pt-1 pb-5">
                                 <ClienteExpandido
@@ -865,7 +913,7 @@ export function Clientes({ session }: { session: Session }) {
                       {TEXTO_ETAPA[k]}
                     </span>
                   ))}
-                  <span className="font-semibold text-slate-700 tabular-nums">Honorários da lista: {moeda(totalLista)}/mês</span>
+                  {!espelho && <span className="font-semibold text-slate-700 tabular-nums">Honorários da lista: {moeda(totalLista)}/mês</span>}
                 </span>
               </div>
             </div>
@@ -932,6 +980,7 @@ export function Clientes({ session }: { session: Session }) {
           }}
         />
       )}
+      {detalhesDe && <DetalhesEmpresa cliente={detalhesDe} espelho onClose={() => setDetalhesDe(null)} onAtualizado={carregar} />}
       {atualizarSocios && <AtualizarSocios clientes={clientes} onClose={() => setAtualizarSocios(false)} onFeito={carregar} />}
       {enviarCert && <ImportarCertificados clientes={clientes} onClose={() => setEnviarCert(false)} onFeito={carregar} />}
       {documentos && <ImportarDocumentos clientes={clientes} onClose={() => setDocumentos(false)} onFeito={carregar} />}

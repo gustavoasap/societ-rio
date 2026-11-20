@@ -12,7 +12,15 @@ const enderecoLinha = (s: SocioCadastro) =>
     .join(' - ')
 
 /** Sócios do cadastro (Base de Clientes) nos Detalhes da Empresa: resumo e edição. */
-export function SociosCadastro({ cliente, onSalvo }: { cliente: Cliente; onSalvo: (s: SocioCadastro[]) => void }) {
+export function SociosCadastro({
+  cliente,
+  onSalvo,
+  somenteLeitura = false,
+}: {
+  cliente: Cliente
+  onSalvo: (s: SocioCadastro[]) => void
+  somenteLeitura?: boolean
+}) {
   const salvos = cliente.socios ?? []
   const [editando, setEditando] = useState(false)
   const [lista, setLista] = useState<SocioCadastro[]>([])
@@ -49,7 +57,7 @@ export function SociosCadastro({ cliente, onSalvo }: { cliente: Cliente; onSalvo
     <div className="mb-5">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-xs font-bold tracking-wide text-slate-500 uppercase">Sócios no cadastro (Base de Clientes)</h4>
-        {!editando && (
+        {!editando && !somenteLeitura && (
           <button
             className="btn-secondary btn-sm"
             onClick={() => {
@@ -103,7 +111,7 @@ export function SociosCadastro({ cliente, onSalvo }: { cliente: Cliente; onSalvo
             </table>
           </div>
         ) : (
-          <p className="text-sm text-slate-400">Nenhum sócio informado no cadastro. Clique em “Incluir sócios”.</p>
+          <p className="text-sm text-slate-400">Nenhum sócio informado no cadastro.{somenteLeitura ? '' : ' Clique em “Incluir sócios”.'}</p>
         ))}
 
       {editando && (
