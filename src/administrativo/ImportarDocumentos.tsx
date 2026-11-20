@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Building, CheckCircle2, FileStack, FileUp, Loader2, XCircle } from 'lucide-react'
+import { Building, CheckCircle2, FileStack, FileUp, Loader2, Trash2, XCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { mascaraCnpj } from '../lib/format'
 import { Modal } from '../components/ui'
@@ -507,6 +507,18 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
                       )}
                     </td>
                     <td className="py-2.5 pr-4 pl-2 text-xs">
+                      {l.status !== 'enviando' && l.status !== 'ok' && (
+                        <button
+                          type="button"
+                          className="icon-btn float-right ml-1 h-7 w-7 hover:text-rose-600"
+                          onClick={() => setLinhas((ls) => ls.filter((_, j) => j !== i))}
+                          disabled={aplicando}
+                          title="Excluir da lista (este arquivo não será considerado)"
+                          aria-label={`Excluir ${l.arquivo.name} da lista`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       {l.status === 'enviando' && <Loader2 className="h-4 w-4 animate-spin text-brand-600" />}
                       {l.status === 'ok' && (
                         <span className="flex items-start gap-1 text-emerald-700">
