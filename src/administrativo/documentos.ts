@@ -206,7 +206,11 @@ export function lerEmpresaDoContrato(texto: string): DadosEmpresaDoc {
   // Certidão de inteiro teor / requerimento da Junta: campo "NOME EMPRESARIAL"; senão, o primeiro nome em
   // MAIÚSCULAS terminado em LTDA/EIRELI/S.A./SLU
   const rotulado = t.match(/NOME\s+EMPRESARIAL\s*:?\s*([A-ZÀ-Ý0-9][A-ZÀ-Ý0-9&.,'\- ]{1,150}?\s(?:LTDA|EIRELI|S\/A|S\.A\.?|SLU)\.?)(?![A-Za-zÀ-ÿ])/)
-  if (rotulado) return { cnpj: cnpj && cnpj.length === 14 ? cnpj : null, razao_social: rotulado[1].trim() }
+  if (rotulado) {
+    // Rótulos de outras colunas do formulário da Junta que o OCR junta ao nome ("PORTE MIX PRIME ...")
+    const razao = rotulado[1].replace(/^(?:(?:PORTE|TIPO\s+JUR[ÍI]DICO|T[ÍI]TULO\s+DE\s+ESTABELECIMENTO|NIRE|CNPJ|ME|EPP)\s+)+/, '').trim()
+    return { cnpj: cnpj && cnpj.length === 14 ? cnpj : null, razao_social: razao }
+  }
   const m = t.match(/([A-ZÀ-Ý0-9][A-ZÀ-Ý0-9&.,'\- ]{1,150}?\s(?:LTDA|EIRELI|S\/A|S\.A\.?|SLU)\.?)(?![A-Za-zÀ-ÿ])/)
   let razao = m ? m[1] : null
   if (razao) {

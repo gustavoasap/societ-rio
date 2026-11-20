@@ -120,8 +120,10 @@ export function ImportarDocumentos({ clientes, onClose, onFeito }: { clientes: C
           )
           texto = r.texto
           erroLeitura = null
-        } catch {
-          // segue com o que já tinha
+        } catch (e) {
+          // Mostra o motivo (ex.: leitor de imagem não carregou) em vez de só "sem texto"
+          const msg = e instanceof Error ? e.message : String(e)
+          erroLeitura = msg === 'tempo' ? 'A leitura da imagem (OCR) demorou mais de 2 minutos.' : `Não consegui ler a imagem (OCR): ${msg}`
         }
       }
       if (!erroLeitura && texto.replace(/\s/g, '').length < 50)

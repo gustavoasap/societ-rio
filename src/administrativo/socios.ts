@@ -119,6 +119,16 @@ export function separarEnderecoSocio(texto: string): Partial<SocioCadastro> {
       r.numero = num[1]
       continue
     }
+    // "189 APT 2001-A": número seguido do complemento
+    const numComp =
+      !r.numero && resto.length
+        ? p.match(/^(\d+[A-Za-z]?)\s+((?:apto?|apartamento|ap\.|bloco|bl\.|casa|sala|conj|conjunto|andar|lote|quadra|qd\.|fundos|box|torre|unidade)\b.*)$/i)
+        : null
+    if (numComp) {
+      r.numero = numComp[1]
+      r.complemento = r.complemento ? `${r.complemento}, ${numComp[2]}` : numComp[2]
+      continue
+    }
     const numJunto = !r.numero && resto.length === 0 ? p.match(/^(.+?)\s*,?\s+n(?:[º°o]|\.\s?º)\.?\s*(\d+[A-Za-z]?)$/i) : null
     if (numJunto) {
       resto.push(numJunto[1])

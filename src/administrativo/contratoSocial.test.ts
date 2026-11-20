@@ -208,3 +208,22 @@ describe('camada de texto quebrada', () => {
     ).toBe(false)
   })
 })
+
+describe('ajustes de OCR', () => {
+  it('número colado no complemento e razão social sem rótulo da Junta', async () => {
+    const { separarEnderecoSocio } = await import('./socios')
+    const { lerEmpresaDoContrato } = await import('./documentos')
+    expect(separarEnderecoSocio('RUA ONZE DE JUNHO, 189 APT 2001-A - Bairro: FAZENDA, Itajaí - SC CEP 88301660')).toMatchObject({
+      rua: 'RUA ONZE DE JUNHO',
+      numero: '189',
+      complemento: 'APT 2001-A',
+      bairro: 'FAZENDA',
+      cidade: 'Itajaí',
+      uf: 'SC',
+      cep: '88301-660',
+    })
+    expect(lerEmpresaDoContrato('Requerimento Capa NOME EMPRESARIAL PORTE MIX PRIME VARIEDADES LTDA ME CNPJ 70.102.386/0001-28').razao_social).toBe(
+      'MIX PRIME VARIEDADES LTDA',
+    )
+  })
+})
