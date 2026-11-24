@@ -1,9 +1,8 @@
-// Cofre das senhas de certificado (só sócios). A chave fica só na memória desta aba, por 15 minutos.
+// Cofre das senhas de certificado (só sócios). A chave fica só na memória do navegador enquanto o portal
+// estiver aberto (compartilhada entre as abas do portal); fecha ao sair, ao clicar em "Fechar" ou ao fechar o navegador.
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { ITERACOES_PADRAO, chaveConfere, cifrar, criarVerificador, decifrar, derivarChave, novoSalt } from './cofreCripto'
-
-const MINUTOS_ABERTO = 15
 
 interface ConfigCofre {
   salt: string
@@ -12,31 +11,48 @@ interface ConfigCofre {
   verificador: string
 }
 
+type MsgCanal = { tipo: 'pedir' } | { tipo: 'chave'; chave: CryptoKey } | { tipo: 'fechar' }
+
 let chave: CryptoKey | null = null
-let fechaEm = 0
-let temporizador: ReturnType<typeof setTimeout> | null = null
 const ouvintes = new Set<() => void>()
 const avisar = () => ouvintes.forEach((f) => f())
 
+// Abas do portal trocam a chave entre si (mesma origem, sem passar pela rede); a chave continua não-exportável.
+const canal = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('asap-cofre') : null
+canal?.addEventListener('message', (e: MessageEvent<MsgCanal>) => {
+  const m = e.data
+  if (m.tipo === 'pedir' && chave) canal.postMessage({ tipo: 'chave', chave } satisfies MsgCanal)
+  else if (m.tipo === 'chave' && !chave && m.chave instanceof CryptoKey) {
+    chave = m.chave
+    avisar()
+  } else if (m.tipo === 'fechar' && chave) {
+    chave = null
+    avisar()
+  }
+})
+canal?.postMessage({ tipo: 'pedir' } satisfies MsgCanal)
+
+// Ao sair do portal, fecha o cofre
+supabase.auth.onAuthStateChange((evento) => {
+  if (evento === 'SIGNED_OUT') bloquearCofre()
+})
+
 function abrir(k: CryptoKey) {
   chave = k
-  fechaEm = Date.now() + MINUTOS_ABERTO * 60_000
-  if (temporizador) clearTimeout(temporizador)
-  temporizador = setTimeout(bloquearCofre, MINUTOS_ABERTO * 60_000)
+  canal?.postMessage({ tipo: 'chave', chave: k } satisfies MsgCanal)
   avisar()
 }
 
+/** Fecha o cofre nesta e em todas as abas do portal. */
 export function bloquearCofre() {
   chave = null
-  fechaEm = 0
-  if (temporizador) clearTimeout(temporizador)
-  temporizador = null
+  canal?.postMessage({ tipo: 'fechar' } satisfies MsgCanal)
   avisar()
 }
 
-export const cofreAberto = () => !!chave && Date.now() < fechaEm
+export const cofreAberto = () => !!chave
 
-/** Estado do cofre para a tela (aberto/fechado e quando fecha). */
+/** Estado do cofre para a tela (aberto/fechado). */
 export function useCofre() {
   const [, setN] = useState(0)
   useEffect(() => {
@@ -46,7 +62,7 @@ export function useCofre() {
       ouvintes.delete(f)
     }
   }, [])
-  return { aberto: cofreAberto(), fechaEm }
+  return { aberto: cofreAberto() }
 }
 
 /** O usuário é sócio (único perfil que acessa o cofre)? */
@@ -89,7 +105,7 @@ export async function desbloquearCofre(senha: string) {
 }
 
 function exigirChave() {
-  if (!cofreAberto() || !chave) throw new Error('Abra o cofre com a senha-mestra.')
+  if (!chave) throw new Error('Abra o cofre com a senha-mestra.')
   return chave
 }
 

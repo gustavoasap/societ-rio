@@ -266,17 +266,10 @@ export function SenhaCertificado({ clienteId, tem, onAlterado }: { clienteId: st
 
 /** Barra do cofre: aberto/fechado, fechar, trocar senha-mestra e importar as senhas do Drive. */
 export function BarraCofre({ clientes, onAlterado }: { clientes: Cliente[]; onAlterado: () => void }) {
-  const { aberto, fechaEm } = useCofre()
+  const { aberto } = useCofre()
   const { executar, janela } = useComCofre()
   const [importar, setImportar] = useState(false)
   const [trocar, setTrocar] = useState(false)
-  const [agora, setAgora] = useState(() => Date.now())
-  useEffect(() => {
-    if (!aberto) return
-    const t = setInterval(() => setAgora(Date.now()), 15_000)
-    return () => clearInterval(t)
-  }, [aberto, fechaEm])
-  const minutos = Math.max(1, Math.ceil((fechaEm - Math.max(agora, fechaEm - 15 * 60_000)) / 60_000))
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
@@ -284,7 +277,7 @@ export function BarraCofre({ clientes, onAlterado }: { clientes: Cliente[]; onAl
         <>
           <LockOpen className="h-4 w-4 text-emerald-600" />
           <span className="text-slate-700">
-            Cofre de senhas <b className="text-emerald-700">aberto</b> · fecha sozinho em {minutos} min
+            Cofre de senhas <b className="text-emerald-700">aberto</b> até você sair do portal ou fechar o navegador
           </span>
           <button className="btn-secondary btn-sm" onClick={bloquearCofre}>
             <Lock className="h-3.5 w-3.5" />
