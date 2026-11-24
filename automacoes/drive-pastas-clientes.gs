@@ -13,7 +13,7 @@
  * - A cada 5 minutos: cria as pastas dos clientes novos (sem link no portal)
  * - Recupera pastas que já existem no Drive (pelo número do cliente)
  * - Cria somente as subpastas ausentes dos departamentos
- * - Cria o arquivo SENHA CERTIFICADO.txt se não existir
+ * - Senha do certificado: fica no cofre do portal (não cria mais SENHA CERTIFICADO.txt)
  * - Botão "Criar pasta no Drive" no portal (App da Web): cria na hora
  * - Varredura completa diária (~08h) de todas as pastas
  * - Relatório por e-mail quando há criação ou aviso
@@ -204,7 +204,7 @@ function garantirEstrutura(pastaCliente, log) {
   const certificado = obterOuCriarSubpasta(
     pastaCliente, 'CERTIFICADO DIGITAL', log
   );
-  garantirArquivoSenha(certificado, log);
+  // A senha do certificado agora fica no cofre do portal (criptografada): não cria mais o SENHA CERTIFICADO.txt
 
   obterOuCriarSubpasta(pastaCliente, 'DEPARTAMENTO - CONTÁBIL', log);
   obterOuCriarSubpasta(pastaCliente, 'DEPARTAMENTO - FISCAL', log);
@@ -540,6 +540,18 @@ function doPost(e) {
       throw new Error('Acesso negado: faça login no portal novamente.');
     }
 
+    // Cofre de senhas (só sócios): lê os SENHA CERTIFICADO.txt para migrar e apaga os já migrados
+    if (dados.acao === 'senhas_txt' || dados.acao === 'apagar_txt') {
+      let resp;
+      try {
+        if (!socioDoPortal(dados.token)) throw new Error('Somente sócios podem acessar as senhas.');
+        resp = dados.acao === 'senhas_txt' ? { ok: true, itens: lerSenhasTxt(), erro: null } : { ok: true, apagados: apagarSenhasTxt(dados.drive_ids || []), erro: null };
+      } catch (err) {
+        resp = { ok: false, erro: err.message };
+      }
+      return ContentService.createTextOutput(JSON.stringify(resp)).setMimeType(ContentService.MimeType.JSON);
+    }
+
     // Certificado vencido: vai para a subpasta EXPIRADO
     if (dados.acao === 'expirar') {
       let resp;
@@ -604,6 +616,54 @@ function doPost(e) {
   return ContentService
     .createTextOutput(JSON.stringify(resposta))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Confere no portal se o usuário logado é sócio (perfil administrador ativo).
+function socioDoPortal(token) {
+  const r = UrlFetchApp.fetch(CONFIG.SUPABASE_URL + '/rest/v1/rpc/portal_is_admin', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { apikey: CONFIG.SUPABASE_CHAVE, Authorization: 'Bearer ' + token },
+    payload: '{}',
+    muteHttpExceptions: true
+  });
+  return r.getResponseCode() === 200 && r.getContentText().trim() === 'true';
+}
+
+// Conteúdo dos SENHA CERTIFICADO.txt das pastas CERTIFICADO DIGITAL (ignora o texto padrão).
+function lerSenhasTxt() {
+  const itens = [];
+  const pastas = DriveApp.getFolderById(CONFIG.ID_PASTA_RAIZ).getFolders();
+  while (pastas.hasNext()) {
+    const pasta = pastas.next();
+    const codigo = obterIDPasta(pasta.getName());
+    if (!codigo) continue;
+    const certs = pasta.getFoldersByName('CERTIFICADO DIGITAL');
+    if (!certs.hasNext()) continue;
+    const arquivos = certs.next().getFilesByName(CONFIG.ARQUIVO_SENHA);
+    while (arquivos.hasNext()) {
+      const arq = arquivos.next();
+      const conteudo = arq.getBlob().getDataAsString('UTF-8').trim();
+      itens.push({ codigo: Number(codigo), drive_id: arq.getId(), conteudo: conteudo.slice(0, 500), padrao: !conteudo || conteudo === CONFIG.CONTEUDO_SENHA });
+    }
+  }
+  return itens;
+}
+
+// Manda para a lixeira os SENHA CERTIFICADO.txt informados (só arquivos com esse nome, dentro das pastas de clientes).
+function apagarSenhasTxt(ids) {
+  let n = 0;
+  ids.forEach(function (id) {
+    try {
+      const arq = DriveApp.getFileById(String(id));
+      if (arq.getName() !== CONFIG.ARQUIVO_SENHA || !dentroDaRaiz(arq)) return;
+      arq.setTrashed(true);
+      n++;
+    } catch (e) {
+      // já apagado ou sem acesso: segue
+    }
+  });
+  return n;
 }
 
 // Devolve um arquivo das pastas de clientes (só dentro da pasta raiz e até 15 MB).

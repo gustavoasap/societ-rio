@@ -219,3 +219,48 @@ export async function baixarArquivoDrive(driveId: string): Promise<File> {
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
   return new File([bytes], j.nome ?? 'documento.pdf', { type: j.mime ?? '' })
 }
+
+async function postarScript<T>(corpo: Record<string, unknown>, erroVersao: string): Promise<T> {
+  const url = await obterUrlDrive()
+  if (!url) throw new Error('Endereço do script do Drive não configurado.')
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Sessão expirada: entre no portal novamente.')
+  const r = await fetch(url, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ token, ...corpo }),
+  })
+  let j: T & { ok: boolean; erro: string | null }
+  try {
+    j = JSON.parse(await r.text())
+  } catch {
+    throw new Error(erroVersao)
+  }
+  if (!j.ok) throw new Error(j.erro ?? 'O script do Drive respondeu com erro.')
+  return j
+}
+
+export interface SenhaTxt {
+  codigo: number
+  drive_id: string
+  conteudo: string
+  /** Só o texto padrão "SENHA CERTIFICADO" (sem senha de verdade) */
+  padrao: boolean
+}
+
+/** Lê os SENHA CERTIFICADO.txt das pastas dos clientes (só sócios), para migrar ao cofre. */
+export async function lerSenhasTxtDrive() {
+  const r = await postarScript<{ itens: SenhaTxt[] }>(
+    { acao: 'senhas_txt' },
+    'O script do Drive ainda não lê as senhas: cole a versão nova do código e atualize a implantação (Nova versão).',
+  )
+  return r.itens
+}
+
+/** Manda para a lixeira do Drive os SENHA CERTIFICADO.txt já migrados. */
+export async function apagarSenhasTxtDrive(ids: string[]) {
+  const r = await postarScript<{ apagados: number }>({ acao: 'apagar_txt', drive_ids: ids }, 'O script do Drive ainda não apaga os arquivos de senha.')
+  return r.apagados
+}

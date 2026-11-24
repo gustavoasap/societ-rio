@@ -10,6 +10,8 @@ import { INSCRICOES, REGIMES, SEGMENTOS, formatarCnpj, labelDe, type Cliente, ty
 import { SociosCadastro } from './SociosCadastro'
 import { socioPorNome } from './socios'
 import { baixarParaComputador } from './drive'
+import { SenhaCertificado } from './Cofre'
+import { clientesComSenha, useSocio } from './cofre'
 
 interface Doc {
   tipo: string
@@ -58,6 +60,14 @@ export function DetalhesEmpresa({
 }) {
   const [dados, setDados] = useState<DadosCnpj | null>(null)
   const [carregando, setCarregando] = useState(!espelho)
+  const socio = useSocio()
+  const [temSenha, setTemSenha] = useState<boolean | null>(null)
+  const verSenha = useCallback(() => {
+    clientesComSenha().then((s) => setTemSenha(s.has(cliente.id)))
+  }, [cliente.id])
+  useEffect(() => {
+    if (socio && !espelho) verSenha()
+  }, [socio, espelho, verSenha])
   const [erro, setErro] = useState<string | null>(null)
   const [processos, setProcessos] = useState<ProcessoSocios[]>([])
   const [gravando, setGravando] = useState(false)
@@ -239,6 +249,13 @@ export function DetalhesEmpresa({
               />
             )
           })}
+          {socio && !espelho && cliente.certificado_digital !== 'na' && temSenha !== null && (
+            <Info
+              label="Senha do certificado (cofre)"
+              className="sm:col-span-3"
+              value={<SenhaCertificado clienteId={cliente.id} tem={temSenha} onAlterado={verSenha} />}
+            />
+          )}
         </div>
         {carregando && <p className="py-6 text-center text-sm text-slate-400">Consultando a Receita Federal...</p>}
         {erro && !carregando && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{erro}</p>}

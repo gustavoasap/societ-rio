@@ -21,6 +21,8 @@ import { identificarCliente } from './documentos'
 import { baixarParaComputador, documentoJaExiste, enviarArquivoDrive, expirarArquivoDrive, hashArquivo } from './drive'
 import type { Cliente } from './tipos'
 import { lerValidadesDoDrive } from './lerCertificadosDrive'
+import { BarraCofre, SenhaCertificado } from './Cofre'
+import { clientesComSenha, useSocio } from './cofre'
 
 const ehCert = (n: string) => /\.(pfx|p12|cer|crt)$/i.test(n)
 const digitos = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '')
@@ -346,6 +348,14 @@ export function PainelCertificados({
   const [erro, setErro] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
   const [etapas, setEtapas] = useState<Map<string, string | null>>(() => new Map(clientes.map((c) => [c.id, c.certificado_digital])))
+  const socio = useSocio()
+  const [comSenha, setComSenha] = useState<Set<string>>(new Set())
+  const carregarSenhas = useCallback(() => {
+    clientesComSenha().then(setComSenha)
+  }, [])
+  useEffect(() => {
+    if (socio) carregarSenhas()
+  }, [socio, carregarSenhas])
 
   const carregar = useCallback(async () => {
     const { data } = await supabase
@@ -495,6 +505,7 @@ export function PainelCertificados({
           Enviar certificados
         </button>
       </div>
+      {socio && <BarraCofre clientes={clientes} onAlterado={carregarSenhas} />}
       <input className="input" placeholder="Buscar cliente, código ou CNPJ" value={busca} onChange={(e) => setBusca(e.target.value)} />
       {erro && <p className="rounded-xl bg-rose-50 px-4 py-2 text-sm text-rose-600">{erro}</p>}
       {aviso && <p className="rounded-xl bg-sky-50 px-4 py-2 text-sm text-sky-800">{aviso}</p>}
@@ -506,6 +517,7 @@ export function PainelCertificados({
               <th className="px-2 py-2.5">Certificado</th>
               <th className="px-2 py-2.5">Vencimento</th>
               <th className="px-2 py-2.5">Situação</th>
+              {socio && <th className="px-2 py-2.5">Senha</th>}
               <th className="py-2.5 pr-4 pl-2 text-right">Ações</th>
             </tr>
           </thead>
@@ -543,6 +555,9 @@ export function PainelCertificados({
                   </span>
                   {sit === 'vencido' && atual?.validade && <div className="mt-0.5 text-[0.6875rem] text-rose-600">desde {formatarData(atual.validade)}</div>}
                 </td>
+                {socio && (
+                  <td className="px-2 py-2.5">{sit !== 'na' && <SenhaCertificado clienteId={c.id} tem={comSenha.has(c.id)} onAlterado={carregarSenhas} />}</td>
+                )}
                 <td className="py-2.5 pr-4 pl-2 text-right whitespace-nowrap">
                   {atual?.drive_id && (
                     <button
@@ -585,8 +600,8 @@ export function PainelCertificados({
         {!visiveis.length && <p className="p-8 text-center text-sm text-slate-400">Nenhum cliente nesta lista.</p>}
       </div>
       <p className="text-xs text-slate-400">
-        O vencimento é lido do próprio arquivo quando o certificado não está protegido por senha; senão, informe a data aqui. Só os arquivos ficam guardados (no
-        Drive); a senha nunca é guardada.
+        O vencimento é lido do próprio arquivo quando o certificado não está protegido por senha; senão, informe a data aqui. Os arquivos ficam no Drive; a
+        senha só fica no cofre, criptografada com a senha-mestra e visível apenas aos sócios.
       </p>
     </Modal>
   )
