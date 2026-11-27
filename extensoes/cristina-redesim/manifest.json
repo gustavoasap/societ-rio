@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Cristina – Viabilidade Redesim SP (ASAP)",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Preenche a viabilidade no VRE | REDESIM SP com os dados de Processos Societários do Portal ASAP. Aprende vendo você fazer.",
   "permissions": ["storage", "tabs", "scripting", "debugger", "alarms", "notifications"],
   "host_permissions": [

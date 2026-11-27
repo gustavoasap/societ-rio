@@ -42,8 +42,8 @@ async function preview() {
 async function mostrarAula() {
   const r = await send({ type: "aula" });
   const a = r.ok ? r.data : null;
-  $("btnPreencher").disabled = $("btnBaixar").disabled = $("btnEsquecer").disabled = !a;
-  if (!a) { $("aulaInfo").innerHTML = "<small>Ainda não aprendi a viabilidade. Escolha um processo e clique em Aprender.</small>"; return; }
+  $("btnBaixar").disabled = $("btnEsquecer").disabled = !a;
+  if (!a) { $("aulaInfo").innerHTML = "<small>Abertura: já sei o roteiro da JUCESP (leio tudo do card do processo). Aulas novas servem para me ensinar outros casos, como alteração.</small>"; return; }
   const ligados = a.passos.filter((p) => p.fonte).length;
   $("aulaInfo").innerHTML = `<small>Aula gravada em ${new Date(a.gravadaEm).toLocaleString("pt-BR")} com <b>${esc(a.processoExemplo && a.processoExemplo.razao)}</b>: ${a.passos.length} passos, ${ligados} ligados aos dados do portal.</small>`;
   $("btnGravar").textContent = "Gravar uma aula nova (substitui a atual)";
@@ -67,7 +67,7 @@ $("btnPreencher").onclick = async () => {
   if (atual.faltando.length && !confirm("Falta no portal: " + atual.faltando.join(", ") + ".\nPreencher assim mesmo (esses campos ficam em branco)?")) return;
   const r = await send({ type: "preencher", id: atual.id });
   if (!r.ok) return aviso(r.error, "erro");
-  aviso(`Começando (${r.data.total} passos). Faça login no Redesim se pedir. Eu paro antes de transmitir.`, "ok");
+  aviso("Começando pelo card do processo. Faça login no Redesim se pedir. Eu paro antes de “Finalizar Solicitação”.", "ok");
 };
 $("btnBaixar").onclick = async () => {
   const r = await send({ type: "aula" });

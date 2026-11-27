@@ -71,6 +71,7 @@ function dicionario(p) {
   const add = (chave, rotulo, valor) => { if (valor != null && String(valor).trim() !== "") d.push({ chave, rotulo, valor: String(valor).trim() }); };
   const municipio = String(p.municipio || "").replace(/\s*\/\s*SP$/i, "");
   add("razao_social", "Razão social", (p.razao_social || "").toUpperCase());
+  add("razao_sem_acento", "Razão social (sem acento)", (p.razao_social || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase());
   add("nome_fantasia", "Nome fantasia", (p.nome_fantasia || "").toUpperCase());
   add("cnpj", "CNPJ", p.cnpj ? fmtCNPJ(soDigitos(p.cnpj)) : "");
   add("municipio", "Município", municipio);
@@ -91,6 +92,11 @@ function dicionario(p) {
   add("complemento", "Complemento", p.complemento);
   add("iptu", "IPTU (SQL)", p.iptu);
   add("iptu_num", "IPTU (só números)", soDigitos(p.iptu));
+  const iptuD = soDigitos(p.iptu);
+  add("iptu_sql", "IPTU (formato SQL)", iptuD.length === 11 ? iptuD.replace(/^(\d{3})(\d{3})(\d{4})(\d)$/, "$1.$2.$3-$4") : p.iptu);
+  const dec2 = (n) => (n == null || n === "" ? "" : Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  add("area_imovel_2c", "Área do imóvel (com centavos)", dec2(p.area_imovel));
+  add("area_estabelecimento_2c", "Área do estabelecimento (com centavos)", dec2(p.area_estabelecimento));
   add("area_imovel", "Área do imóvel (m²)", numBR(p.area_imovel));
   add("area_estabelecimento", "Área do estabelecimento (m²)", numBR(p.area_estabelecimento));
   add("area_terreno", "Área do terreno (m²)", numBR(p.area_terreno));
@@ -128,6 +134,10 @@ async function dadosProcesso(id) {
   const p = r[0];
   const faltando = [];
   if (p.tipo === "abertura") {
+    if (!p.enquadramento) faltando.push("enquadramento");
+    if (!p.natureza_juridica) faltando.push("natureza jurídica");
+    if (!p.razao_social) faltando.push("razão social");
+    if (!p.objeto_social) faltando.push("objeto social");
     if (!p.municipio) faltando.push("município");
     if (!p.cep) faltando.push("CEP");
     if (!p.numero) faltando.push("número do endereço");
@@ -189,13 +199,15 @@ async function pararGravacao() {
 }
 
 async function comecarPreenchimento(processoId, extra = {}) {
-  const aula = await getAula();
-  if (!aula || !aula.passos.length) throw new Error("Ainda não aprendi. Grave uma aula primeiro (botão Aprender).");
   const proc = await dadosProcesso(processoId);
+  // Abertura: roteiro próprio da JUCESP (aprendido da aula do Gustavo), lendo tudo do card do processo.
+  // Outros tipos: ainda precisam de uma aula específica.
+  const roteiro = proc.tipo === "abertura" ? "jucesp_abertura" : null;
+  if (!roteiro) throw new Error("Por enquanto eu só faço viabilidade de ABERTURA. Para alteração, me ensine com uma aula de alteração.");
   const tab = await abaRedesim(true);
-  await chrome.storage.local.set({ ultimoProcesso: { id: proc.id, razao: proc.razao }, job: { ativo: true, tabId: tab.id, passo: 0, processo: { id: proc.id, razao: proc.razao }, dic: proc.dic, log: [], inicio: Date.now(), tarefaSasuke: extra.tarefaSasuke || null } });
+  await chrome.storage.local.set({ ultimoProcesso: { id: proc.id, razao: proc.razao }, job: { ativo: true, roteiro, tabId: tab.id, passo: 0, processo: { id: proc.id, razao: proc.razao }, dic: proc.dic, log: [], inicio: Date.now(), tarefaSasuke: extra.tarefaSasuke || null } });
   try { await chrome.tabs.sendMessage(tab.id, { type: "acordar" }); } catch (_) {}
-  return { total: aula.passos.length, faltando: proc.faltando };
+  return { total: "todos os", faltando: proc.faltando };
 }
 
 async function fimPreenchimento(status, texto) {
@@ -242,7 +254,6 @@ async function checarPonte() {
     const pedido = `${t.sistema} ${t.acao} ${t.detalhes}`.toLowerCase();
     if (!/viabilidade|redesim|consulta pr[eé]via/.test(pedido)) return resultadoTarefa(t.id, "erro", `Ainda não sei fazer isso: "${t.acao}". Hoje eu só preencho viabilidade no Redesim SP.`);
     if (!(await getSession())) return resultadoTarefa(t.id, "erro", "Estou sem login no Portal ASAP. Entre pelo ícone da Cristina no Chrome.");
-    if (!(await getAula())) return resultadoTarefa(t.id, "erro", "Ainda não aprendi a viabilidade. Grave uma aula comigo primeiro.");
     const achados = await acharProcesso(t.empresa || "");
     if (!achados.length) return resultadoTarefa(t.id, "erro", `Não achei "${t.empresa}" entre os processos com viabilidade pendente.`);
     if (achados.length > 1) return resultadoTarefa(t.id, "erro", "Achei mais de um processo: " + achados.slice(0, 4).map((p) => p.razao_social).join("; ") + ". Fala o nome completo ou o CNPJ.");

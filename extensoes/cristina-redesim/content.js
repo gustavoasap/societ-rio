@@ -198,6 +198,7 @@
   async function executar() {
     if (executando) return; executando = true;
     try {
+      { const { job } = await store.get("job"); if (job && job.ativo && job.roteiro) return await executarRoteiro(); }
       for (;;) {
         const { job, aula } = await store.get(["job", "aula"]);
         if (!job || !job.ativo || !aula) return;
@@ -269,6 +270,203 @@
         }
       }
     } finally { executando = false; }
+  }
+
+  // =====================================================================
+  // 2b) ROTEIRO DA JUCESP – VIABILIDADE DE ABERTURA
+  // Aprendido da aula do Gustavo (27/11/2026, SUPERA COMÉRCIO). Tudo que varia vem do card do processo:
+  // enquadramento, órgão, natureza, CEP, número, complemento, áreas, IPTU, tipo de unidade, TODOS os
+  // CNAEs (principal + quantos secundários houver), nome empresarial e objeto social.
+  // Fixo (não existe no card): evento 101, "terá estabelecimento = Sim", atividade auxiliar "Sede",
+  // forma de atuação (a mesma da aula), declarações do passo 3.
+  // =====================================================================
+  const byId = (id) => { const e = document.getElementById(id); return vis(e) ? e : null; };
+  async function campoId(id, ms = 15000) { const e = await waitFor(() => byId(id), ms); if (!e) throw new Error(`não achei o campo ${id} na tela`); return e; }
+  async function escolherOpcao(id, testes, rotulo) {
+    const el = await campoId(id);
+    await waitFor(() => el.options.length > 1, 15000); // a natureza carrega depois do órgão
+    const opts = [...el.options].filter((o) => o.value !== "");
+    const ts = testes.filter(Boolean).map(norm);
+    const o = ts.map((t) => opts.find((x) => norm(x.text) === t)).find(Boolean) ||
+      ts.map((t) => opts.find((x) => norm(x.text).startsWith(t) || norm(x.text).endsWith(t))).find(Boolean) ||
+      ts.map((t) => t.length >= 4 && opts.find((x) => norm(x.text).includes(t))).find(Boolean);
+    if (!o) throw new Error(`a opção “${testes.filter(Boolean)[0]}” (${rotulo}) não existe na JUCESP. Opções: ${opts.map((x) => x.text.trim()).slice(0, 8).join(", ")}`);
+    if (el.value !== o.value) { el.value = o.value; fire(el, "input", "change"); }
+    await sleep(500);
+    return o.text.trim();
+  }
+  async function preencherId(id, valor) {
+    const el = await campoId(id);
+    el.scrollIntoView({ block: "center" });
+    el.focus(); el.value = valor; fire(el, "input", "keyup", "change"); el.blur(); fire(el, "blur", "focusout");
+    await sleep(200);
+    if (norm(el.value) !== norm(valor) && digits(el.value) !== digits(valor)) { el.focus(); await msg({ type: "realType", text: String(valor), tecla: "Tab" }); await sleep(400); }
+  }
+  async function marcarId(id, ligado = true, opcional = false) {
+    const el = opcional ? await waitFor(() => byId(id), 2500) : await campoId(id);
+    if (!el) return false;
+    if (el.checked !== ligado) el.click();
+    await sleep(200); return true;
+  }
+  function botaoPerto(el, re) {
+    let c = el.parentElement;
+    for (let i = 0; i < 6 && c; i++, c = c.parentElement) {
+      const b = [...c.querySelectorAll("button,a,input[type=button]")].find((x) => vis(x) && re.test(textoDe(x)));
+      if (b) return b;
+    }
+    return null;
+  }
+  async function clicarTexto(re, sel = "button,a,input[type=button],input[type=submit]", ms = 15000) {
+    const e = await waitFor(() => [...document.querySelectorAll(sel)].find((x) => vis(x) && re.test(textoDe(x))), ms);
+    if (!e) throw new Error(`não achei o botão “${re.source}”`);
+    e.scrollIntoView({ block: "center" }); e.click(); await sleep(800);
+  }
+  // "BOX 2059" -> [{tipo:"BOX", valor:"2059"}]; "SALA 12 ANDAR 3" -> 2 complementos
+  const SINONIMOS = { APTO: "APARTAMENTO", AP: "APARTAMENTO", APT: "APARTAMENTO", CJ: "CONJUNTO", CONJ: "CONJUNTO", SL: "SALA", AND: "ANDAR", BL: "BLOCO", LJ: "LOJA", GALP: "GALPAO" };
+  function partesComplemento(txt, opcoes) {
+    const acharTipo = (tok) => { const t = norm(tok).replace(/[.\-º°]/g, ""); const s = SINONIMOS[t] || t; return opcoes.find((o) => norm(o) === s || norm(o) === t) || (s.length >= 4 && opcoes.find((o) => norm(o).startsWith(s))); };
+    const partes = []; let atual = null;
+    for (const tok of String(txt).replace(/[,;]/g, " ").split(/\s+/).filter(Boolean)) {
+      const tipo = acharTipo(tok);
+      if (tipo) { atual = { tipo, valor: "" }; partes.push(atual); }
+      else if (atual) atual.valor = (atual.valor + " " + tok).trim();
+      else return null; // começa com algo que não é tipo de complemento
+    }
+    return partes.length ? partes : null;
+  }
+  const ENQUADRAMENTO = (e) => /^MEI\b/i.test(e) ? "Microempreendedor Individual" : /^ME\b/i.test(e) ? "Microempresa" : /^EPP\b/i.test(e) ? "Empresa de Pequeno Porte" : "Demais";
+
+  function etapasAbertura(D, avisos) {
+    const v = (k) => D[k] || "";
+    const pg = (re) => () => re.test(location.host + location.pathname.toLowerCase());
+    const noColetor = pg(/jucesp\.sp\.gov\.br\/integradorpaulista\/viabilidade\/coletor/);
+    return [
+      { nome: "Abrir Viabilidade no VRE", nav: true, aqui: pg(/vreredesim\.sp\.gov\.br\/integrador/), fn: () => clicarTexto(/^Viabilidade$/i) },
+      { nome: "Nova Viabilidade", nav: true, aqui: pg(/jucesp\.sp\.gov\.br\/integradorpaulista\/?$/), fn: () => clicarTexto(/^Nova Viabilidade/i, "a,button") },
+      { nome: "Evento 101 (abertura)", nav: true, aqui: pg(/viabilidade\/iniciarcoleta/), fn: async () => {
+          const el = await campoId("Step1_Eventos_0__Checked");
+          if (!/^101\b/.test(limpaRotulo(rotuloDe(el)))) throw new Error("o evento 101 mudou de lugar na tela");
+          if (!el.checked) el.click(); await sleep(300); await clicarTexto(/^Avan[cç]ar$/i);
+        } },
+      { nome: "Enquadramento, órgão e natureza", aqui: noColetor, fn: async () => {
+          await escolherOpcao("Step2_EnquadramentoId", [ENQUADRAMENTO(v("enquadramento"))], "enquadramento");
+          await escolherOpcao("Step2_OrgaoRegistradorId", [v("orgao_registro") || "Junta Comercial"], "órgão registrador");
+          const nat = v("natureza_juridica"); const nome = nat.replace(/^[\d\-\s]+-\s*/, "");
+          await escolherOpcao("Step2_NaturezaJuridicaId", [nome, nat, v("natureza_codigo")], "natureza jurídica");
+          await escolherOpcao("Step2_EmpresaTeraEstabelecimento", ["Sim"], "terá estabelecimento");
+        } },
+      { nome: "CEP e número", aqui: noColetor, fn: async () => {
+          await preencherId("Step2_Endereco_Cep_Numero", v("cep"));
+          await sleep(2500); // a JUCESP busca o logradouro pelo CEP
+          await preencherId("Step2_Endereco_NumeroLogradouro", v("numero"));
+        } },
+      { nome: "Complemento", aqui: noColetor, fn: async () => {
+          if (!v("complemento")) return;
+          const sel = await campoId("Step2_SelecaoComplementoId");
+          const partes = partesComplemento(v("complemento"), [...sel.options].filter((o) => o.value).map((o) => o.text.trim()));
+          if (!partes) { avisos.push(`Complemento “${v("complemento")}” não começa com um tipo que a JUCESP conhece (BOX, SALA, CONJUNTO…): preencha à mão.`); return; }
+          for (const p of partes) {
+            await escolherOpcao("Step2_SelecaoComplementoId", [p.tipo], "tipo de complemento");
+            const campo = await campoId("Step2_SelecaoComplementoValor");
+            await preencherId("Step2_SelecaoComplementoValor", p.valor);
+            const b = botaoPerto(campo, /^Adicionar$/i);
+            if (!b) throw new Error("não achei o Adicionar do complemento");
+            b.click(); await sleep(800);
+          }
+        } },
+      { nome: "Áreas e IPTU", aqui: noColetor, fn: async () => {
+          if (v("area_imovel_2c")) await preencherId("Step2_Area_AreaImovel", v("area_imovel_2c")); else avisos.push("Sem área do imóvel no card.");
+          if (v("area_estabelecimento_2c")) await preencherId("Step2_Area_AreaEstabelecimento", v("area_estabelecimento_2c")); else avisos.push("Sem área do estabelecimento no card.");
+          if (!v("iptu_sql")) { avisos.push("Sem IPTU no card: inscrição do imóvel ficou em branco."); return; }
+          await escolherOpcao("Step2_SelecaoTipoInscricaoImovelId", ["IPTU"], "tipo de inscrição");
+          await preencherId("Step2_SelecaoTipoInscricaoImovelValor", v("iptu_sql"));
+          (await campoId("btnAddTipoInscricao")).click(); await sleep(1000);
+          const radios = await waitFor(() => [...document.getElementsByName("Step2.SelecaoInscricaoImovelPrincipal")].filter(vis).filter((r) => r.closest("tr,li,div") && digits(r.closest("tr,li,div").innerText).includes(digits(v("iptu_sql")))), 6000)
+            || [...document.getElementsByName("Step2.SelecaoInscricaoImovelPrincipal")].filter(vis);
+          if (radios && radios[0] && !radios[0].checked) radios[0].click();
+        } },
+      { nome: "Tipo de unidade", aqui: noColetor, fn: () => escolherOpcao("Step2_SelecaoTipoUnidadeEmpreendimentoId", [v("tipo_unidade") || "Produtiva"], "tipo de unidade") },
+      { nome: "CNAEs (principal e secundários)", aqui: noColetor, fn: async () => {
+          const codigos = Object.keys(D).filter((k) => k === "cnae_principal" || /^cnae_sec_\d+$/.test(k)).sort((a, b) => (a === "cnae_principal" ? -1 : b === "cnae_principal" ? 1 : parseInt(a.slice(9)) - parseInt(b.slice(9)))).map((k) => ({ fmt: D[k], d: digits(D[k]) })).filter((c) => c.d.length === 7);
+          if (!codigos.length) throw new Error("o card não tem CNAE principal");
+          const busca = await waitFor(() => document.querySelector("#grdAtividadeEconomica_filter input") || [...document.querySelectorAll("input[type=search]")].filter(vis).pop());
+          if (!busca) throw new Error("não achei a busca de atividades (CNAE)");
+          const tabela = () => document.getElementById("grdAtividadeEconomica") || (busca.closest(".dataTables_wrapper") || document).querySelector("table");
+          const linha = (d) => [...(tabela() || document).querySelectorAll("tbody tr")].find((tr) => vis(tr) && digits(tr.innerText).includes(d) && botaoPerto(tr.querySelector("td") || tr, /^Adicionar$/i));
+          for (const c of codigos) {
+            let tr = null;
+            for (const termo of [c.d.slice(0, 4), c.d, c.fmt]) {
+              busca.focus(); busca.value = termo; fire(busca, "input", "keyup", "change", "search");
+              tr = await waitFor(() => linha(c.d), 5000, 250);
+              if (tr) break;
+            }
+            if (!tr) { avisos.push(`CNAE ${c.fmt} não apareceu na lista da JUCESP.`); continue; }
+            const b = [...tr.querySelectorAll("button,a,input[type=button]")].find((x) => /^Adicionar$/i.test(textoDe(x)));
+            b.click(); await sleep(700);
+          }
+          busca.value = ""; fire(busca, "input", "keyup");
+          // CNAE principal: o rádio da linha com o código principal do card
+          const p = codigos[0].d;
+          const radios = await waitFor(() => { const r = [...document.getElementsByName("Step2.SelecaoCnaePrincipal")].filter(vis); return r.length ? r : null; }, 8000);
+          if (!radios) throw new Error("a lista de atividades escolhidas não apareceu");
+          const rp = radios.find((r) => { const tr = r.closest("tr"); return tr && digits(tr.innerText).includes(p); }) || radios[0];
+          if (!radios.some((r) => { const tr = r.closest("tr"); return tr && digits(tr.innerText).includes(p); })) avisos.push(`Confira o CNAE principal (${codigos[0].fmt}): marquei o primeiro da lista.`);
+          if (!rp.checked) rp.click(); await sleep(300);
+        } },
+      { nome: "Atividade auxiliar e forma de atuação", aqui: noColetor, fn: async () => {
+          if (await marcarId("Step2_SelecaoAtividadeAuxiliar_0__Checked", true, true)) {
+            const sede = [...document.getElementsByName("Step2.SelecaoAtividadeAuxiliarPrincipal")].find((r) => vis(r) && (r.value === "1" || /sede/i.test(limpaRotulo(rotuloDe(r)))));
+            if (sede && !sede.checked) sede.click();
+          }
+          if (!(await marcarId("Step2_SelecaoFormaAtuacao_1__Checked", true, true))) avisos.push("Não achei a forma de atuação: marque à mão.");
+          await sleep(300);
+          (await campoId("btnAvancar")).click();
+        } },
+      { nome: "Nome empresarial e objeto social", aqui: noColetor, fn: async () => {
+          await marcarId("Step3_FlagDeclaracaoConsultaNome_Checked", true);
+          await marcarId("Step3_DeclaroCiencia_Checked", true);
+          await preencherId("Step3_NomeEmpresarial", v("razao_sem_acento"));
+          await preencherId("Step3_ObjetoSocial", v("objeto_social"));
+          const fin = byId("btnFinalizar"); if (fin) { fin.scrollIntoView({ block: "center" }); fin.style.outline = "4px solid #ad1457"; }
+        } }
+    ];
+  }
+
+  async function executarRoteiro() {
+    for (;;) {
+      const { job } = await store.get("job");
+      if (!job || !job.ativo) return;
+      const D = Object.fromEntries((job.dic || []).map((x) => [x.chave, x.valor]));
+      const avisos = job.log || [];
+      const etapas = etapasAbertura(D, avisos);
+      if (job.passo >= etapas.length) {
+        await msg({ type: "soltar" });
+        const txt = `${job.processo.razao}: preenchi a viabilidade pelo card do processo. Revise e clique em “Finalizar Solicitação”.` + (avisos.length ? " Atenção: " + avisos.join(" ") : "");
+        await msg({ type: "fim", status: "revisar", texto: txt });
+        mostrarPainel(`✋ Preenchi <b>${esc(job.processo.razao)}</b> pelo card.<br>Revise e clique você em <b>Finalizar Solicitação</b> (contornei de rosa).` + (avisos.length ? `<br><small>⚠️ ${avisos.map(esc).join("<br>⚠️ ")}</small>` : ""), "#2e7d32");
+        return;
+      }
+      const et = etapas[job.passo];
+      if (!et.aqui()) {
+        // etapa de navegação já feita (você abriu a tela direto)? pula para a primeira etapa desta página
+        const prox = etapas.findIndex((e, i) => i > job.passo && e.aqui());
+        if (prox > job.passo && etapas.slice(job.passo, prox).every((e) => e.nav)) { job.passo = prox; await store.set({ job }); continue; }
+        if (TOPO) mostrarPainel(`Viabilidade de <b>${esc(job.processo.razao)}</b><br>Etapa ${job.passo + 1}/${etapas.length}: ${esc(et.nome)}<br><small>Esperando a tela certa (faça o login gov.br se pedir).</small><br><button id="cr-parar">Parar</button>`);
+        const bp = document.getElementById("cr-parar"); if (bp) bp.onclick = async () => { await msg({ type: "parar" }); esconderPainel(); };
+        return; // outra aba/página continua
+      }
+      mostrarPainel(`Viabilidade de <b>${esc(job.processo.razao)}</b><br>Etapa ${job.passo + 1}/${etapas.length}: ${esc(et.nome)}<br><button id="cr-parar">Parar</button>`);
+      const bp = document.getElementById("cr-parar"); if (bp) bp.onclick = async () => { await msg({ type: "parar" }); esconderPainel(); };
+      try {
+        if (et.nav) { job.passo++; job.log = avisos; await store.set({ job }); await et.fn(); await sleep(1500); }
+        else { await et.fn(); job.passo++; job.log = avisos; await store.set({ job }); }
+      } catch (e) {
+        await msg({ type: "soltar" });
+        await msg({ type: "fim", status: "erro", texto: `${job.processo.razao}: parei em “${et.nome}” – ${e.message}.` });
+        mostrarPainel(`⚠️ Parei em <b>${esc(et.nome)}</b>:<br>${esc(e.message)}.<br><small>Termine à mão ou corrija o card e peça de novo.</small>`, "#c62828");
+        return;
+      }
+    }
   }
 
   // =====================================================================
