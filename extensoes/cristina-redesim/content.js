@@ -354,7 +354,7 @@
   }
   const ENQUADRAMENTO = (e) => /^MEI\b/i.test(e) ? "Microempreendedor Individual" : /^ME\b/i.test(e) ? "Microempresa" : /^EPP\b/i.test(e) ? "Empresa de Pequeno Porte" : "Demais";
 
-  function etapasAbertura(D, avisos) {
+  function etapasAbertura(D, avisos, auto) {
     const v = (k) => D[k] || "";
     const pg = (re) => () => re.test(location.host + location.pathname.toLowerCase());
     const noColetor = pg(/jucesp\.sp\.gov\.br\/integradorpaulista\/viabilidade\/coletor/);
@@ -449,8 +449,53 @@
           await preencherId("Step3_NomeEmpresarial", v("razao_sem_acento"));
           await preencherId("Step3_ObjetoSocial", v("objeto_social"));
           const fin = byId("btnFinalizar"); if (fin) { fin.scrollIntoView({ block: "center" }); fin.style.outline = "4px solid #ad1457"; }
-        } }
+        } },
+      // ---- Só com "Finalizar e lançar o número sozinha" ligado (popup). Assinar/pagar/gerar guia: nunca.
+      ...(auto ? [
+        { nome: "Finalizar Solicitação", nav: true, aqui: noColetor, fn: async () => {
+            const fin = await campoId("btnFinalizar");
+            const { job: j } = await store.get("job");
+            j.antes = numerosNaTela(); j.errosAntes = errosNaTela(); await store.set({ job: j });
+            await msg({ type: "aceitarConfirm" }); // "Deseja realmente finalizar?" do navegador -> Sim
+            fin.scrollIntoView({ block: "center" }); fin.click();
+            await confirmarModal(4000);
+          } },
+        { nome: "Pegar o número e lançar no portal", aqui: pg(/jucesp\.sp\.gov\.br|vreredesim\.sp\.gov\.br/), fn: async () => {
+            const { job: j } = await store.get("job");
+            const antes = new Set(j.antes || []), errosAntes = new Set(j.errosAntes || []);
+            let numero = null, erro = null;
+            await waitFor(async () => {
+              await confirmarModal(0);
+              numero = numerosNaTela().find((n) => !antes.has(n)) || null;
+              erro = (errosNaTela().find((e) => !errosAntes.has(e)) || "").replace(/[.\s]+$/, "") || null;
+              return numero || erro;
+            }, 90000, 1000);
+            if (!numero) throw new Error(erro ? `a JUCESP não aceitou: ${erro}` : "finalizei, mas o número do protocolo não apareceu na tela em 90 s (confira na JUCESP e lance pelo popup)");
+            const r = await msg({ type: "salvarViabilidade", id: j.processo.id, numero });
+            if (!r.ok) throw new Error(`protocolo ${numero} gerado, mas não consegui lançar no portal: ${r.error}. Lance pelo popup`);
+            j.numero = r.data; await store.set({ job: j });
+          } }
+      ] : [])
     ];
+  }
+  // Números de protocolo na tela (3 letras + 10 números, ex.: SPN2633893093); os "SP…" vêm primeiro
+  function numerosNaTela() {
+    const t = (document.body && document.body.innerText) || "";
+    const todos = [...new Set(t.match(/\b[A-Z]{3}\d{10}\b/g) || [])];
+    return todos.filter((n) => n.startsWith("SP")).concat(todos.filter((n) => !n.startsWith("SP")));
+  }
+  // Mensagens de erro/validação visíveis
+  function errosNaTela() {
+    return [...document.querySelectorAll(".validation-summary-errors li,.field-validation-error,.alert-danger,.toast-error,.swal2-html-container,.text-danger,.error,[role=alert]")]
+      .filter(vis).map((e) => e.innerText.replace(/\s+/g, " ").trim()).filter((t) => t.length >= 8).slice(0, 5);
+  }
+  // Janela de confirmação da própria página ("Deseja finalizar?") -> Sim / Confirmar / OK
+  async function confirmarModal(ms) {
+    const achar = () => [...document.querySelectorAll(".modal.show button,.modal.in button,.swal2-confirm,.ui-dialog button,[role=dialog] button,.bootbox button")]
+      .find((b) => vis(b) && /^(sim|confirmar|ok|finalizar|continuar)$/i.test(textoDe(b)));
+    const b = ms ? await waitFor(achar, ms, 200) : achar();
+    if (b) { b.click(); await sleep(800); return true; }
+    return false;
   }
 
   async function executarRoteiro() {
@@ -459,7 +504,15 @@
       if (!job || !job.ativo) return;
       const D = Object.fromEntries((job.dic || []).map((x) => [x.chave, x.valor]));
       const avisos = job.log || [];
-      const etapas = etapasAbertura(D, avisos);
+      const etapas = etapasAbertura(D, avisos, !!job.autoFinalizar);
+      if (job.passo >= etapas.length && job.numero) {
+        await msg({ type: "soltar" });
+        const txt = `${job.processo.razao}: viabilidade finalizada, protocolo ${job.numero} lançado no portal (Em análise).` + (avisos.length ? " Atenção: " + avisos.join(" ") : "");
+        await msg({ type: "fim", status: "concluida", texto: txt });
+        mostrarPainel(`✅ <b>${esc(job.processo.razao)}</b><br>Viabilidade finalizada. Protocolo <b>${esc(job.numero)}</b> lançado no portal (Em análise).` + (avisos.length ? `<br><small>⚠️ ${avisos.map(esc).join("<br>⚠️ ")}</small>` : ""), "#2e7d32");
+        numeroOferecido = job.numero;
+        return;
+      }
       if (job.passo >= etapas.length) {
         await msg({ type: "soltar" });
         const txt = `${job.processo.razao}: preenchi a viabilidade pelo card do processo. Revise e clique em “Finalizar Solicitação”.` + (avisos.length ? " Atenção: " + avisos.join(" ") : "");
@@ -480,7 +533,13 @@
       const bp = document.getElementById("cr-parar"); if (bp) bp.onclick = async () => { await msg({ type: "parar" }); esconderPainel(); };
       try {
         if (et.nav) { job.passo++; job.log = avisos; await store.set({ job }); await et.fn(); await sleep(1500); }
-        else { await et.fn(); job.passo++; job.log = avisos; await store.set({ job }); }
+        else {
+          await et.fn();
+          // relê o job: a etapa pode ter gravado coisas nele (ex.: o número do protocolo)
+          const { job: atual } = await store.get("job");
+          if (!atual || !atual.ativo) return;
+          atual.passo = job.passo + 1; atual.log = avisos; await store.set({ job: atual });
+        }
       } catch (e) {
         await msg({ type: "soltar" });
         await msg({ type: "fim", status: "erro", texto: `${job.processo.razao}: parei em “${et.nome}” – ${e.message}.` });

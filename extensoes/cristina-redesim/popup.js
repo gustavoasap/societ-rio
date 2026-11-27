@@ -11,9 +11,12 @@ async function init() {
   $("who").textContent = "Portal: " + w.data;
   const { gravando } = await chrome.storage.local.get("gravando");
   if (gravando && gravando.ativo) aviso(`Estou gravando a aula com ${gravando.processo.razao}. Termine pelo painel rosa no Redesim.`, "ok");
+  const { autoFinalizar = true } = await chrome.storage.local.get("autoFinalizar");
+  $("autoFin").checked = autoFinalizar;
   await carregarProcessos();
   await mostrarAula();
 }
+$("autoFin").onchange = () => chrome.storage.local.set({ autoFinalizar: $("autoFin").checked });
 
 async function carregarProcessos() {
   const r = await send({ type: "pendentes" });
@@ -67,7 +70,7 @@ $("btnPreencher").onclick = async () => {
   if (atual.faltando.length && !confirm("Falta no portal: " + atual.faltando.join(", ") + ".\nPreencher assim mesmo (esses campos ficam em branco)?")) return;
   const r = await send({ type: "preencher", id: atual.id });
   if (!r.ok) return aviso(r.error, "erro");
-  aviso("Começando pelo card do processo. Faça login no Redesim se pedir. Eu paro antes de “Finalizar Solicitação”.", "ok");
+  aviso($("autoFin").checked ? "Começando pelo card do processo. Faça login no Redesim se pedir. Eu finalizo e lanço o número no portal." : "Começando pelo card do processo. Faça login no Redesim se pedir. Eu paro antes de “Finalizar Solicitação”.", "ok");
 };
 $("btnBaixar").onclick = async () => {
   const r = await send({ type: "aula" });

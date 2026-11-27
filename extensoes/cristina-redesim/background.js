@@ -204,8 +204,9 @@ async function comecarPreenchimento(processoId, extra = {}) {
   // Outros tipos: ainda precisam de uma aula específica.
   const roteiro = proc.tipo === "abertura" ? "jucesp_abertura" : null;
   if (!roteiro) throw new Error("Por enquanto eu só faço viabilidade de ABERTURA. Para alteração, me ensine com uma aula de alteração.");
+  const { autoFinalizar = true } = await chrome.storage.local.get("autoFinalizar");
   const tab = await abaRedesim(true);
-  await chrome.storage.local.set({ ultimoProcesso: { id: proc.id, razao: proc.razao }, job: { ativo: true, roteiro, tabId: tab.id, passo: 0, processo: { id: proc.id, razao: proc.razao }, dic: proc.dic, log: [], inicio: Date.now(), tarefaSasuke: extra.tarefaSasuke || null } });
+  await chrome.storage.local.set({ ultimoProcesso: { id: proc.id, razao: proc.razao }, job: { ativo: true, roteiro, autoFinalizar, tabId: tab.id, passo: 0, processo: { id: proc.id, razao: proc.razao }, dic: proc.dic, log: [], inicio: Date.now(), tarefaSasuke: extra.tarefaSasuke || null } });
   try { await chrome.tabs.sendMessage(tab.id, { type: "acordar" }); } catch (_) {}
   return { total: "todos os", faltando: proc.faltando };
 }
@@ -216,7 +217,7 @@ async function fimPreenchimento(status, texto) {
   const { historico = [] } = await chrome.storage.local.get("historico");
   historico.unshift({ quando: new Date().toLocaleString("pt-BR"), razao: job && job.processo ? job.processo.razao : "", status, texto });
   await chrome.storage.local.set({ historico: historico.slice(0, 30) });
-  avisar(status === "revisar" ? "Cristina preencheu: revise e envie" : "Cristina parou", texto, "cristina-fim");
+  avisar(status === "concluida" ? "Cristina finalizou a viabilidade" : status === "revisar" ? "Cristina preencheu: revise e finalize" : "Cristina parou", texto, "cristina-fim");
   if (job && job.tarefaSasuke) await resultadoTarefa(job.tarefaSasuke, status === "erro" ? "erro" : "concluida", texto);
 }
 
@@ -298,6 +299,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
           await k("rawKeyDown", "a", "KeyA", 65, 2); await k("keyUp", "a", "KeyA", 65, 2);
           await chrome.debugger.sendCommand(target, "Input.insertText", { text: msg.text });
           if (msg.tecla === "Tab") { await k("rawKeyDown", "Tab", "Tab", 9); await k("keyUp", "Tab", "Tab", 9); }
+          return reply({ ok: true });
+        }
+        case "aceitarConfirm": {
+          // Responde "OK" sozinho às caixas "Deseja realmente…?" do navegador nesta aba (só durante o Finalizar)
+          await chrome.scripting.executeScript({ target: { tabId: sender.tab.id, frameIds: [sender.frameId || 0] }, world: "MAIN",
+            func: () => { window.confirm = () => true; window.alert = () => {}; } });
           return reply({ ok: true });
         }
         case "realClick": {
