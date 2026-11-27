@@ -300,6 +300,16 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
           if (msg.tecla === "Tab") { await k("rawKeyDown", "Tab", "Tab", 9); await k("keyUp", "Tab", "Tab", 9); }
           return reply({ ok: true });
         }
+        case "realClick": {
+          // Clique de mouse de verdade na posição da tela (para bolinhas desenhadas por cima do campo)
+          const target = { tabId: sender.tab.id };
+          if (!anexados.has(target.tabId)) { await chrome.debugger.attach(target, "1.3"); anexados.add(target.tabId); }
+          const base = { x: msg.x, y: msg.y, button: "left", clickCount: 1 };
+          await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { type: "mouseMoved", x: msg.x, y: msg.y });
+          await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { ...base, type: "mousePressed" });
+          await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { ...base, type: "mouseReleased" });
+          return reply({ ok: true });
+        }
         case "soltar": {
           const id = sender.tab.id;
           if (anexados.has(id)) { try { await chrome.debugger.detach({ tabId: id }); } catch (_) {} anexados.delete(id); }

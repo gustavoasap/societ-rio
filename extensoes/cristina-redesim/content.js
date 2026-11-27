@@ -316,6 +316,24 @@
     }
     return null;
   }
+  // Marca um rádio, mesmo quando a bolinha que aparece é um desenho por cima do <input> escondido
+  // (é o caso do "Principal?" do IPTU e da lista de CNAEs na JUCESP). Confere se ficou marcado.
+  async function marcarRadio(r) {
+    if (!r) return false;
+    if (r.checked) return true;
+    const td = r.closest("td,label,li");
+    const alvo = vis(r) ? r : [r.nextElementSibling, r.parentElement, td].find((e) => e && vis(e) && e.getBoundingClientRect().width < 300) || td;
+    if (alvo) { alvo.scrollIntoView({ block: "center" }); alvo.click(); }
+    await sleep(300);
+    if (!r.checked && alvo) { // clique "de mouse" de verdade no centro da bolinha
+      const b = (vis(r) ? r : alvo).getBoundingClientRect();
+      await msg({ type: "realClick", x: b.left + b.width / 2, y: b.top + b.height / 2 });
+      await sleep(400);
+    }
+    if (!r.checked) { r.click(); await sleep(200); }
+    if (!r.checked) { r.checked = true; fire(r, "input", "change"); }
+    return r.checked;
+  }
   async function clicarTexto(re, sel = "button,a,input[type=button],input[type=submit]", ms = 15000) {
     const e = await waitFor(() => [...document.querySelectorAll(sel)].find((x) => vis(x) && re.test(textoDe(x))), ms);
     if (!e) throw new Error(`não achei o botão “${re.source}”`);
@@ -381,9 +399,12 @@
           await escolherOpcao("Step2_SelecaoTipoInscricaoImovelId", ["IPTU"], "tipo de inscrição");
           await preencherId("Step2_SelecaoTipoInscricaoImovelValor", v("iptu_sql"));
           (await campoId("btnAddTipoInscricao")).click(); await sleep(1000);
-          const radios = await waitFor(() => [...document.getElementsByName("Step2.SelecaoInscricaoImovelPrincipal")].filter(vis).filter((r) => r.closest("tr,li,div") && digits(r.closest("tr,li,div").innerText).includes(digits(v("iptu_sql")))), 6000)
-            || [...document.getElementsByName("Step2.SelecaoInscricaoImovelPrincipal")].filter(vis);
-          if (radios && radios[0] && !radios[0].checked) radios[0].click();
+          // "Principal?" na linha do IPTU que acabou de entrar na tabela (o rádio de verdade fica escondido)
+          const dIptu = digits(v("iptu_sql"));
+          const doIptu = () => { const rs = [...document.getElementsByName("Step2.SelecaoInscricaoImovelPrincipal")]; return rs.find((r) => { const tr = r.closest("tr"); return tr && digits(tr.innerText).includes(dIptu); }) || (rs.length === 1 ? rs[0] : null); };
+          const rIptu = await waitFor(doIptu, 8000);
+          if (!rIptu) throw new Error("o IPTU não entrou na tabela de inscrições depois do Adicionar");
+          if (!(await marcarRadio(rIptu))) throw new Error("não consegui marcar o IPTU como Principal");
         } },
       { nome: "Tipo de unidade", aqui: noColetor, fn: () => escolherOpcao("Step2_SelecaoTipoUnidadeEmpreendimentoId", [v("tipo_unidade") || "Produtiva"], "tipo de unidade") },
       { nome: "CNAEs (principal e secundários)", aqui: noColetor, fn: async () => {
@@ -407,16 +428,16 @@
           busca.value = ""; fire(busca, "input", "keyup");
           // CNAE principal: o rádio da linha com o código principal do card
           const p = codigos[0].d;
-          const radios = await waitFor(() => { const r = [...document.getElementsByName("Step2.SelecaoCnaePrincipal")].filter(vis); return r.length ? r : null; }, 8000);
+          const radios = await waitFor(() => { const r = [...document.getElementsByName("Step2.SelecaoCnaePrincipal")]; return r.length ? r : null; }, 8000);
           if (!radios) throw new Error("a lista de atividades escolhidas não apareceu");
-          const rp = radios.find((r) => { const tr = r.closest("tr"); return tr && digits(tr.innerText).includes(p); }) || radios[0];
-          if (!radios.some((r) => { const tr = r.closest("tr"); return tr && digits(tr.innerText).includes(p); })) avisos.push(`Confira o CNAE principal (${codigos[0].fmt}): marquei o primeiro da lista.`);
-          if (!rp.checked) rp.click(); await sleep(300);
+          const daLinha = radios.find((r) => { const tr = r.closest("tr"); return tr && digits(tr.innerText).includes(p); });
+          if (!daLinha) avisos.push(`Confira o CNAE principal (${codigos[0].fmt}): marquei o primeiro da lista.`);
+          if (!(await marcarRadio(daLinha || radios[0]))) throw new Error(`não consegui marcar o CNAE principal ${codigos[0].fmt}`);
         } },
       { nome: "Atividade auxiliar e forma de atuação", aqui: noColetor, fn: async () => {
           if (await marcarId("Step2_SelecaoAtividadeAuxiliar_0__Checked", true, true)) {
-            const sede = [...document.getElementsByName("Step2.SelecaoAtividadeAuxiliarPrincipal")].find((r) => vis(r) && (r.value === "1" || /sede/i.test(limpaRotulo(rotuloDe(r)))));
-            if (sede && !sede.checked) sede.click();
+            const sede = await waitFor(() => [...document.getElementsByName("Step2.SelecaoAtividadeAuxiliarPrincipal")].find((r) => r.value === "1" || /sede/i.test(limpaRotulo(rotuloDe(r)))), 3000);
+            if (sede && !(await marcarRadio(sede))) avisos.push("Não consegui marcar “Sede” na atividade auxiliar: marque à mão.");
           }
           if (!(await marcarId("Step2_SelecaoFormaAtuacao_1__Checked", true, true))) avisos.push("Não achei a forma de atuação: marque à mão.");
           await sleep(300);
