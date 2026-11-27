@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Cristina – Viabilidade Redesim SP (ASAP)",
+  "version": "0.1.0",
+  "description": "Preenche a viabilidade no VRE | REDESIM SP com os dados de Processos Societários do Portal ASAP. Aprende vendo você fazer.",
+  "permissions": ["storage", "tabs", "scripting", "debugger", "alarms", "notifications"],
+  "host_permissions": [
+    "https://*.sp.gov.br/*",
+    "https://zpffbnhtzlphuewctpsk.supabase.co/*",
+    "http://127.0.0.1:47321/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "Cristina – Viabilidade" },
+  "content_scripts": [
+    {
+      "matches": ["https://*.sp.gov.br/*"],
+      "js": ["content.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": { "128": "icon128.png" }
+}

@@ -1,0 +1,295 @@
+importScripts("config.js");
+const C = self.CRISTINA_CONFIG;
+const anexados = new Set();
+chrome.debugger.onDetach.addListener((src) => anexados.delete(src.tabId));
+
+// =====================================================================
+// SESSÃO DO PORTAL ASAP (login do próprio usuário, igual à Cláudia)
+// =====================================================================
+async function getSession() {
+  const { session } = await chrome.storage.local.get("session");
+  if (!session) return null;
+  if (Date.now() / 1000 < session.expires_at - 60) return session;
+  const r = await fetch(`${C.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: C.SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: session.refresh_token })
+  });
+  if (!r.ok) { await chrome.storage.local.remove("session"); return null; }
+  const s = await r.json();
+  const ns = { access_token: s.access_token, refresh_token: s.refresh_token, expires_at: s.expires_at, user: s.user };
+  await chrome.storage.local.set({ session: ns });
+  return ns;
+}
+
+async function login(email, password) {
+  const r = await fetch(`${C.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: C.SUPABASE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  const s = await r.json();
+  if (!r.ok) throw new Error(s.error_description || s.msg || "Falha no login do portal");
+  const ns = { access_token: s.access_token, refresh_token: s.refresh_token, expires_at: s.expires_at, user: s.user };
+  await chrome.storage.local.set({ session: ns });
+  return { email: s.user.email };
+}
+
+async function rest(path, opts = {}) {
+  const s = await getSession();
+  if (!s) throw new Error("Faça login no portal pela extensão.");
+  const r = await fetch(`${C.SUPABASE_URL}/rest/v1/${path}`, {
+    ...opts,
+    headers: { apikey: C.SUPABASE_KEY, Authorization: `Bearer ${s.access_token}`, "Content-Type": "application/json", ...(opts.headers || {}) }
+  });
+  const txt = await r.text();
+  if (!r.ok) throw new Error(`Portal: ${r.status} ${txt.slice(0, 200)}`);
+  return txt ? JSON.parse(txt) : null;
+}
+
+const soDigitos = (v) => String(v ?? "").replace(/\D/g, "");
+const fmtCNPJ = (d) => d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+const fmtCPF = (d) => soDigitos(d).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+const fmtCEP = (d) => soDigitos(d).replace(/^(\d{5})(\d{3})$/, "$1-$2");
+const numBR = (n) => (n == null || n === "" ? "" : Number(n).toLocaleString("pt-BR", { maximumFractionDigits: 2 }));
+
+// =====================================================================
+// PROCESSOS SOCIETÁRIOS: de onde vêm os dados da viabilidade
+// =====================================================================
+const CAMPOS_PROC = "id,tipo,status,razao_social,nome_fantasia,cnpj,municipio,natureza_juridica,enquadramento,cnae_principal,cnaes_secundarios,tipo_unidade,cep,endereco,numero,complemento,iptu,area_imovel,area_estabelecimento,area_terreno,capital_social,objeto_social,email,telefone,socios,responsavel,numero_viabilidade,status_viabilidade,alteracao_descricao,created_at";
+
+// Processos de abertura/alteração com a viabilidade ainda pendente
+async function pendentes() {
+  const lista = await rest(`soc_processos?select=id,tipo,razao_social,nome_fantasia,cnpj,municipio,status,status_viabilidade,created_at&tipo=in.(abertura,alteracao)&status_viabilidade=eq.pendente&order=created_at.desc&limit=100`);
+  return (lista || []).filter((p) => !/conclu|cancel|arquiv/i.test(p.status || ""));
+}
+
+// Monta o "dicionário" de dados que a Cristina pode usar para preencher.
+// Cada item: chave (nome interno), rótulo (como você lê) e valor.
+function dicionario(p) {
+  const d = [];
+  const add = (chave, rotulo, valor) => { if (valor != null && String(valor).trim() !== "") d.push({ chave, rotulo, valor: String(valor).trim() }); };
+  const municipio = String(p.municipio || "").replace(/\s*\/\s*SP$/i, "");
+  add("razao_social", "Razão social", (p.razao_social || "").toUpperCase());
+  add("nome_fantasia", "Nome fantasia", (p.nome_fantasia || "").toUpperCase());
+  add("cnpj", "CNPJ", p.cnpj ? fmtCNPJ(soDigitos(p.cnpj)) : "");
+  add("municipio", "Município", municipio);
+  add("natureza_juridica", "Natureza jurídica", p.natureza_juridica);
+  add("natureza_codigo", "Natureza jurídica (código)", soDigitos((p.natureza_juridica || "").split(" ")[0]));
+  add("enquadramento", "Enquadramento (porte)", p.enquadramento);
+  add("porte_sigla", "Porte (sigla)", (p.enquadramento || "").split(" ")[0]);
+  add("tipo_unidade", "Tipo de unidade", p.tipo_unidade);
+  add("cnae_principal", "CNAE principal", p.cnae_principal);
+  add("cnae_principal_num", "CNAE principal (só números)", soDigitos(p.cnae_principal));
+  const sec = String(p.cnaes_secundarios || "").split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
+  sec.forEach((c, i) => { add(`cnae_sec_${i + 1}`, `CNAE secundário ${i + 1}`, c); add(`cnae_sec_${i + 1}_num`, `CNAE secundário ${i + 1} (só números)`, soDigitos(c)); });
+  add("cep", "CEP", fmtCEP(p.cep));
+  add("cep_num", "CEP (só números)", soDigitos(p.cep));
+  add("endereco", "Endereço (logradouro)", p.endereco);
+  add("numero", "Número", p.numero);
+  add("complemento", "Complemento", p.complemento);
+  add("iptu", "IPTU (SQL)", p.iptu);
+  add("iptu_num", "IPTU (só números)", soDigitos(p.iptu));
+  add("area_imovel", "Área do imóvel (m²)", numBR(p.area_imovel));
+  add("area_estabelecimento", "Área do estabelecimento (m²)", numBR(p.area_estabelecimento));
+  add("area_terreno", "Área do terreno (m²)", numBR(p.area_terreno));
+  add("capital_social", "Capital social", numBR(p.capital_social));
+  add("objeto_social", "Objeto social", p.objeto_social);
+  add("email", "E-mail da empresa", p.email);
+  add("telefone", "Telefone", p.telefone);
+  add("telefone_num", "Telefone (só números)", soDigitos(p.telefone));
+  const socios = Array.isArray(p.socios) ? p.socios.filter((s) => s && (s.cpf || s.nome)) : [];
+  const resp = socios.find((s) => /administrador/i.test(s.qualificacao || "")) || socios[0];
+  if (resp) {
+    add("socio_resp_nome", "Sócio responsável – nome", (resp.nome || "").toUpperCase());
+    add("socio_resp_cpf", "Sócio responsável – CPF", fmtCPF(resp.cpf));
+    add("socio_resp_cpf_num", "Sócio responsável – CPF (só números)", soDigitos(resp.cpf));
+    add("socio_resp_email", "Sócio responsável – e-mail", resp.email);
+    add("socio_resp_telefone", "Sócio responsável – telefone", resp.telefone);
+  }
+  socios.forEach((s, i) => {
+    add(`socio_${i + 1}_nome`, `Sócio ${i + 1} – nome`, (s.nome || "").toUpperCase());
+    add(`socio_${i + 1}_cpf`, `Sócio ${i + 1} – CPF`, fmtCPF(s.cpf));
+  });
+  add("alteracao_descricao", "Descrição da alteração", p.alteracao_descricao);
+  return d;
+}
+
+async function dadosProcesso(id) {
+  const r = await rest(`soc_processos?select=${CAMPOS_PROC}&id=eq.${encodeURIComponent(id)}&limit=1`);
+  if (!r || !r.length) throw new Error("Processo não encontrado em Processos Societários.");
+  const p = r[0];
+  const faltando = [];
+  if (p.tipo === "abertura") {
+    if (!p.municipio) faltando.push("município");
+    if (!p.cep) faltando.push("CEP");
+    if (!p.numero) faltando.push("número do endereço");
+    if (!p.cnae_principal) faltando.push("CNAE principal");
+    if (!p.iptu) faltando.push("IPTU");
+    if (!p.area_estabelecimento && !p.area_imovel) faltando.push("área");
+  }
+  return { id: p.id, tipo: p.tipo, razao: p.razao_social || "", viabilidade: p.numero_viabilidade || "", statusViab: p.status_viabilidade, faltando, dic: dicionario(p) };
+}
+
+// Lança o número da viabilidade no portal e põe o status "Em análise"
+async function salvarViabilidade(id, numero) {
+  const n = String(numero || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!/^[A-Z]{3}\d{10}$/.test(n)) throw new Error("Número inválido: são 3 letras + 10 números (ex.: SPN2633893093).");
+  await rest(`soc_processos?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH", headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ numero_viabilidade: n, status_viabilidade: "em_analise", updated_at: new Date().toISOString() })
+  });
+  const r = await rest(`soc_processos?select=numero_viabilidade&id=eq.${encodeURIComponent(id)}`);
+  if (!r || !r[0] || r[0].numero_viabilidade !== n) throw new Error("Não consegui confirmar o número no portal (verifique se você tem acesso ao Societário).");
+  return n;
+}
+
+// =====================================================================
+// A "AULA": o que a Cristina aprendeu vendo você fazer
+// aula = { versao, gravadaEm, processoExemplo, passos: [ {tipo, pagina, campo, valor, fonte, ...} ] }
+// =====================================================================
+async function getAula() { const { aula } = await chrome.storage.local.get("aula"); return aula || null; }
+
+function avisar(titulo, texto, id = "cristina-" + Date.now()) {
+  try { chrome.notifications.create(id, { type: "basic", iconUrl: "icon128.png", title: titulo, message: texto, priority: 1 }); } catch (_) {}
+}
+
+// Abre (ou reaproveita) a aba do Redesim
+async function abaRedesim(focar = true) {
+  const abas = await chrome.tabs.query({ url: "https://*.sp.gov.br/*" });
+  let tab = abas.find((t) => /vreredesim|jucesp|redesim/i.test(t.url || ""));
+  if (!tab) tab = await chrome.tabs.create({ url: C.URL_REDESIM, active: focar });
+  else if (focar) { await chrome.tabs.update(tab.id, { active: true }); await chrome.windows.update(tab.windowId, { focused: true }); }
+  return tab;
+}
+
+async function comecarGravacao(processoId) {
+  const proc = await dadosProcesso(processoId);
+  await chrome.storage.local.set({ ultimoProcesso: { id: proc.id, razao: proc.razao },
+    gravando: { ativo: true, inicio: Date.now(), processo: { id: proc.id, razao: proc.razao, tipo: proc.tipo }, dic: proc.dic, passos: [], mapas: {} } });
+  await abaRedesim(true);
+  return true;
+}
+
+async function pararGravacao() {
+  const { gravando } = await chrome.storage.local.get("gravando");
+  if (!gravando) return null;
+  await chrome.storage.local.remove("gravando");
+  if (!gravando.passos.length) return { passos: 0 };
+  const aula = { versao: 1, gravadaEm: new Date().toISOString(), processoExemplo: gravando.processo, dicExemplo: gravando.dic, mapas: gravando.mapas || {}, passos: gravando.passos };
+  await chrome.storage.local.set({ aula });
+  return { passos: gravando.passos.length, ligados: gravando.passos.filter((p) => p.fonte).length };
+}
+
+async function comecarPreenchimento(processoId, extra = {}) {
+  const aula = await getAula();
+  if (!aula || !aula.passos.length) throw new Error("Ainda não aprendi. Grave uma aula primeiro (botão Aprender).");
+  const proc = await dadosProcesso(processoId);
+  const tab = await abaRedesim(true);
+  await chrome.storage.local.set({ ultimoProcesso: { id: proc.id, razao: proc.razao }, job: { ativo: true, tabId: tab.id, passo: 0, processo: { id: proc.id, razao: proc.razao }, dic: proc.dic, log: [], inicio: Date.now(), tarefaSasuke: extra.tarefaSasuke || null } });
+  try { await chrome.tabs.sendMessage(tab.id, { type: "acordar" }); } catch (_) {}
+  return { total: aula.passos.length, faltando: proc.faltando };
+}
+
+async function fimPreenchimento(status, texto) {
+  const { job } = await chrome.storage.local.get("job");
+  await chrome.storage.local.remove("job");
+  const { historico = [] } = await chrome.storage.local.get("historico");
+  historico.unshift({ quando: new Date().toLocaleString("pt-BR"), razao: job && job.processo ? job.processo.razao : "", status, texto });
+  await chrome.storage.local.set({ historico: historico.slice(0, 30) });
+  avisar(status === "revisar" ? "Cristina preencheu: revise e envie" : "Cristina parou", texto, "cristina-fim");
+  if (job && job.tarefaSasuke) await resultadoTarefa(job.tarefaSasuke, status === "erro" ? "erro" : "concluida", texto);
+}
+
+// =====================================================================
+// PONTE COM O CARECA (antigo Sasuke): mesma ponte local da Cláudia (127.0.0.1:47321)
+// =====================================================================
+const CARECA = "http://127.0.0.1:47321";
+async function careca(path, corpo) {
+  try {
+    const r = await fetch(CARECA + path, corpo ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corpo) } : {});
+    return r.ok ? await r.json() : null;
+  } catch (_) { return null; } // Careca fechado
+}
+const resultadoTarefa = (id, status, resultado) => careca(`/ponte/tarefa/${id}`, { status, resultado });
+
+async function acharProcesso(texto) {
+  const lista = await pendentes();
+  const d = soDigitos(texto);
+  const alvo = String(texto || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
+  return lista.filter((p) => (d.length === 14 && soDigitos(p.cnpj) === d) ||
+    (alvo.length >= 3 && String(p.razao_social || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().includes(alvo)));
+}
+
+let checando = false;
+async function checarPonte() {
+  if (checando) return; checando = true;
+  try {
+    const { job, historico } = await chrome.storage.local.get(["job", "historico"]);
+    const ok = await careca("/ponte/status", { agente: "cristina", versao: chrome.runtime.getManifest().version,
+      historico: (historico || []).slice(0, 5), trabalhando: !!(job && job.ativo), portalLogado: !!(await getSession()), aprendeu: !!(await getAula()) });
+    if (!ok || (job && job.ativo)) return;
+    const r = await careca("/ponte/tarefas?agente=cristina");
+    const t = r && r.tarefas && r.tarefas[0];
+    if (!t) return;
+    const pedido = `${t.sistema} ${t.acao} ${t.detalhes}`.toLowerCase();
+    if (!/viabilidade|redesim|consulta pr[eé]via/.test(pedido)) return resultadoTarefa(t.id, "erro", `Ainda não sei fazer isso: "${t.acao}". Hoje eu só preencho viabilidade no Redesim SP.`);
+    if (!(await getSession())) return resultadoTarefa(t.id, "erro", "Estou sem login no Portal ASAP. Entre pelo ícone da Cristina no Chrome.");
+    if (!(await getAula())) return resultadoTarefa(t.id, "erro", "Ainda não aprendi a viabilidade. Grave uma aula comigo primeiro.");
+    const achados = await acharProcesso(t.empresa || "");
+    if (!achados.length) return resultadoTarefa(t.id, "erro", `Não achei "${t.empresa}" entre os processos com viabilidade pendente.`);
+    if (achados.length > 1) return resultadoTarefa(t.id, "erro", "Achei mais de um processo: " + achados.slice(0, 4).map((p) => p.razao_social).join("; ") + ". Fala o nome completo ou o CNPJ.");
+    await resultadoTarefa(t.id, "em_execucao", "Abrindo o Redesim.");
+    await comecarPreenchimento(achados[0].id, { tarefaSasuke: t.id });
+  } catch (e) { /* tenta de novo no próximo ciclo */ } finally { checando = false; }
+}
+chrome.alarms.get("cristina-ponte", (al) => { if (!al) chrome.alarms.create("cristina-ponte", { periodInMinutes: 0.5 }); });
+chrome.alarms.onAlarm.addListener((al) => { if (al.name === "cristina-ponte") checarPonte(); });
+
+// =====================================================================
+// MENSAGENS (popup e página do Redesim)
+// =====================================================================
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  (async () => {
+    try {
+      switch (msg.type) {
+        case "login": return reply({ ok: true, data: await login(msg.email, msg.password) });
+        case "logout": await chrome.storage.local.remove("session"); return reply({ ok: true });
+        case "whoami": { const s = await getSession(); return reply({ ok: true, data: s ? s.user.email : null }); }
+        case "pendentes": return reply({ ok: true, data: await pendentes() });
+        case "dados": return reply({ ok: true, data: await dadosProcesso(msg.id) });
+        case "gravar": return reply({ ok: true, data: await comecarGravacao(msg.id) });
+        case "pararGravacao": return reply({ ok: true, data: await pararGravacao() });
+        case "aula": return reply({ ok: true, data: await getAula() });
+        case "importarAula": {
+          const a = msg.aula;
+          if (!a || !Array.isArray(a.passos)) throw new Error("Arquivo de aula inválido.");
+          await chrome.storage.local.set({ aula: a }); return reply({ ok: true, data: a.passos.length });
+        }
+        case "esquecer": await chrome.storage.local.remove("aula"); return reply({ ok: true });
+        case "preencher": return reply({ ok: true, data: await comecarPreenchimento(msg.id) });
+        case "parar": { const { job } = await chrome.storage.local.get("job"); if (job && job.ativo) await fimPreenchimento("erro", "Parada por você."); return reply({ ok: true }); }
+        case "fim": await fimPreenchimento(msg.status, msg.texto); return reply({ ok: true });
+        case "salvarViabilidade": return reply({ ok: true, data: await salvarViabilidade(msg.id, msg.numero) });
+        case "historico": { const { historico = [] } = await chrome.storage.local.get("historico"); return reply({ ok: true, data: historico.slice(0, 5) }); }
+        case "realType": {
+          // Digita como teclado de verdade (para campos com máscara que ignoram o preenchimento direto)
+          const target = { tabId: sender.tab.id };
+          if (!anexados.has(target.tabId)) { await chrome.debugger.attach(target, "1.3"); anexados.add(target.tabId); }
+          const k = (type, key, code, vk, mod = 0) => chrome.debugger.sendCommand(target, "Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers: mod });
+          await k("rawKeyDown", "a", "KeyA", 65, 2); await k("keyUp", "a", "KeyA", 65, 2);
+          await chrome.debugger.sendCommand(target, "Input.insertText", { text: msg.text });
+          if (msg.tecla === "Tab") { await k("rawKeyDown", "Tab", "Tab", 9); await k("keyUp", "Tab", "Tab", 9); }
+          return reply({ ok: true });
+        }
+        case "soltar": {
+          const id = sender.tab.id;
+          if (anexados.has(id)) { try { await chrome.debugger.detach({ tabId: id }); } catch (_) {} anexados.delete(id); }
+          return reply({ ok: true });
+        }
+        default: return reply({ ok: false, error: "mensagem desconhecida" });
+      }
+    } catch (e) { reply({ ok: false, error: e.message }); }
+  })();
+  return true;
+});

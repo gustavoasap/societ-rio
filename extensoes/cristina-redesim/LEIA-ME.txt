@@ -1,0 +1,42 @@
+CRISTINA – VIABILIDADE REDESIM SP (ASAP) · versão 0.1 (aprendiz)
+
+O QUE ELA FAZ
+Preenche a viabilidade (consulta prévia) no VRE | REDESIM SP com os dados do processo
+de abertura/alteração em Processos Societários do Portal ASAP. Ela aprende vendo você fazer
+uma vez e depois repete para as outras empresas.
+
+INSTALAR (igual à Cláudia)
+1. Descompacte numa pasta fixa (ex.: Documentos\cristina-redesim).
+2. No Chrome: chrome://extensions → ligue "Modo do desenvolvedor".
+3. "Carregar sem compactação" → escolha a pasta.
+4. Fixe o ícone rosa "Cr" na barra.
+
+1ª VEZ: ENSINAR (gravar a aula)
+1. Clique no ícone → entre com o usuário do Portal ASAP.
+2. Escolha um processo com viabilidade pendente (o que você ia fazer de qualquer jeito).
+3. Clique em "Aprender". Ela abre o Redesim. Faça o login gov.br e preencha a viabilidade
+   normalmente, do começo ao fim. O painel rosa mostra cada campo que ela anotou e, quando
+   o valor bate com um dado do portal (CEP, CNAE, IPTU, área...), mostra "← CEP" etc.
+   Campos sem dado no portal ficam como valor fixo (ex.: respostas "Sim/Não" padrão).
+4. Antes de transmitir, clique em "Terminei: salvar a aula" no painel.
+   (Ela nunca clica em Transmitir/Enviar/Protocolar/Assinar/Pagar sozinha.)
+5. Clique em "Baixar aula" e mande o arquivo para o Claude: ele revisa os passos,
+   corrige o que ficou frágil e devolve uma Cristina mais esperta.
+
+DEPOIS: PREENCHER SOZINHA
+1. Escolha outro processo → "Preencher esta viabilidade sozinha".
+2. Faça o login no Redesim se ele pedir. Não mexa na aba enquanto ela trabalha.
+3. Ela para antes do botão de transmitir. Você revisa e transmite.
+4. Quando o número (ex.: SPN2633893093) aparecer na tela, o painel oferece
+   "Lançar no portal": grava o número e põe a viabilidade "Em análise".
+   (Também dá para lançar à mão pelo popup.)
+
+PELO CARECA
+Com o Careca aberto, diga por exemplo "Cristina, faz a viabilidade da <empresa>".
+Ela pega a tarefa pela mesma ponte da Cláudia (127.0.0.1:47321) e devolve o resultado.
+O Careca precisa conhecer a Cristina (ver CARECA.md nesta pasta).
+
+NÃO FAZ
+- Login no gov.br / Redesim (sempre seu).
+- Transmitir, assinar ou pagar nada.
+- Se a tela do Redesim mudar, ela para e avisa; grave uma aula nova.
