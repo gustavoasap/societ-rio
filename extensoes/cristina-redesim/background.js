@@ -56,7 +56,7 @@ const numBR = (n) => (n == null || n === "" ? "" : Number(n).toLocaleString("pt-
 // =====================================================================
 // PROCESSOS SOCIETÁRIOS: de onde vêm os dados da viabilidade
 // =====================================================================
-const CAMPOS_PROC = "id,tipo,status,razao_social,nome_fantasia,cnpj,municipio,natureza_juridica,enquadramento,cnae_principal,cnaes_secundarios,tipo_unidade,cep,endereco,numero,complemento,iptu,area_imovel,area_estabelecimento,area_terreno,capital_social,objeto_social,email,telefone,socios,responsavel,numero_viabilidade,status_viabilidade,alteracao_descricao,created_at";
+const CAMPOS_PROC = "id,tipo,status,razao_social,nome_fantasia,cnpj,municipio,natureza_juridica,enquadramento,cnae_principal,cnaes_secundarios,tipo_unidade,cep,endereco,numero,complemento,iptu,area_imovel,area_estabelecimento,area_terreno,capital_social,objeto_social,email,telefone,socios,responsavel,numero_viabilidade,status_viabilidade,alteracao_descricao,orgao_registro,created_at";
 
 // Processos de abertura/alteração com a viabilidade ainda pendente
 async function pendentes() {
@@ -76,6 +76,7 @@ function dicionario(p) {
   add("municipio", "Município", municipio);
   add("natureza_juridica", "Natureza jurídica", p.natureza_juridica);
   add("natureza_codigo", "Natureza jurídica (código)", soDigitos((p.natureza_juridica || "").split(" ")[0]));
+  add("orgao_registro", "Órgão de registro", p.orgao_registro);
   add("enquadramento", "Enquadramento (porte)", p.enquadramento);
   add("porte_sigla", "Porte (sigla)", (p.enquadramento || "").split(" ")[0]);
   add("tipo_unidade", "Tipo de unidade", p.tipo_unidade);
@@ -106,6 +107,12 @@ function dicionario(p) {
     add("socio_resp_cpf_num", "Sócio responsável – CPF (só números)", soDigitos(resp.cpf));
     add("socio_resp_email", "Sócio responsável – e-mail", resp.email);
     add("socio_resp_telefone", "Sócio responsável – telefone", resp.telefone);
+    add("socio_resp_rg", "Sócio responsável – RG", resp.rg);
+    add("socio_resp_nascimento", "Sócio responsável – data de nascimento", resp.data_nascimento ? String(resp.data_nascimento).split("-").reverse().join("/") : "");
+    add("socio_resp_qualificacao", "Sócio responsável – qualificação", resp.qualificacao);
+    add("socio_resp_cep", "Sócio responsável – CEP residencial", resp.cep ? fmtCEP(resp.cep) : "");
+    add("socio_resp_endereco", "Sócio responsável – endereço residencial", resp.endereco);
+    add("socio_resp_numero", "Sócio responsável – número residencial", resp.numero);
   }
   socios.forEach((s, i) => {
     add(`socio_${i + 1}_nome`, `Sócio ${i + 1} – nome`, (s.nome || "").toUpperCase());
