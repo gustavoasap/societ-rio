@@ -509,7 +509,7 @@
         await msg({ type: "soltar" });
         const txt = `${job.processo.razao}: viabilidade finalizada, protocolo ${job.numero} lançado no portal (Em análise).` + (avisos.length ? " Atenção: " + avisos.join(" ") : "");
         await msg({ type: "fim", status: "concluida", texto: txt });
-        mostrarPainel(`✅ <b>${esc(job.processo.razao)}</b><br>Viabilidade finalizada. Protocolo <b>${esc(job.numero)}</b> lançado no portal (Em análise).` + (avisos.length ? `<br><small>⚠️ ${avisos.map(esc).join("<br>⚠️ ")}</small>` : ""), "#2e7d32");
+        mostrarPainel(`✅ <b>${esc(job.processo.razao)}</b><br>Viabilidade finalizada. Protocolo <b>${esc(job.numero)}</b> lançado no portal (Em análise).` + (job.naFila ? "<br><small>Indo para a próxima da fila…</small>" : "") + (avisos.length ? `<br><small>⚠️ ${avisos.map(esc).join("<br>⚠️ ")}</small>` : ""), "#2e7d32");
         numeroOferecido = job.numero;
         return;
       }
@@ -517,7 +517,12 @@
         await msg({ type: "soltar" });
         const txt = `${job.processo.razao}: preenchi a viabilidade pelo card do processo. Revise e clique em “Finalizar Solicitação”.` + (avisos.length ? " Atenção: " + avisos.join(" ") : "");
         await msg({ type: "fim", status: "revisar", texto: txt });
-        mostrarPainel(`✋ Preenchi <b>${esc(job.processo.razao)}</b> pelo card.<br>Revise e clique você em <b>Finalizar Solicitação</b> (contornei de rosa).` + (avisos.length ? `<br><small>⚠️ ${avisos.map(esc).join("<br>⚠️ ")}</small>` : ""), "#2e7d32");
+        mostrarPainel(`✋ Preenchi <b>${esc(job.processo.razao)}</b> pelo card.<br>Revise e clique você em <b>Finalizar Solicitação</b> (contornei de rosa).` + (avisos.length ? `<br><small>⚠️ ${avisos.map(esc).join("<br>⚠️ ")}</small>` : "") +
+          (job.naFila ? `<br><button id="cr-prox">Já finalizei: próxima da fila</button><button id="cr-parar-fila">Parar a fila</button>` : ""), "#2e7d32");
+        if (job.naFila) {
+          document.getElementById("cr-prox").onclick = async () => { mostrarPainel("Indo para a próxima…"); await msg({ type: "proximaFila" }); };
+          document.getElementById("cr-parar-fila").onclick = async () => { await msg({ type: "parar" }); esconderPainel(); };
+        }
         return;
       }
       const et = etapas[job.passo];

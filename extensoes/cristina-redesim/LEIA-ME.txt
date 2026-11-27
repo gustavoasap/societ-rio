@@ -1,4 +1,4 @@
-CRISTINA – VIABILIDADE REDESIM SP (ASAP) · versão 0.3
+CRISTINA – VIABILIDADE REDESIM SP (ASAP) · versão 0.4
 
 O QUE ELA FAZ
 Preenche a viabilidade (consulta prévia) no VRE | REDESIM SP com os dados do processo
@@ -22,6 +22,16 @@ INSTALAR (igual à Cláudia)
    (Ela nunca clica em Transmitir/Enviar/Protocolar/Assinar/Pagar sozinha.)
 5. Clique em "Baixar aula" e mande o arquivo para o Claude: ele revisa os passos,
    corrige o que ficou frágil e devolve uma Cristina mais esperta.
+
+VÁRIOS DE UMA VEZ (fila)
+1. No popup, filtre por Todos / Abertura / Alteração (e busque por nome ou CNPJ).
+2. Marque os processos (ou "Marcar todos os prontos") e clique em "Fazer os N selecionados".
+3. Ela faz um atrás do outro na mesma aba. Card incompleto ou alteração: pula e anota.
+   Erro em um: anota o motivo e segue para o próximo. O quadro "Fila" no popup mostra o
+   andamento e o resultado de cada um; no fim vem uma notificação com o resumo.
+4. Com "Finalizar sozinha" desligado, ela para em cada um; finalize e clique em
+   "Já finalizei: próxima da fila" no painel rosa.
+Pelo Careca: "Cristina, faz todas as viabilidades pendentes".
 
 ABERTURA (já sabe, sem aula): lê TUDO do card do processo (enquadramento, órgão, natureza,
 CEP, número, complementos, áreas, IPTU + Principal, tipo de unidade, todos os CNAEs com o

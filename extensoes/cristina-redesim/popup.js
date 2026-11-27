@@ -15,32 +15,78 @@ async function init() {
   $("autoFin").checked = autoFinalizar;
   await carregarProcessos();
   await mostrarAula();
+  await mostrarFila();
 }
 $("autoFin").onchange = () => chrome.storage.local.set({ autoFinalizar: $("autoFin").checked });
 
+let processos = [], filtro = "todos";
+const marcados = new Set();
 async function carregarProcessos() {
   const r = await send({ type: "pendentes" });
-  const sel = $("proc");
-  if (!r.ok) { sel.innerHTML = `<option value="">Erro ao ler o portal</option>`; aviso(r.error, "erro"); return; }
-  if (!r.data.length) { sel.innerHTML = `<option value="">Nenhuma viabilidade pendente 🎉</option>`; return; }
-  sel.innerHTML = `<option value="">Escolha (${r.data.length})…</option>` + r.data.map((p) =>
-    `<option value="${esc(p.id)}">${esc(TIPO[p.tipo] || p.tipo)} · ${esc(p.razao_social || p.nome_fantasia || "(sem nome)")}${p.municipio ? " · " + esc(p.municipio) : ""}</option>`).join("");
+  if (!r.ok) { $("lista").innerHTML = `<small class="erro">Erro ao ler o portal</small>`; aviso(r.error, "erro"); return; }
+  processos = r.data;
+  const ids = new Set(processos.map((p) => p.id));
+  [...marcados].forEach((id) => { if (!ids.has(id)) marcados.delete(id); });
+  desenharLista();
   const { ultimoProcesso } = await chrome.storage.local.get("ultimoProcesso");
-  if (ultimoProcesso && r.data.some((p) => p.id === ultimoProcesso.id)) { sel.value = ultimoProcesso.id; await preview(); }
+  if (ultimoProcesso && ids.has(ultimoProcesso.id)) await preview(ultimoProcesso.id);
 }
+const pronto = (p) => p.sabeFazer && !p.faltando.length;
+function visiveis() {
+  const q = $("busca").value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim(), qd = q.replace(/\D/g, "");
+  return processos.filter((p) => (filtro === "todos" || p.tipo === filtro) &&
+    (!q || String(p.razao_social || p.nome_fantasia || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().includes(q) || (qd.length >= 3 && String(p.cnpj || "").replace(/\D/g, "").includes(qd))));
+}
+function desenharLista() {
+  const lista = visiveis();
+  if (!lista.length) { $("lista").innerHTML = `<small style="display:block;padding:8px">${processos.length ? "Nada neste filtro." : "Nenhuma viabilidade pendente 🎉"}</small>`; }
+  else $("lista").innerHTML = lista.map((p) => `<div class="it${atual && atual.id === p.id ? " sel" : ""}">
+      <input type="checkbox" data-id="${esc(p.id)}" ${marcados.has(p.id) ? "checked" : ""} ${pronto(p) ? "" : "disabled"}>
+      <span class="nm" data-ver="${esc(p.id)}"><span class="tag${p.tipo === "alteracao" ? " alt" : ""}">${esc(TIPO[p.tipo] || p.tipo)}</span>${esc(p.razao_social || p.nome_fantasia || "(sem nome)")}
+      ${!p.sabeFazer ? `<span class="nao">Ainda não sei fazer alteração</span>` : p.faltando.length ? `<span class="falta">Falta no card: ${esc(p.faltando.join(", "))}</span>` : ""}</span></div>`).join("");
+  $("lista").querySelectorAll("input[data-id]").forEach((cb) => (cb.onchange = () => { cb.checked ? marcados.add(cb.dataset.id) : marcados.delete(cb.dataset.id); contar(); }));
+  $("lista").querySelectorAll("[data-ver]").forEach((s) => (s.onclick = () => preview(s.dataset.ver)));
+  const prontos = lista.filter(pronto);
+  $("todosProntos").checked = prontos.length > 0 && prontos.every((p) => marcados.has(p.id));
+  contar();
+}
+function contar() {
+  const n = marcados.size;
+  $("contSel").textContent = n ? `${n} selecionado(s)` : "";
+  $("btnFila").textContent = n ? `Fazer os ${n} selecionados em sequência` : "Fazer os selecionados";
+  $("btnFila").disabled = !n;
+}
+document.querySelectorAll(".filtro").forEach((b) => (b.onclick = () => {
+  filtro = b.dataset.f; document.querySelectorAll(".filtro").forEach((x) => x.classList.toggle("on", x === b)); desenharLista();
+}));
+$("busca").oninput = desenharLista;
+$("todosProntos").onchange = () => { visiveis().filter(pronto).forEach((p) => ($("todosProntos").checked ? marcados.add(p.id) : marcados.delete(p.id))); desenharLista(); };
 
 let atual = null;
-async function preview() {
-  const id = $("proc").value; atual = null; $("preview").innerHTML = "";
+async function preview(id) {
+  atual = null; $("preview").innerHTML = "";
   if (!id) return;
   const r = await send({ type: "dados", id });
   if (!r.ok) { aviso(r.error, "erro"); return; }
   atual = r.data;
   const mostra = ["municipio", "natureza_juridica", "enquadramento", "cnae_principal", "cep", "endereco", "numero", "complemento", "iptu", "area_estabelecimento", "area_imovel"];
-  $("preview").innerHTML = r.data.dic.filter((x) => mostra.includes(x.chave)).map((x) => `${esc(x.rotulo)}: <b>${esc(x.valor)}</b>`).join("<br>") +
+  $("preview").innerHTML = `<b>${esc(r.data.razao)}</b><br>` + r.data.dic.filter((x) => mostra.includes(x.chave)).map((x) => `${esc(x.rotulo)}: <b>${esc(x.valor)}</b>`).join("<br>") +
     (r.data.faltando.length ? `<br><span class="falta">Falta no portal: ${esc(r.data.faltando.join(", "))}</span>` : "");
   await chrome.storage.local.set({ ultimoProcesso: { id: r.data.id, razao: r.data.razao } });
+  desenharLista();
 }
+
+const ST = { concluida: "✅", revisar: "✋", erro: "⚠️", pulado: "⏭️" };
+async function mostrarFila() {
+  const r = await send({ type: "estadoFila" });
+  const f = r.ok ? r.data : null;
+  if (!f || (!f.ativa && !f.resultados.length)) { $("filaStatus").classList.add("hidden"); return; }
+  $("filaStatus").classList.remove("hidden");
+  const atualTxt = f.ativa ? (f.aguardando ? "Esperando você finalizar e clicar em “Próxima” no painel." : `Fazendo ${Math.min(f.i + 1, f.ids.length)} de ${f.ids.length}…`) : (f.parada ? "Fila parada por você." : "Fila terminada.");
+  $("filaStatus").innerHTML = `<h4>Fila</h4><small>${esc(atualTxt)}</small>` +
+    (f.resultados.length ? `<div class="res">${f.resultados.map((x) => `${ST[x.status] || ""} <b>${esc(x.razao)}</b>: ${esc(x.status === "concluida" ? (x.texto.match(/[A-Z]{3}\d{10}/) || [x.texto])[0] : x.texto)}`).join("<br>")}</div>` : "");
+}
+setInterval(mostrarFila, 2000);
 
 async function mostrarAula() {
   const r = await send({ type: "aula" });
@@ -58,19 +104,20 @@ $("btnLogin").onclick = async () => {
   if (!r.ok) return aviso(r.error, "erro");
   $("senha").value = ""; $("sLogin").classList.add("hidden"); aviso(""); init();
 };
-$("proc").onchange = preview;
 $("btnGravar").onclick = async () => {
   if (!atual) return aviso("Escolha primeiro o processo que você vai usar de exemplo.", "erro");
   const r = await send({ type: "gravar", id: atual.id });
   if (!r.ok) return aviso(r.error, "erro");
   aviso("Pode começar! Faça login no Redesim e preencha a viabilidade normalmente. No fim, clique em “Terminei: salvar a aula” no painel rosa.", "ok");
 };
-$("btnPreencher").onclick = async () => {
-  if (!atual) return aviso("Escolha o processo.", "erro");
-  if (atual.faltando.length && !confirm("Falta no portal: " + atual.faltando.join(", ") + ".\nPreencher assim mesmo (esses campos ficam em branco)?")) return;
-  const r = await send({ type: "preencher", id: atual.id });
+$("btnFila").onclick = async () => {
+  const ids = processos.filter((p) => marcados.has(p.id)).map((p) => p.id); // na ordem da lista
+  if (!ids.length) return;
+  const r = await send({ type: "fila", ids });
   if (!r.ok) return aviso(r.error, "erro");
-  aviso($("autoFin").checked ? "Começando pelo card do processo. Faça login no Redesim se pedir. Eu finalizo e lanço o número no portal." : "Começando pelo card do processo. Faça login no Redesim se pedir. Eu paro antes de “Finalizar Solicitação”.", "ok");
+  marcados.clear(); desenharLista();
+  aviso(`Começando a fila com ${r.data.total} processo(s). Faça login no Redesim se pedir e não mexa na aba dela.` + ($("autoFin").checked ? " Vou finalizar e lançar cada número no portal." : " Vou parar antes de cada Finalizar; depois clique em “Próxima” no painel."), "ok");
+  mostrarFila();
 };
 $("btnBaixar").onclick = async () => {
   const r = await send({ type: "aula" });
@@ -90,8 +137,8 @@ $("btnLancar").onclick = async () => {
   if (!atual) return aviso("Escolha o processo.", "erro");
   const r = await send({ type: "salvarViabilidade", id: atual.id, numero: $("numViab").value });
   if (!r.ok) return aviso(r.error, "erro");
-  aviso(`${r.data} lançado em ${atual.razao}. Status da viabilidade: Em análise.`, "ok"); $("numViab").value = ""; carregarProcessos();
+  aviso(`${r.data} lançado em ${atual.razao}. Status da viabilidade: Em análise.`, "ok"); $("numViab").value = ""; atual = null; $("preview").innerHTML = ""; carregarProcessos();
 };
-$("btnParar").onclick = async () => { await send({ type: "parar" }); await send({ type: "pararGravacao" }); aviso("Parei.", "ok"); mostrarAula(); };
+$("btnParar").onclick = async () => { await send({ type: "parar" }); await send({ type: "pararGravacao" }); aviso("Parei (e parei a fila, se tinha uma).", "ok"); mostrarAula(); mostrarFila(); };
 $("btnSair").onclick = async () => { await send({ type: "logout" }); location.reload(); };
 init();

@@ -60,8 +60,26 @@ const CAMPOS_PROC = "id,tipo,status,razao_social,nome_fantasia,cnpj,municipio,na
 
 // Processos de abertura/alteração com a viabilidade ainda pendente
 async function pendentes() {
-  const lista = await rest(`soc_processos?select=id,tipo,razao_social,nome_fantasia,cnpj,municipio,status,status_viabilidade,created_at&tipo=in.(abertura,alteracao)&status_viabilidade=eq.pendente&order=created_at.desc&limit=100`);
-  return (lista || []).filter((p) => !/conclu|cancel|arquiv/i.test(p.status || ""));
+  const lista = await rest(`soc_processos?select=id,tipo,razao_social,nome_fantasia,cnpj,municipio,status,status_viabilidade,created_at,enquadramento,natureza_juridica,objeto_social,cep,numero,cnae_principal,iptu,area_estabelecimento,area_imovel&tipo=in.(abertura,alteracao)&status_viabilidade=eq.pendente&order=created_at.desc&limit=200`);
+  return (lista || []).filter((p) => !/conclu|cancel|arquiv/i.test(p.status || ""))
+    .map((p) => ({ id: p.id, tipo: p.tipo, razao_social: p.razao_social, nome_fantasia: p.nome_fantasia, cnpj: p.cnpj, municipio: p.municipio, faltando: faltandoDe(p), sabeFazer: p.tipo === "abertura" }));
+}
+
+// O que falta no card para a Cristina conseguir fazer a viabilidade
+function faltandoDe(p) {
+  const f = [];
+  if (p.tipo !== "abertura") return f;
+  if (!p.enquadramento) f.push("enquadramento");
+  if (!p.natureza_juridica) f.push("natureza jurídica");
+  if (!p.razao_social) f.push("razão social");
+  if (!p.objeto_social) f.push("objeto social");
+  if (!p.municipio) f.push("município");
+  if (!p.cep) f.push("CEP");
+  if (!p.numero) f.push("número do endereço");
+  if (!p.cnae_principal) f.push("CNAE principal");
+  if (!p.iptu) f.push("IPTU");
+  if (!p.area_estabelecimento && !p.area_imovel) f.push("área");
+  return f;
 }
 
 // Monta o "dicionário" de dados que a Cristina pode usar para preencher.
@@ -132,19 +150,7 @@ async function dadosProcesso(id) {
   const r = await rest(`soc_processos?select=${CAMPOS_PROC}&id=eq.${encodeURIComponent(id)}&limit=1`);
   if (!r || !r.length) throw new Error("Processo não encontrado em Processos Societários.");
   const p = r[0];
-  const faltando = [];
-  if (p.tipo === "abertura") {
-    if (!p.enquadramento) faltando.push("enquadramento");
-    if (!p.natureza_juridica) faltando.push("natureza jurídica");
-    if (!p.razao_social) faltando.push("razão social");
-    if (!p.objeto_social) faltando.push("objeto social");
-    if (!p.municipio) faltando.push("município");
-    if (!p.cep) faltando.push("CEP");
-    if (!p.numero) faltando.push("número do endereço");
-    if (!p.cnae_principal) faltando.push("CNAE principal");
-    if (!p.iptu) faltando.push("IPTU");
-    if (!p.area_estabelecimento && !p.area_imovel) faltando.push("área");
-  }
+  const faltando = faltandoDe(p);
   return { id: p.id, tipo: p.tipo, razao: p.razao_social || "", viabilidade: p.numero_viabilidade || "", statusViab: p.status_viabilidade, faltando, dic: dicionario(p) };
 }
 
@@ -198,6 +204,7 @@ async function pararGravacao() {
   return { passos: gravando.passos.length, ligados: gravando.passos.filter((p) => p.fonte).length };
 }
 
+const URL_NOVA_VIAB = "https://www.jucesp.sp.gov.br/integradorpaulista/";
 async function comecarPreenchimento(processoId, extra = {}) {
   const proc = await dadosProcesso(processoId);
   // Abertura: roteiro próprio da JUCESP (aprendido da aula do Gustavo), lendo tudo do card do processo.
@@ -206,7 +213,8 @@ async function comecarPreenchimento(processoId, extra = {}) {
   if (!roteiro) throw new Error("Por enquanto eu só faço viabilidade de ABERTURA. Para alteração, me ensine com uma aula de alteração.");
   const { autoFinalizar = true } = await chrome.storage.local.get("autoFinalizar");
   const tab = await abaRedesim(true);
-  await chrome.storage.local.set({ ultimoProcesso: { id: proc.id, razao: proc.razao }, job: { ativo: true, roteiro, autoFinalizar, tabId: tab.id, passo: 0, processo: { id: proc.id, razao: proc.razao }, dic: proc.dic, log: [], inicio: Date.now(), tarefaSasuke: extra.tarefaSasuke || null } });
+  if (extra.recomecar) await chrome.tabs.update(tab.id, { url: URL_NOVA_VIAB });
+  await chrome.storage.local.set({ ultimoProcesso: { id: proc.id, razao: proc.razao }, job: { ativo: true, roteiro, autoFinalizar, naFila: !!extra.naFila, tabId: tab.id, passo: 0, processo: { id: proc.id, razao: proc.razao }, dic: proc.dic, log: [], inicio: Date.now(), tarefaSasuke: extra.tarefaSasuke || null } });
   try { await chrome.tabs.sendMessage(tab.id, { type: "acordar" }); } catch (_) {}
   return { total: "todos os", faltando: proc.faltando };
 }
@@ -217,8 +225,56 @@ async function fimPreenchimento(status, texto) {
   const { historico = [] } = await chrome.storage.local.get("historico");
   historico.unshift({ quando: new Date().toLocaleString("pt-BR"), razao: job && job.processo ? job.processo.razao : "", status, texto });
   await chrome.storage.local.set({ historico: historico.slice(0, 30) });
+  const { fila } = await chrome.storage.local.get("fila");
+  if (fila && fila.ativa && job && job.naFila) {
+    fila.resultados.push({ razao: job.processo.razao, status, texto });
+    fila.i++;
+    if (status === "revisar") { fila.aguardando = true; await chrome.storage.local.set({ fila }); avisar("Cristina: revise e finalize", texto + " Depois clique em “Próxima” no painel.", "cristina-fim"); return; }
+    await chrome.storage.local.set({ fila });
+    setTimeout(proximoDaFila, 2500);
+    return;
+  }
   avisar(status === "concluida" ? "Cristina finalizou a viabilidade" : status === "revisar" ? "Cristina preencheu: revise e finalize" : "Cristina parou", texto, "cristina-fim");
   if (job && job.tarefaSasuke) await resultadoTarefa(job.tarefaSasuke, status === "erro" ? "erro" : "concluida", texto);
+}
+
+// =====================================================================
+// FILA: vários processos em sequência
+// fila = { ativa, ids, i, resultados: [{razao,status,texto}], tarefaSasuke, aguardando }
+// =====================================================================
+async function comecarFila(ids, extra = {}) {
+  if (!ids || !ids.length) throw new Error("Selecione pelo menos um processo.");
+  const { job } = await chrome.storage.local.get("job");
+  if (job && job.ativo) throw new Error("Já estou fazendo uma viabilidade. Pare antes ou espere terminar.");
+  await chrome.storage.local.set({ fila: { ativa: true, ids, i: 0, resultados: [], tarefaSasuke: extra.tarefaSasuke || null, inicio: Date.now() } });
+  await proximoDaFila();
+  return { total: ids.length };
+}
+
+async function proximoDaFila() {
+  const { fila } = await chrome.storage.local.get("fila");
+  if (!fila || !fila.ativa) return;
+  fila.aguardando = false;
+  while (fila.i < fila.ids.length) {
+    const id = fila.ids[fila.i];
+    try {
+      const proc = await dadosProcesso(id);
+      if (proc.tipo !== "abertura") { fila.resultados.push({ razao: proc.razao, status: "pulado", texto: "alteração: ainda não sei fazer" }); fila.i++; continue; }
+      if (proc.faltando.length) { fila.resultados.push({ razao: proc.razao, status: "pulado", texto: "falta no card: " + proc.faltando.join(", ") }); fila.i++; continue; }
+      await chrome.storage.local.set({ fila });
+      await comecarPreenchimento(id, { naFila: true, recomecar: fila.i > 0 || fila.resultados.length > 0 });
+      return;
+    } catch (e) { fila.resultados.push({ razao: id, status: "erro", texto: e.message }); fila.i++; }
+  }
+  // terminou a fila
+  fila.ativa = false; fila.fim = Date.now();
+  await chrome.storage.local.set({ fila });
+  const n = (s) => fila.resultados.filter((r) => r.status === s).length;
+  const resumo = `Fila terminada: ${n("concluida")} finalizada(s)` + (n("revisar") ? `, ${n("revisar")} preenchida(s) para você finalizar` : "") +
+    (n("erro") ? `, ${n("erro")} com erro` : "") + (n("pulado") ? `, ${n("pulado")} pulada(s)` : "") + ".";
+  avisar("Cristina terminou a fila", resumo, "cristina-fila");
+  if (fila.tarefaSasuke) await resultadoTarefa(fila.tarefaSasuke, n("concluida") || n("revisar") ? "concluida" : "erro",
+    resumo + " " + fila.resultados.map((r) => `${r.razao}: ${r.status === "concluida" ? r.texto.replace(/^.*protocolo /, "protocolo ").replace(/ lançado.*$/, "") : r.status + " – " + r.texto}`).join("; "));
 }
 
 // =====================================================================
@@ -248,13 +304,21 @@ async function checarPonte() {
     const { job, historico } = await chrome.storage.local.get(["job", "historico"]);
     const ok = await careca("/ponte/status", { agente: "cristina", versao: chrome.runtime.getManifest().version,
       historico: (historico || []).slice(0, 5), trabalhando: !!(job && job.ativo), portalLogado: !!(await getSession()), aprendeu: !!(await getAula()) });
-    if (!ok || (job && job.ativo)) return;
+    const { fila } = await chrome.storage.local.get("fila");
+    if (!ok || (job && job.ativo) || (fila && fila.ativa)) return;
     const r = await careca("/ponte/tarefas?agente=cristina");
     const t = r && r.tarefas && r.tarefas[0];
     if (!t) return;
     const pedido = `${t.sistema} ${t.acao} ${t.detalhes}`.toLowerCase();
     if (!/viabilidade|redesim|consulta pr[eé]via/.test(pedido)) return resultadoTarefa(t.id, "erro", `Ainda não sei fazer isso: "${t.acao}". Hoje eu só preencho viabilidade no Redesim SP.`);
     if (!(await getSession())) return resultadoTarefa(t.id, "erro", "Estou sem login no Portal ASAP. Entre pelo ícone da Cristina no Chrome.");
+    if (/\b(todas|todos|pendentes)\b/i.test(`${t.empresa} ${t.acao} ${t.detalhes}`)) {
+      const ids = (await pendentes()).filter((p) => p.sabeFazer && !p.faltando.length).map((p) => p.id);
+      if (!ids.length) return resultadoTarefa(t.id, "concluida", "Não tem nenhuma abertura pronta (com o card completo) para fazer agora.");
+      await resultadoTarefa(t.id, "em_execucao", `Começando a fila com ${ids.length} abertura(s).`);
+      await comecarFila(ids, { tarefaSasuke: t.id });
+      return;
+    }
     const achados = await acharProcesso(t.empresa || "");
     if (!achados.length) return resultadoTarefa(t.id, "erro", `Não achei "${t.empresa}" entre os processos com viabilidade pendente.`);
     if (achados.length > 1) return resultadoTarefa(t.id, "erro", "Achei mais de um processo: " + achados.slice(0, 4).map((p) => p.razao_social).join("; ") + ". Fala o nome completo ou o CNPJ.");
@@ -287,7 +351,16 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         }
         case "esquecer": await chrome.storage.local.remove("aula"); return reply({ ok: true });
         case "preencher": return reply({ ok: true, data: await comecarPreenchimento(msg.id) });
-        case "parar": { const { job } = await chrome.storage.local.get("job"); if (job && job.ativo) await fimPreenchimento("erro", "Parada por você."); return reply({ ok: true }); }
+        case "parar": {
+          const { fila } = await chrome.storage.local.get("fila");
+          if (fila && fila.ativa) { fila.ativa = false; fila.parada = true; await chrome.storage.local.set({ fila }); }
+          const { job } = await chrome.storage.local.get("job");
+          if (job && job.ativo) { job.naFila = false; await chrome.storage.local.set({ job }); await fimPreenchimento("erro", "Parada por você."); }
+          return reply({ ok: true });
+        }
+        case "fila": return reply({ ok: true, data: await comecarFila(msg.ids) });
+        case "proximaFila": await proximoDaFila(); return reply({ ok: true });
+        case "estadoFila": { const { fila } = await chrome.storage.local.get("fila"); return reply({ ok: true, data: fila || null }); }
         case "fim": await fimPreenchimento(msg.status, msg.texto); return reply({ ok: true });
         case "salvarViabilidade": return reply({ ok: true, data: await salvarViabilidade(msg.id, msg.numero) });
         case "historico": { const { historico = [] } = await chrome.storage.local.get("historico"); return reply({ ok: true, data: historico.slice(0, 5) }); }
